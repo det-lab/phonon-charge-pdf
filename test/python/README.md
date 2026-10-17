@@ -4,13 +4,14 @@ Everything in this directory validates the band-distribution PDFs; the code
 that *computes* the PDFs lives in `python/` at the repository root.  If
 you're looking for how to *use* the library (a fit or MCMC), that's
 `PpqPDF` in `python/ppq_pdf.py`; if you want simulated events instead, that's
-`event_generator.py` in `python/event_generator.py` — these tests validate
-the primitives both are built from (`python/internal/_ppqfort_bindings.py`,
-private, and `ppq_dist.py`, the pure-Python reference implementation), not a
-third way to use the library; each test that needs the raw, unnormalized PDF
-says why in a comment at its import.  Run all scripts from the repository
-root; see the main README for expected timings and for how to build
-`lib/libband_distribution.so` first.
+`event_generator.py` in `python/event_generator.py`; if you want the pure-
+Python reference implementation directly, that's `python/ppq_dist.py` —
+these tests validate `PpqPDF`/`event_generator.py` against `ppq_dist.py`,
+and `ppq_dist.py` against the raw, unnormalized Fortran PDF
+(`python/internal/_ppqfort_bindings.py`, private); each test that needs the
+raw PDF says why in a comment at its import.  Run all scripts from the
+repository root; see the main README for expected timings and for how to
+build `lib/libband_distribution.so` first.
 
 ## Test scripts
 

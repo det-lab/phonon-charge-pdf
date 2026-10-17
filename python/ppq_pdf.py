@@ -18,12 +18,14 @@ full walkthrough, including precomputed tables for MCMC.  If you instead
 want to generate simulated (Ep, Eq) events -- e.g. to validate a fit
 pipeline or feed a downstream analysis -- see event_generator.py
 (python/event_generator.py), a second, independent entrypoint with no
-Fortran dependency.  Everything else under python/ -- python/internal/
-_ppqfort_bindings.py (raw, unnormalized PDF evaluation), python/cli/
-normgrid.py (table machinery), python/internal/ppq_dist.py (pure-Python
-reference implementation) -- is either what PpqPDF/event_generator.py are
-built from or infrastructure for maintaining this library, not a third way
-to use it.
+Fortran dependency.  ppq_dist.py (python/ppq_dist.py) is a third, public
+entrypoint: the pure-Python reference implementation event_generator.py
+and this module are themselves checked against -- see its own module
+docstring.  Everything else under python/ -- python/internal/
+_ppqfort_bindings.py (raw, unnormalized PDF evaluation) and python/cli/
+normgrid.py (table machinery) -- is either what PpqPDF/event_generator.py
+are built from or infrastructure for maintaining this library, not a
+fourth way to use it.
 
 PpqPDF: the fixed context for one fit/MCMC run -- an (Ep, Eq) region, the
 observed dataset, and the normalization-integral's convergence tolerance
