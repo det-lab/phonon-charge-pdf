@@ -74,7 +74,7 @@ normalized = band_pdf.ppqn_normalized_values(k=0.18, Z=32.0, F0=0.122, eps=3.0e-
 
 The region is the box the normalization integral is computed over — it has to be your real analysis ROI, not an arbitrary wide range, or the normalization (and so the likelihood) is wrong.  **If you use precomputed tables (`ppqn_table=`/`ppqg_table=`, below) and your region doesn't match the one a table was built for exactly, `PpqPDF` raises at construction rather than silently normalizing wrong.**  The fix is to build a new table for your region — see [Precomputed normalization tables for MCMC](#precomputed-normalization-tables-for-mcmc-pythonclinormgridpy), in particular "One command for a whole table" below.
 
-See [Normalizing a likelihood fit to a region](#normalizing-a-likelihood-fit-to-a-region-ppqpdf) below for the full walkthrough, including precomputed tables for MCMC.  If you instead want to generate simulated (Ep, Eq) events, see [Generating simulated events: `event_generator.py`](#generating-simulated-events-event_generatorpy) below — a second, independent entrypoint with no Fortran dependency.  Everything else under `python/` — `python/internal/` (`_ppqfort_bindings.py`, the raw, unnormalized ctypes layer `PpqPDF` is built on — private, leading underscore, not a public API; and `ppq_dist.py`, the pure-Python reference implementation) and `python/cli/` (`normgrid.py`'s table machinery and friends) — is infrastructure, not a third way to use the library.  See [Verification and validation](#verification-and-validation) for the test suite.
+See [Normalizing a likelihood fit to a region](#normalizing-a-likelihood-fit-to-a-region-ppqpdf) below for the full walkthrough, including precomputed tables for MCMC.  If you instead want to generate simulated (Ep, Eq) events, see [Generating simulated events: `event_generator.py`](#generating-simulated-events-event_generatorpy) below — a second, independent entrypoint with no Fortran dependency; or for the pure-Python reference implementation, see [Pure-Python reference implementation: `ppq_dist.py`](#pure-python-reference-implementation-ppq_distpy) — a third.  Everything else under `python/` — `python/internal/_ppqfort_bindings.py` (the raw, unnormalized ctypes layer `PpqPDF` is built on — private, leading underscore, not a public API) and `python/cli/` (`normgrid.py`'s table machinery and friends) — is infrastructure, not a fourth way to use the library.  See [Verification and validation](#verification-and-validation) for the test suite.
 
 # Normalizing a likelihood fit to a region: `PpqPDF`
 
@@ -114,7 +114,7 @@ Same shape for the ER band (`ppqg_normalized_values`, no `k`/`Z` — `Y=1` there
 
 # Generating simulated events: `event_generator.py`
 
-If you want simulated `(Ep, Eq)` detector events instead of PDF values — to validate a fit pipeline end to end, or to feed a downstream analysis — `event_generator.py` (`python/event_generator.py`) is the entrypoint, independent of `PpqPDF`.  Unlike `PpqPDF`, it has **no Fortran dependency**: it's pure Python/numpy built on `python/internal/ppq_dist.py`, so it works in any environment this package is installed into, container or not.
+If you want simulated `(Ep, Eq)` detector events instead of PDF values — to validate a fit pipeline end to end, or to feed a downstream analysis — `event_generator.py` (`python/event_generator.py`) is the entrypoint, independent of `PpqPDF`.  Unlike `PpqPDF`, it has **no Fortran dependency**: it's pure Python/numpy built on `python/ppq_dist.py`, so it works in any environment this package is installed into, container or not.
 
 ```python
 import sys
@@ -137,6 +137,27 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 The same generative model this draws from — `Er ~ PErN`/`PErG`, `N | Er ~ TruncNormal`, `(Ep, Eq) | Er, N ~ Normal` — is what `PpqN`/`PpqG` are obtained by marginalizing analytically over `N` and numerically over `Er`; `test/python/test_chisquare_{nr,er}_simulator.py` checks that events from this module land on the Fortran `PpqN`/`PpqG`, which is a real physics check since this module never touches `PpqN`/`PpqG` itself. See [Verification and validation](#verification-and-validation).
 
 For single-species sampling without the ROI retry/mixing logic (e.g. for a custom pipeline), the lower-level `generate_NR_events`/`generate_ER_events` are also public — see their docstrings in `event_generator.py`.
+
+# Pure-Python reference implementation: `ppq_dist.py`
+
+`ppq_dist.py` (`python/ppq_dist.py`) is a third public entrypoint: the brute-force, pure-Python reference implementation that `event_generator.py` and the compiled Fortran `PpqN`/`PpqG` are both cross-checked against (`test/python/test_chisquare_{nr,er}_simulator.py`, `test_chisquare_ppqn.py`, `test_PpqFort.py`).  Like `event_generator.py`, it has **no Fortran dependency** — only numpy/scipy — so it works anywhere this package is installed.
+
+```python
+import sys
+sys.path.insert(0, "python")
+from ppq_dist import PpqN_safe_inspect
+
+(PpqN, quad_error), (er_scan, integrand_scan), peaks = PpqN_safe_inspect(
+    Ep=10.0, Eq=5.0,
+    k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
+    p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
+    res=0.1,   # Er scan step, keV -- see the "when to use this" note below
+)
+```
+
+**This is deliberately the slow path — never use it in a fit/MCMC inner loop.** `PpqN_safe_inspect`/`PpqG_safe_inspect` locate the Er integrand's peak(s) by scanning a uniform grid (step `res`, in keV) rather than using the Fortran side's analytic peak location, and integrate each with `scipy.integrate.quad` — correspondingly slower, but with no minimizer to fail.  `res` has to be finer than the narrowest peak you expect: ER peaks can be as narrow as the zero-energy ionization resolution `q0` (~0.06 keV for typical CDMS parameters), so e.g. `res=0.01` for `PpqG_safe_inspect` is finer than the 0.01 keV grid the Fortran `PpqG` itself integrates on.  Vectorized forms (`PpqN_safe_inspect_vec`/`PpqG_safe_inspect_vec`) evaluate paired `(Ep, Eq)` arrays and return just the values, dropping the scan grid and per-peak diagnostics.
+
+Use `PpqPDF` for a fit/MCMC; use this to independently verify `PpqPDF`/`event_generator.py` agree with the underlying physics, or when you want the scan grid and per-peak width/location diagnostics (`peaks` above — one dict per located peak) that `PpqPDF` doesn't expose.  The lower-level pieces this is built from — the yield model `Y`, mean pair count `Nbar`, resolutions `sigp`/`sigq`, the true-recoil-energy spectra `PErN`/`PErG`, the per-Er unnormalized densities `PpqFullN`/`PpqFullG`, and the peak-finding engine `integrate_g_safe_inspect` — are public too (see `python/ppq_dist.py`'s module docstring for the full list), in case you want just the yield model or resolution functions on their own.
 
 # Performance notes
 `PpqN` / `PpqG` integrate over a window placed around the located peak(s) of the Er integrand rather than sampling the full physical range, evaluating at roughly 6 microseconds per (Ep, Eq) point in vector mode (18 threads under x86 emulation; measured via `PpqN_vector` over a representative grid).  This number assumes an ifx or flang build — gfortran builds run the band integrals serially and are ~25x slower (see the compiler notes under [Building from source](#building-from-source)).  For likelihood loops (e.g. MCMC):

@@ -6,7 +6,7 @@ import os
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Path to the directory containing ppq_dist.py
-module_dir = os.path.join(repo_root, 'python', 'internal')
+module_dir = os.path.join(repo_root, 'python')
 sys.path.append(module_dir)
 
 # ppq_dist contains the Python implementation with the numerical N integral
