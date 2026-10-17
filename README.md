@@ -1,5 +1,32 @@
+# band_distribution
+
+[![PyPI](https://img.shields.io/pypi/v/phonon-charge-pdf.svg)](https://pypi.org/project/phonon-charge-pdf/)
+[![Build](https://github.com/det-lab/phonon-charge-pdf/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/det-lab/phonon-charge-pdf/actions/workflows/build.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23049123.svg)](https://doi.org/10.5281/zenodo.23049123)
+
 This code is useful for dark matter searches where detector output is Ep (total phonon energy) and Eq (total charge energy).  The point of the code is to provide the probability of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`PpqG`, where the G is for gamma because gammas are the cause of most electron recoils) and neutron recoils (`PpqN`, where the N is for neutron).
 
+# Quickstart
+
+```bash
+pip install phonon-charge-pdf
+```
+
+```python
+import band_distribution as bd
+
+events = bd.generate_events(
+    target_size=1000, ER_frac=0.6, seed_value=1,
+    ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
+    k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
+    p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
+    PNa=0.53693208, PNb=6.41515782, PNd=23.71789286,
+    PGa=0.573211975, PGb=0.169520023, PGd=279.552394,
+)
+Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
+```
+
+This works with **no Fortran build** — pure Python.  For a fit/MCMC you need the compiled library and `PpqPDF`; see [Using the library: `PpqPDF`](#using-the-library-ppqpdf) below, or pull a [published container](#getting-started-use-the-published-containers) that already has it built.
 
 # Citing
 
@@ -12,27 +39,27 @@ Most users don't need to build anything from source.  Pull a container, then ski
 ## The LLVM container (library, HPC)
 
 ```
-docker pull ghcr.io/det-lab/band_distribution_llvm:v1.1.4
+docker pull ghcr.io/det-lab/band_distribution_llvm:v2.1.0
 ```
 
 or, directly to a `.sif` for HPC — this is what `slurm/pull_container.job` does:
 
 ```
-apptainer build band.sif docker://ghcr.io/det-lab/band_distribution_llvm:v1.1.4
+apptainer build band.sif docker://ghcr.io/det-lab/band_distribution_llvm:v2.1.0
 ```
 
-Replace `v1.1.4` with any other release tag (see [releases](https://github.com/det-lab/phonon-charge-pdf/releases) or `git tag -l`), or `latest` for the newest.
+Replace `v2.1.0` with any other release tag (see [releases](https://github.com/det-lab/phonon-charge-pdf/releases) or `git tag -l`), or `latest` for the newest.
 
 ## The Jupyter container (notebooks)
 
 ```
-docker pull ghcr.io/det-lab/band_distribution_jupyter:v1.1.4
+docker pull ghcr.io/det-lab/band_distribution_jupyter:v2.1.0
 ```
 
-Run it with your own repository mounted so your notebooks and edits persist (replace the path before the `:` with your own repository's path; leave `/home/jovyan/work/nrFano` as-is).  The example below mounts `nrFanoII`, a downstream repository that uses `band_distribution`:
+Run it with your own repository mounted so your notebooks and edits persist (replace `/path/to/your/repo` with your own repository's path; leave `/home/jovyan/work/nrFano` as-is):
 
 ```
-docker run -it --rm -p 8888:8888 -v /mnt/c/Users/canto/Repositories/nrFanoII:/home/jovyan/work/nrFano ghcr.io/det-lab/band_distribution_jupyter:v1.1.4
+docker run -it --rm -p 8888:8888 -v /path/to/your/repo:/home/jovyan/work/nrFano ghcr.io/det-lab/band_distribution_jupyter:v2.1.0
 ```
 
 In notebooks, select the **Python (band)** kernel — it runs in the `band` conda environment, which has the compiled library's runtime dependencies and all the python packages.
@@ -344,6 +371,8 @@ Most users don't need this — see [Getting started](#getting-started-use-the-pu
 ## Fortran Package Manager (`fpm`)
 
 This project uses the Fortran Package Manager (fpm).  You'll need to install that to build this project; please see https://fpm.fortran-lang.org/install/index.html#install for instructions on installing fpm on your system.  Currently (Oct 2026), both building from source and installing via `conda` get the same version, 0.13.0.
+
+**Shortcut:** `make test-gfortran` / `make test-ifx` / `make test-flang` and `make install-gfortran` / `make install-ifx` / `make install-flang` (see the `Makefile`) wrap the exact commands below, including generating `src/version.f90.inc` first.  The commands below remain the source of truth for the flags and are what you want for anything non-default (a one-off flag override, a compiler the Makefile doesn't cover).
 
 Before `fpm build`/`fpm test`, generate `src/version.f90.inc` (not committed — `src/PpqFort_m.f90` `include`s it, so the build fails loudly if you skip this rather than silently reporting a stale version):
 
