@@ -41,7 +41,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))
+sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _ppqfort_bindings
+sys.path.insert(0, str(REPO_ROOT / "python"))  # ppq_dist
 import ppq_dist as ppq
 import sample_from_pdf as spdf
 from band_breakpoints import make_ridge_breakpoints

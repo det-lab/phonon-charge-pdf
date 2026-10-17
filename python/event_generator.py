@@ -6,9 +6,9 @@ matters). If you want normalized PDF values or a likelihood instead, use
 PpqPDF (python/ppq_pdf.py).
 
 Unlike PpqPDF, this module has no Fortran dependency at all -- it is pure
-Python/numpy built on python/internal/ppq_dist.py's Y/Nbar/sigp/sigq, so it
-works in any environment that can `pip install` this package, compiled
-library or not.
+Python/numpy built on python/ppq_dist.py's Y/Nbar/sigp/sigq (itself a
+public entrypoint; see its module docstring), so it works in any
+environment that can `pip install` this package, compiled library or not.
 
 Quickstart
 ----------
@@ -74,8 +74,7 @@ import os
 import sys
 
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
-_INTERNAL_DIR = os.path.join(_PYTHON_DIR, "internal")
-sys.path.insert(0, _INTERNAL_DIR)
+sys.path.insert(0, _PYTHON_DIR)
 import ppq_dist as ppq
 
 
