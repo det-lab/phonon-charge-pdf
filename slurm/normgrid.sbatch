@@ -39,17 +39,17 @@
 #          --retry-failed --epsrel 1e-6
 #
 # Environment (all optional):
-#   BAND_SIF         container image (default /scratch/$USER/containers/band.sif,
+#   PDF_SIF         container image (default /scratch/$USER/containers/pdf.sif,
 #                    where slurm/pull_container.job puts it; or build one from
 #                    Dockerfile_intel or _llvm as in the README).  Set
-#                    BAND_NATIVE=1 to skip the container and use the repo's own
+#                    PDF_NATIVE=1 to skip the container and use the repo's own
 #                    python/ and lib/ (i.e. you built the library on the cluster).
-#   BAND_PYTHON      python inside the container (default: the image's conda
-#                    'band' env; the login-shell conda activation in the
+#   PDF_PYTHON      python inside the container (default: the image's conda
+#                    'pdf' env; the login-shell conda activation in the
 #                    Dockerfile does not happen under apptainer)
-#   BAND_CONTAINER_CMD  force apptainer or singularity (default: whichever is
+#   PDF_CONTAINER_CMD  force apptainer or singularity (default: whichever is
 #                    on PATH, preferring apptainer)
-#   BAND_PYTHON_FROM_REPO=1  bind this checkout's python/ over the image's
+#   PDF_PYTHON_FROM_REPO=1  bind this checkout's python/ over the image's
 #                    /app/python, so python-side changes need no image
 #                    rebuild.  Only safe while the image's Fortran is current.
 
@@ -73,43 +73,43 @@ mkdir -p "$OUT_DIR"
 # start its own OpenMP pool and the tasks would oversubscribe their core.
 export OMP_NUM_THREADS=1
 
-if [[ "${BAND_NATIVE:-0}" == "1" ]]; then
+if [[ "${PDF_NATIVE:-0}" == "1" ]]; then
     RUN=()          # (expanded as ${RUN[@]+"${RUN[@]}"}: an empty array is an error under set -u on bash < 4.4)
-    PY=${BAND_PYTHON:-python}
+    PY=${PDF_PYTHON:-python}
     NORMGRID=python/cli/normgrid.py
     export LD_LIBRARY_PATH="$PWD/lib:${LD_LIBRARY_PATH:-}"
 else
     # apptainer and singularity take the same arguments here; clusters have
     # one or the other (Alderaan ships only singularity-ce), so take whichever
-    # is on PATH rather than assuming.  BAND_CONTAINER_CMD forces a choice.
-    if [[ -n "${BAND_CONTAINER_CMD:-}" ]]; then
-        CONTAINER_CMD=$BAND_CONTAINER_CMD
+    # is on PATH rather than assuming.  PDF_CONTAINER_CMD forces a choice.
+    if [[ -n "${PDF_CONTAINER_CMD:-}" ]]; then
+        CONTAINER_CMD=$PDF_CONTAINER_CMD
     elif command -v apptainer >/dev/null 2>&1; then
         CONTAINER_CMD=apptainer
     elif command -v singularity >/dev/null 2>&1; then
         CONTAINER_CMD=singularity
     else
         echo "neither apptainer nor singularity is on PATH on $(hostname);" >&2
-        echo "set BAND_CONTAINER_CMD, or BAND_NATIVE=1 to use a local build" >&2
+        echo "set PDF_CONTAINER_CMD, or PDF_NATIVE=1 to use a local build" >&2
         exit 1
     fi
 
     BINDS=(--bind "$PWD:$PWD")
     # The image carries both the compiled library (/app/lib) and a copy of
-    # python/ taken at build time.  BAND_PYTHON_FROM_REPO=1 binds this
+    # python/ taken at build time.  PDF_PYTHON_FROM_REPO=1 binds this
     # checkout's python/ over /app/python so python-side changes do not need
     # an image rebuild -- valid exactly while the Fortran in the image is
     # current, since /app/lib still comes from the image.
-    if [[ "${BAND_PYTHON_FROM_REPO:-0}" == "1" ]]; then
+    if [[ "${PDF_PYTHON_FROM_REPO:-0}" == "1" ]]; then
         BINDS+=(--bind "$PWD/python:/app/python")
     fi
 
-    SIF=${BAND_SIF:-/scratch/$USER/containers/band.sif}
-    [[ -f "$SIF" ]] || { echo "no container at $SIF on $(hostname): set BAND_SIF" >&2; exit 1; }
+    SIF=${PDF_SIF:-/scratch/$USER/containers/pdf.sif}
+    [[ -f "$SIF" ]] || { echo "no container at $SIF on $(hostname): set PDF_SIF" >&2; exit 1; }
     RUN=("$CONTAINER_CMD" exec "${BINDS[@]}" --pwd "$PWD" "$SIF")
-    PY=${BAND_PYTHON:-/opt/anaconda/envs/band/bin/python}
+    PY=${PDF_PYTHON:-/opt/anaconda/envs/pdf/bin/python}
     NORMGRID=/app/python/cli/normgrid.py
-    export APPTAINERENV_LD_LIBRARY_PATH="/app/lib:/opt/anaconda/envs/band/lib"
+    export APPTAINERENV_LD_LIBRARY_PATH="/app/lib:/opt/anaconda/envs/pdf/lib"
     export SINGULARITYENV_LD_LIBRARY_PATH=$APPTAINERENV_LD_LIBRARY_PATH   # older singularity
 fi
 

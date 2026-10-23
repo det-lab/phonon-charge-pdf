@@ -15,7 +15,7 @@
 #              held-out relative error exceeds ACCEPT
 # The light Python steps (plan, merge, validate) run with $PYTHON on the login
 # node, as slurm/submit_alderaan.sh does; the integrals run in the container
-# via normgrid.sbatch (BAND_SIF etc. are read there; BAND_NATIVE=1 works too).
+# via normgrid.sbatch (PDF_SIF etc. are read there; PDF_NATIVE=1 works too).
 # Every array is checked with sacct once it ends: `sbatch --wait` exits 0 on
 # Alderaan even when tasks fail, so a failed task stops the chain here instead.
 #
@@ -38,7 +38,7 @@
 #                 box gets its own build directory and table name (tag
 #                 suffix _box<hash>): study and held-out results depend on it.
 #   ACCOUNT= PARTITION= TIME=   passed to sbatch when set
-#   BAND_SIF=/scratch/$USER/containers/band.sif   the container (as in
+#   PDF_SIF=/scratch/$USER/containers/pdf.sif   the container (as in
 #                 normgrid.sbatch); checked here before anything is submitted
 #   WORKDIR=build/<tag>   OUT_TABLE=tables/norm_<tag>.h5   PYTHON=python3
 
@@ -66,9 +66,9 @@ PLAN=$WORK/tol$TOL
 OUT_TABLE=${OUT_TABLE:-tables/norm_$TAG.h5}
 mkdir -p logs "$WORK/study_results" "$WORK/held_results" "$PLAN/results" "$(dirname "$OUT_TABLE")"
 
-if [[ "${BAND_NATIVE:-0}" != "1" ]]; then
-    export BAND_SIF=${BAND_SIF:-/scratch/$USER/containers/band.sif}
-    [[ -f "$BAND_SIF" ]] || { echo "no container at $BAND_SIF: set BAND_SIF, or pull one with slurm/pull_container.job" >&2; exit 1; }
+if [[ "${PDF_NATIVE:-0}" != "1" ]]; then
+    export PDF_SIF=${PDF_SIF:-/scratch/$USER/containers/pdf.sif}
+    [[ -f "$PDF_SIF" ]] || { echo "no container at $PDF_SIF: set PDF_SIF, or pull one with slurm/pull_container.job" >&2; exit 1; }
 fi
 
 SBATCH_ARGS=()

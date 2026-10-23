@@ -15,9 +15,9 @@ import ppq_dist as ppq
 
 folderpath = repo_root
 if sys.platform == 'darwin':
-    DLLname = 'lib/libband_distribution.dylib'
+    DLLname = 'lib/libphonon_charge_pdf.dylib'
 elif os.name == 'posix':  # Linux
-    DLLname = 'lib/libband_distribution.so'
+    DLLname = 'lib/libphonon_charge_pdf.so'
 else:
     print('OS other than Linux/Mac are not supported')
 

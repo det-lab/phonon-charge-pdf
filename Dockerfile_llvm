@@ -48,8 +48,8 @@ COPY environment.yaml .
 # Create conda environment from the yaml file
 # this installs fpm and intel compiler
 RUN conda env create -f environment.yaml
-RUN echo "conda activate band" >> ~/.bash_profile
-RUN echo "conda activate band" >> ~/.bashrc
+RUN echo "conda activate pdf" >> ~/.bash_profile
+RUN echo "conda activate pdf" >> ~/.bashrc
 
 # Source - https://stackoverflow.com/a/39777387
 # Posted by Ahmad Abdelghany, modified by community. See post 'Timeline' for change history
@@ -60,28 +60,34 @@ SHELL ["/bin/bash", "--login", "-c"]
 
 # Stage the source: defaults to this local checkout; if GIT_REF is set,
 # the RUN step below discards this and clones that revision instead.
-COPY src /tmp/band_src/src/
-COPY test /tmp/band_src/test
-COPY fpm.toml /tmp/band_src/
-COPY python /tmp/band_src/python/
-COPY scripts /tmp/band_src/scripts/
+COPY src /tmp/pdf_src/src/
+COPY test /tmp/pdf_src/test
+COPY fpm.toml /tmp/pdf_src/
+COPY pyproject.toml /tmp/pdf_src/
+COPY LICENSE /tmp/pdf_src/
+COPY README.md /tmp/pdf_src/
+COPY python /tmp/pdf_src/python/
+COPY scripts /tmp/pdf_src/scripts/
 
 RUN if [ -n "$GIT_REF" ]; then \
-        echo "Building band_distribution @ $GIT_REF (overriding local checkout)" && \
-        rm -rf /tmp/band_src && \
-        git clone https://github.com/det-lab/band_distribution.git /tmp/band_src && \
-        cd /tmp/band_src && git checkout "$GIT_REF"; \
+        echo "Building phonon-charge-pdf @ $GIT_REF (overriding local checkout)" && \
+        rm -rf /tmp/pdf_src && \
+        git clone https://github.com/det-lab/phonon-charge-pdf.git /tmp/pdf_src && \
+        cd /tmp/pdf_src && git checkout "$GIT_REF"; \
     else \
-        echo "Building band_distribution from the local checkout"; \
+        echo "Building phonon-charge-pdf from the local checkout"; \
     fi
 
 RUN mkdir -p /app/src /app/test /app/python /app/scripts \
-    && cp -r /tmp/band_src/src/. /app/src/ \
-    && cp -r /tmp/band_src/test/. /app/test/ \
-    && cp -r /tmp/band_src/python/. /app/python/ \
-    && cp -r /tmp/band_src/scripts/. /app/scripts/ \
-    && cp /tmp/band_src/fpm.toml /app/ \
-    && rm -rf /tmp/band_src
+    && cp -r /tmp/pdf_src/src/. /app/src/ \
+    && cp -r /tmp/pdf_src/test/. /app/test/ \
+    && cp -r /tmp/pdf_src/python/. /app/python/ \
+    && cp -r /tmp/pdf_src/scripts/. /app/scripts/ \
+    && cp /tmp/pdf_src/fpm.toml /app/ \
+    && cp /tmp/pdf_src/pyproject.toml /app/ \
+    && cp /tmp/pdf_src/LICENSE /app/ \
+    && cp /tmp/pdf_src/README.md /app/ \
+    && rm -rf /tmp/pdf_src
 
 # version.f90.inc (PpqFort_version(); not committed, see the script) must
 # exist before fpm build/test -- it is a plain `include` in src/PpqFort_m.f90
@@ -90,7 +96,7 @@ RUN python scripts/generate_version_include.py
 # Link the LLVM OpenMP runtime into everything fpm builds here (including
 # interactive fpm invocations inside the container).  The flang-compiled
 # shared library references __kmpc_* symbols, and without -fopenmp at link
-# time the Python ctypes load of libband_distribution.so fails.
+# time the Python ctypes load of libphonon_charge_pdf.so fails.
 ENV FPM_LDFLAGS="-fopenmp"
 
 # Now compile the fortran code.
@@ -109,5 +115,5 @@ ENV LD_LIBRARY_PATH=/app/lib:$LD_LIBRARY_PATH
 # Published normalization tables (python/cli/table_registry.json), fetched and
 # hash-checked at build time -- HPC compute nodes often have no internet.
 # python/cli/normtables.py (and so PpqPDF(ppqn_table=NAME)) finds them here.
-ENV BAND_TABLES_DIR=/app/tables
+ENV PDF_TABLES_DIR=/app/tables
 RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all

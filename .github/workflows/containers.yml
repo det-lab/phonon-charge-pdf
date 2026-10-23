@@ -44,9 +44,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: band_distribution_llvm
+          - image: phonon-charge-pdf-llvm
             dockerfile: Dockerfile_llvm
-          - image: band_distribution_jupyter
+          - image: phonon-charge-pdf-jupyter
             dockerfile: Dockerfile_jupyter
     steps:
       - name: Resolve build ref and image tags

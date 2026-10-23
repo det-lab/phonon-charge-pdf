@@ -1,4 +1,4 @@
-project: band_distribution
+project: phonon-charge-pdf
 summary: A total phonon energy and total photon energy calculator for dark matter searches
 src_dir: src
 exclude_dir: doc

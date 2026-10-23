@@ -1,7 +1,7 @@
 # Profiling with TAU
 
 This is a maintainer workflow for profiling the Fortran library itself — not
-needed to use `band_distribution` for a fit or MCMC.  See the main
+needed to use `phonon_charge_pdf` for a fit or MCMC.  See the main
 [README](../README.md) for that.
 
 TAU is built into `Dockerfile_tau_intel`. This image uses the ifx compiler because that compiler is the easiest to install outside a Docker container.  Build that image first:
@@ -46,7 +46,7 @@ tau_f90.sh -O3 -g -qopenmp -fpp -I/app/include -c /app/src/PpqFort_s.f90
 tau_f90.sh -O3 -g -qopenmp -fpp \
     -I/app/include \
     PpqFort_m.o PpqFort_s.o /repo/app/profile_driver.f90 \
-    -L/app/lib -lband_distribution \
+    -L/app/lib -lphonon_charge_pdf \
     -Wl,-rpath,/app/lib \
     -o /repo/profile_driver
 ```
@@ -88,7 +88,7 @@ tau_f90.sh -O3 -g -qopenmp -fpp -I/tmp/band_new/include -c /repo/src/PpqFort_s.f
 tau_f90.sh -O3 -g -qopenmp -fpp \
     -I/tmp/band_new/include \
     PpqFort_m.o PpqFort_s.o /repo/app/profile_driver.f90 \
-    -L/tmp/band_new/lib -lband_distribution \
+    -L/tmp/band_new/lib -lphonon_charge_pdf \
     -Wl,-rpath,/tmp/band_new/lib \
     -o /repo/profile_driver
 ```

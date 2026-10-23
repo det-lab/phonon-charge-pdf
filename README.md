@@ -12,13 +12,13 @@ Most users don't need to build anything from source.  Pull a container, then ski
 ## The LLVM container (library, HPC)
 
 ```
-docker pull ghcr.io/det-lab/band_distribution_llvm:v1.1.4
+docker pull ghcr.io/det-lab/phonon-charge-pdf-llvm:v1.1.4
 ```
 
 or, directly to a `.sif` for HPC — this is what `slurm/pull_container.job` does:
 
 ```
-apptainer build band.sif docker://ghcr.io/det-lab/band_distribution_llvm:v1.1.4
+apptainer build pdf.sif docker://ghcr.io/det-lab/phonon-charge-pdf-llvm:v1.1.4
 ```
 
 Replace `v1.1.4` with any other release tag (see [releases](https://github.com/det-lab/phonon-charge-pdf/releases) or `git tag -l`), or `latest` for the newest.
@@ -26,16 +26,16 @@ Replace `v1.1.4` with any other release tag (see [releases](https://github.com/d
 ## The Jupyter container (notebooks)
 
 ```
-docker pull ghcr.io/det-lab/band_distribution_jupyter:v1.1.4
+docker pull ghcr.io/det-lab/phonon-charge-pdf-jupyter:v1.1.4
 ```
 
-Run it with your own repository mounted so your notebooks and edits persist (replace the path before the `:` with your own repository's path; leave `/home/jovyan/work/nrFano` as-is).  The example below mounts `nrFanoII`, a downstream repository that uses `band_distribution`:
+Run it with your own repository mounted so your notebooks and edits persist (replace the path before the `:` with your own repository's path; leave `/home/jovyan/work/nrFano` as-is).  The example below mounts `nrFanoII`, a downstream repository that uses `phonon_charge_pdf`:
 
 ```
-docker run -it --rm -p 8888:8888 -v /mnt/c/Users/canto/Repositories/nrFanoII:/home/jovyan/work/nrFano ghcr.io/det-lab/band_distribution_jupyter:v1.1.4
+docker run -it --rm -p 8888:8888 -v /mnt/c/Users/canto/Repositories/nrFanoII:/home/jovyan/work/nrFano ghcr.io/det-lab/phonon-charge-pdf-jupyter:v1.1.4
 ```
 
-In notebooks, select the **Python (band)** kernel — it runs in the `band` conda environment, which has the compiled library's runtime dependencies and all the python packages.
+In notebooks, select the **Python (pdf)** kernel — it runs in the `pdf` conda environment, which has the compiled library's runtime dependencies and all the python packages.
 
 Need a different compiler, local development, or to reproduce an exact uncommitted state instead of a release?  See [Building from source](#building-from-source).
 
@@ -45,7 +45,7 @@ Need a different compiler, local development, or to reproduce an exact uncommitt
 pip install phonon-charge-pdf
 ```
 
-Published on PyPI as `phonon-charge-pdf` -- the PyPI *distribution* name differs from the Python *import* name (`import band_distribution` either way), the same split as `scikit-learn`/`sklearn`. This gives you `PpqPDF` and `generate_events`/`generate_NR_events`/`generate_ER_events` directly, instead of the `sys.path.insert(0, "python")` shown in the examples below (which still works against a checkout -- both are the same code, this just makes it a real package).
+Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes underscore, the usual PyPI convention). This gives you `PpqPDF` and `generate_events`/`generate_NR_events`/`generate_ER_events` directly, instead of the `sys.path.insert(0, "python")` shown in the examples below (which still works against a checkout -- both are the same code, this just makes it a real package).
 
 For local development instead of a pinned release, `pip install -e .` from a checkout does the same (add `[test]` for the dependencies the test suite and chi-square validation need: `pip install -e ".[test]"`). The package's version comes from the nearest git tag (`setuptools-scm`), not a hand-maintained string.
 
@@ -172,7 +172,7 @@ Even at ~2 s, computing the normalization integral at every MCMC step is out of 
 A few design points worth knowing:
 
 * **Axes.** `k`, `F0` (used *linearly* — the integral is smooth in F0 but not in log F0, so 3 nodes give ~3e-9 where log F0 needs 9+), `V`, `p0`, `dp = p10 - p0`, `q0`, `dq = q10 - q0`.  The resolution model `sigp² = p0² + (p10² - p0²)(Ep/c)²` is only defined for `p10 >= p0` (likewise `q10 >= q0`), so a plain `(p0, p10)` or `(q0, q10)` box would contain unphysical corners (the `q0` and `q10` ranges overlap); `dp >= 0` and `dq >= 0` keep the box rectangular.  Query the table with the physical `p10`/`q10`; it converts.  `PpqN_region`/`PpqG_region` now error out in ~0.3 s on such inputs (and on `F0, eps, p0, q0, k, Z <= 0`, an empty region, or NaN) instead of grinding for minutes.
-* **Interpolant.** Tensor-product Chebyshev series through Chebyshev–Lobatto nodes, built and evaluated with `numpy.polynomial.chebyshev` (`chebfit`/`chebval`; exact at the nodes, ~40 µs per lookup natively — about 0.1% of a 20,000-event likelihood evaluation).  It **never extrapolates** — a query outside the table's box raises `OutOfBoxError`, so keep the MCMC prior inside the box (see [Fits and MCMC with the tables](#fits-and-mcmc-with-the-tables); default box: `k` 0.13–0.22, `F0` 1e-5–1 (ER: 0.1–0.35, bracketing the effective low-field electron-recoil Fano factor of ~0.2–0.3), `V` 2.7–3.3, `p0` 0.0128–0.1156 and `q0` 0.0474–0.4 (the ±4σ range of Gaussian priors centred on 0.0642 and 0.2372 with a 20% 1σ width, `q0` capped at the maximum `q10`), `dp = p10-p0` 0.18–0.59 and `dq = q10-q0` 0–0.353 (from `p10` 0.3–0.6, `q10` 0.2–0.4); for a different one, rebuild with `BOX=`, e.g. `BOX="V=2.5:4" sbatch slurm/build_table.job ...`, or change the defaults `DEFAULT_BOX` / `BAND_BOX_OVERRIDES`).
+* **Interpolant.** Tensor-product Chebyshev series through Chebyshev–Lobatto nodes, built and evaluated with `numpy.polynomial.chebyshev` (`chebfit`/`chebval`; exact at the nodes, ~40 µs per lookup natively — about 0.1% of a 20,000-event likelihood evaluation).  It **never extrapolates** — a query outside the table's box raises `OutOfBoxError`, so keep the MCMC prior inside the box (see [Fits and MCMC with the tables](#fits-and-mcmc-with-the-tables); default box: `k` 0.13–0.22, `F0` 1e-5–1 (ER: 0.1–0.35, bracketing the effective low-field electron-recoil Fano factor of ~0.2–0.3), `V` 2.7–3.3, `p0` 0.0128–0.1156 and `q0` 0.0474–0.4 (the ±4σ range of Gaussian priors centred on 0.0642 and 0.2372 with a 20% 1σ width, `q0` capped at the maximum `q10`), `dp = p10-p0` 0.18–0.59 and `dq = q10-q0` 0–0.353 (from `p10` 0.3–0.6, `q10` 0.2–0.4); for a different one, rebuild with `BOX=`, e.g. `BOX="V=2.5:4" sbatch slurm/build_table.job ...`, or change the defaults `DEFAULT_BOX` / `PDF_BOX_OVERRIDES`).
 * **Node counts** (`RECOMMENDED_NODES`, from per-axis studies against directly computed held-out points; region-dependent): NR `k=8 F0=3 V=4 p0=4 dp=3 q0=16 dq=4` (73,728 points); ER `F0=3 V=9 p0=4 dp=6 q0=11 dq=9` (64,152 points).  The counts depend on the region: these are for the analysis ROI Ep 2.5–350 / Eq 0.75–200 (the earlier 2–200 / 4–100 region needed far fewer, e.g. 5 nodes in `q0`).  `q0` is the hard axis for NR — its error falls only ~4× per two nodes — so check it with `validate`.  At roughly 1–3 s per point on one core that is tens of core-hours.  These target ~1e-7 worst-case error per axis, i.e. ~0.02 in the log-likelihood at 20,000 events (the error is `N_events × δN/N`).  Always confirm with `validate` — the per-axis studies cannot see cross terms.
 
 ```
@@ -191,7 +191,7 @@ python python/cli/normgrid.py merge --spec spec_NR.json --results 'res_*.txt' --
 python python/cli/normgrid.py validate --table norm_NR.h5 --heldout-spec held_NR.json --results res_held.txt
 ```
 
-**On a Slurm cluster** use the **ifx (or flang) container, not gfortran** — gfortran runs the band integrals ~25x slower — via `slurm/normgrid.sbatch`, a job-array template (one single-core task per chunk of grid points; `OMP_NUM_THREADS=1` so an ifx build doesn't oversubscribe cores; a header comment gives the exact `sbatch` and `merge`/`validate` commands, and resubmitting the same array only redoes unfinished chunks).  It runs the container `$BAND_SIF` (default `/scratch/$USER/containers/band.sif`, as pulled by `slurm/pull_container.job`), a `band.sif` built from `Dockerfile_intel` or `Dockerfile_llvm` (see Docker / Apptainer images under [Building from source](#building-from-source)), or set `BAND_NATIVE=1` to use a library you built on the cluster.  `osg/` holds a similar HTCondor template.
+**On a Slurm cluster** use the **ifx (or flang) container, not gfortran** — gfortran runs the band integrals ~25x slower — via `slurm/normgrid.sbatch`, a job-array template (one single-core task per chunk of grid points; `OMP_NUM_THREADS=1` so an ifx build doesn't oversubscribe cores; a header comment gives the exact `sbatch` and `merge`/`validate` commands, and resubmitting the same array only redoes unfinished chunks).  It runs the container `$PDF_SIF` (default `/scratch/$USER/containers/pdf.sif`, as pulled by `slurm/pull_container.job`), a `pdf.sif` built from `Dockerfile_intel` or `Dockerfile_llvm` (see Docker / Apptainer images under [Building from source](#building-from-source)), or set `PDF_NATIVE=1` to use a library you built on the cluster.  `osg/` holds a similar HTCondor template.
 
 **One command for a whole table.**  How many nodes an axis needs depends on the fit region (the same box needed 5 nodes in `q0` for Eq 4–100 and about 16 for Eq 0.75–200), so `slurm/build_table.sh` measures instead of assuming.  For a region it (1) evaluates 33 Chebyshev–Lobatto nodes along each axis at three baseline points (`python/cli/normplan.py points`, about 700 integrals), (2) reads the Chebyshev coefficients of each axis to find the fewest nodes whose truncation error is below `TOL` (`python/cli/normplan.py analyze`; it stops with an error if an axis is not resolved by 33 nodes, rather than guessing), (3) evaluates the resulting grid and a set of held-out points, and (4) merges and validates, exiting with status 1 if the worst held-out error exceeds `ACCEPT`:
 
@@ -200,7 +200,7 @@ sbatch slurm/build_table.job NR 2.5 350 0.75 200              # -> tables/norm_N
 TOL=2.5e-8 sbatch slurm/build_table.job NR 2.5 350 0.75 200   # retry with more nodes; earlier results are reused
 ```
 
-Each Slurm stage is `sbatch --wait slurm/normgrid.sbatch ...`, so `slurm/build_table.sh` runs until the whole chain is done; `slurm/build_table.job` runs it as a single-core driver job that waits in the queue like any other (the environment at submission, e.g. `TOL`, is passed on).  Every array is checked with `sacct` when it ends and a failed task stops the chain (`sbatch --wait` exits 0 on Alderaan even when tasks fail).  The container is `BAND_SIF`, by default `/scratch/$USER/containers/band.sif` where `slurm/pull_container.job` puts it.  Options (`TOL`, `EPSREL`, `ACCEPT`, chunk sizes, `ACCOUNT`/`PARTITION`/`TIME`) are documented in the script header.  The one-axis-at-a-time study cannot see cross terms between axes, which is why the held-out check is the gate.  `test/slurm/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and an analytic stand-in for the integrals.
+Each Slurm stage is `sbatch --wait slurm/normgrid.sbatch ...`, so `slurm/build_table.sh` runs until the whole chain is done; `slurm/build_table.job` runs it as a single-core driver job that waits in the queue like any other (the environment at submission, e.g. `TOL`, is passed on).  Every array is checked with `sacct` when it ends and a failed task stops the chain (`sbatch --wait` exits 0 on Alderaan even when tasks fail).  The container is `PDF_SIF`, by default `/scratch/$USER/containers/pdf.sif` where `slurm/pull_container.job` puts it.  Options (`TOL`, `EPSREL`, `ACCEPT`, chunk sizes, `ACCOUNT`/`PARTITION`/`TIME`) are documented in the script header.  The one-axis-at-a-time study cannot see cross terms between axes, which is why the held-out check is the gate.  `test/slurm/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and an analytic stand-in for the integrals.
 
 `run` is resumable and crash-tolerant: Fortran `error stop` (e.g. the quadrature not certifying `epsrel=1e-7`) kills the process, so a supervisor records that point as `nan` and restarts past it; re-run failures with a looser tolerance via `run --retry-failed --epsrel 1e-6`.  `merge` refuses to build a table with missing points.  The HDF5 file records the region, fixed parameters, library version and git commit it was built with — rebuild if any of those change.  (`h5py` is in `environment.yaml`.)  Then hand the tables to `PpqPDF`; nothing else in the fit changes:
 
@@ -214,7 +214,7 @@ band_pdf = PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
 # band_pdf.ppqn_integral(...) / band_pdf.ppqg_integral(...) now interpolate instead of integrating
 ```
 
-**Published tables** are listed in `python/cli/table_registry.json` and can be passed by name instead of a path: `python/cli/normtables.py` downloads them from [Zenodo](https://doi.org/10.5281/zenodo.23048215) on first use, checks their SHA-256, and caches them (`$BAND_TABLES_DIR`, else `~/.cache/band_distribution`; the containers ship with every registered table in `/app/tables`).  `python python/cli/normtables.py list` shows what is available.
+**Published tables** are listed in `python/cli/table_registry.json` and can be passed by name instead of a path: `python/cli/normtables.py` downloads them from [Zenodo](https://doi.org/10.5281/zenodo.23048215) on first use, checks their SHA-256, and caches them (`$PDF_TABLES_DIR`, else `~/.cache/phonon_charge_pdf`; the containers ship with every registered table in `/app/tables`).  `python python/cli/normtables.py list` shows what is available.
 
 # Fits and MCMC with the tables
 
@@ -286,7 +286,7 @@ LD_LIBRARY_PATH=lib python test/python/test_PpqFort_vectorFuncs.py
 
 (`LD_LIBRARY_PATH=lib` is needed when running outside the docker containers, which set it in their environment.)
 
-`test/python/test_pip_packaging.py` is the one test here that's meant to run *without* the compiled library: against a `pip install -e ".[test]"` of this repository (see [Installing the Python package](#installing-the-python-package)) and before the library is built, it checks that `import band_distribution` and `event_generator.py`'s functions still work, and that `PpqPDF` fails clearly at construction instead of silently succeeding.
+`test/python/test_pip_packaging.py` is the one test here that's meant to run *without* the compiled library: against a `pip install -e ".[test]"` of this repository (see [Installing the Python package](#installing-the-python-package)) and before the library is built, it checks that `import phonon_charge_pdf` and `event_generator.py`'s functions still work, and that `PpqPDF` fails clearly at construction instead of silently succeeding.
 
 See `test/python/README.md` for a map of the test scripts and their supporting modules, including where the PDF-over-bin integration lives.
 
@@ -330,11 +330,11 @@ LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 10000    #
 
 (Timings measured with the ifx build, 18 workers, under x86 emulation on an Apple Silicon Mac; native x86 hardware should be faster.  gfortran builds run the band integrals serially and will be dramatically slower here — use ifx or flang.)
 
-To run inside the Intel docker container (built as `band` — see Docker / Apptainer images under [Building from source](#building-from-source)), mount the repository's `figures/` directory so the plot survives the container:
+To run inside the Intel docker container (built as `pdf` — see Docker / Apptainer images under [Building from source](#building-from-source)), mount the repository's `figures/` directory so the plot survives the container:
 
 ```
-docker run --rm -v $(pwd)/figures:/app/figures band \
-    bash --login -c "conda activate band && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
+docker run --rm -v $(pwd)/figures:/app/figures pdf \
+    bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
 ```
 
 # Building from source
@@ -367,7 +367,7 @@ Notes:
 * LLVM: the compiler is invoked as `flang`.  `-fdo-concurrent-to-openmp=host` is what parallelizes the `do concurrent` loops; without it they compile to serial loops.  The LLVM container sets `FPM_LDFLAGS="-fopenmp"` so the shared library links against `libomp`.  Intel and LLVM builds benchmark identically (~6 us per event in vector mode on 18 emulated cores).
 
 ## Shared library for the python interface
-The python wrappers load `lib/libband_distribution.so`, which `fpm install` builds and places under the repository root.  Use the same flags as the test commands above; for Intel and LLVM, `FPM_LDFLAGS` must also be set so the *shared library* links its OpenMP runtime — without it the library builds but fails to load from python with undefined `__kmpc_*` symbols:
+The python wrappers load `lib/libphonon_charge_pdf.so`, which `fpm install` builds and places under the repository root.  Use the same flags as the test commands above; for Intel and LLVM, `FPM_LDFLAGS` must also be set so the *shared library* links its OpenMP runtime — without it the library builds but fails to load from python with undefined `__kmpc_*` symbols:
 
 ```
 # Intel
@@ -388,18 +388,18 @@ There are multiple Dockerfiles, each building the code with a compiler from a di
 |------|---------------------|-------|
 |GNU   | Dockerfile_gfortran | Slow: gfortran runs the band integrals serially, ~25x slower than ifx/flang (see the compiler notes above) |
 |Intel | Dockerfile_intel    | Recommended for work that needs speed |
-|LLVM  | Dockerfile_llvm     | Same performance as the Intel build; preferred for any image meant to be published, since `environment.yaml` never installs Intel's ifx unless a Dockerfile explicitly adds it (`Dockerfile_intel`/`_tau_intel` do, via `conda install -n band ifx_linux-64` after the shared environment is created) |
+|LLVM  | Dockerfile_llvm     | Same performance as the Intel build; preferred for any image meant to be published, since `environment.yaml` never installs Intel's ifx unless a Dockerfile explicitly adds it (`Dockerfile_intel`/`_tau_intel` do, via `conda install -n pdf ifx_linux-64` after the shared environment is created) |
 
 Choose which compiler you want, determine the name of the dockerfile, and then issue the following command:
 
 ```
-docker build -f {dockerfile name} -t band .
+docker build -f {dockerfile name} -t pdf .
 ```
 
 By default this builds from your local checkout, including any uncommitted changes.  To instead build a specific released version — e.g. so someone else can reproduce your exact results without needing their own clone lined up to the right commit — pass `GIT_REF` as a build argument.  It clones the repository fresh from GitHub and checks out that tag or commit hash in place of the local files:
 
 ```
-docker build -f {dockerfile name} -t band --build-arg GIT_REF=v0.9.0 .
+docker build -f {dockerfile name} -t pdf --build-arg GIT_REF=v0.9.0 .
 ```
 
 `GIT_REF` accepts any tag or commit hash (run `git tag -l` to see available versions) and works identically on all five Dockerfiles (`Dockerfile_gfortran`, `Dockerfile_intel`, `Dockerfile_llvm`, `Dockerfile_jupyter`, `Dockerfile_tau_intel`).  `v0.9.0` is the last release before the Lindhard `(k, Z)` yield model's breaking interface change.
@@ -407,13 +407,13 @@ docker build -f {dockerfile name} -t band --build-arg GIT_REF=v0.9.0 .
 If you need to troubleshoot the docker build, you can shell into this container with the command
 
 ```
-docker run -it band
+docker run -it pdf
 ```
 
-Now you have a docker container that contains the fortran binary, but this is not usable on HPC systems.  Run this command to create `band.sif`, an image file that can be used on HPC systems.  The command can be issued in any location (it is not directory dependent).
+Now you have a docker container that contains the fortran binary, but this is not usable on HPC systems.  Run this command to create `pdf.sif`, an image file that can be used on HPC systems.  The command can be issued in any location (it is not directory dependent).
 
 ```
-apptainer build band.sif docker-daemon://band:latest
+apptainer build pdf.sif docker-daemon://pdf:latest
 ```
 
 ## Jupyter image
@@ -430,7 +430,7 @@ This image compiles with flang (LLVM), like `Dockerfile_llvm`, not ifx: it is me
 For local development, you most likely want the files available to you in a way that persists once you close the container.  In this case you need to supply arguments to `docker run` that mount the top-level directory:
 
 ```
-docker run -it --mount type=bind,src=.,dst=/app --entrypoint=/bin/bash band
+docker run -it --mount type=bind,src=.,dst=/app --entrypoint=/bin/bash pdf
 ```
 
 ## Profiling with TAU
@@ -438,4 +438,4 @@ Maintainer workflow for profiling the Fortran library itself, not needed to use 
 
 # Documentation
 With [ford](https://github.com/Fortran-FOSS-Programmers/ford) installed, run `ford ford.md`.
-Then open `doc/html/index.html` in a web browser to see the band_distribution documentation.
+Then open `doc/html/index.html` in a web browser to see the phonon-charge-pdf documentation.

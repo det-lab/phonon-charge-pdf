@@ -5,7 +5,7 @@ Uses chisquare_harness.run_chisquare_test (equibin bins, PDF-integrated
 expected counts, batched chi-square throws; see that module's
 docstring for the general workflow).  Specific to this test:
 
-- The PDF comes from lib/libband_distribution.so via python/internal/_ppqfort_bindings.py
+- The PDF comes from lib/libphonon_charge_pdf.so via python/internal/_ppqfort_bindings.py
   (threaded chunked PpqN_vector calls), unnormalized -- fine here since this
   test only checks the PDF's *shape* (sampled events vs. its own density),
   which a constant normalization factor doesn't affect.  For a fit or MCMC,
@@ -107,7 +107,7 @@ print(f"Feature-scaled grid: {ep_edges.size} x {eq_edges.size} vertices "
       f"({CELLS_PER_SIGMA} cells per local band width)")
 
 # cache key includes the shared library hash so a rebuilt .so invalidates it
-with open(REPO_ROOT / "lib" / "libband_distribution.so", "rb") as f:
+with open(REPO_ROOT / "lib" / "libphonon_charge_pdf.so", "rb") as f:
     lib_hash = hashlib.sha256(f.read()).hexdigest()
 
 vertex_values = None

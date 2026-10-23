@@ -11,9 +11,9 @@ calls it for any table argument that is not an existing file.
     import normtables
     path = normtables.fetch("NR_ep2.5-350_eq0.75-200")
 
-Cache: $BAND_TABLES_DIR if set (the container sets it to /app/tables, where
+Cache: $PDF_TABLES_DIR if set (the container sets it to /app/tables, where
 its build fetched every registered table -- HPC compute nodes often have no
-internet), else the user cache directory (~/.cache/band_distribution).
+internet), else the user cache directory (~/.cache/phonon_charge_pdf).
 
 CLI (from the repository root):
 
@@ -41,7 +41,7 @@ def load_registry(path=REGISTRY):
 
 def _cache_dir():
     import pooch
-    return os.environ.get("BAND_TABLES_DIR") or pooch.os_cache("band_distribution")
+    return os.environ.get("PDF_TABLES_DIR") or pooch.os_cache("phonon_charge_pdf")
 
 
 def fetch(name, *, registry=REGISTRY):
@@ -59,7 +59,7 @@ def fetch(name, *, registry=REGISTRY):
         raise ImportError("fetching a registered table needs pooch (conda install -c conda-forge pooch); "
                           "or pass the table's file path") from None
     e = entries[key]
-    fetcher = pooch.create(path=_cache_dir(), base_url="", env="BAND_TABLES_DIR",
+    fetcher = pooch.create(path=_cache_dir(), base_url="", env="PDF_TABLES_DIR",
                            registry={e["file"]: "sha256:" + e["sha256"]}, urls={e["file"]: e["url"]})
     return fetcher.fetch(e["file"])
 
