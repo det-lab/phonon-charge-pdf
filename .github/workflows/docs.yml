@@ -47,6 +47,10 @@ jobs:
 
   deploy:
     needs: build
+    # The github-pages environment's deployment branch policy only allows
+    # main, so skip deploy (but still build, to catch broken docs early) on
+    # pushes to develop.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
