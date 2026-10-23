@@ -29,7 +29,7 @@ inside a table and checked on every call.
   1σ width, `q0` capped at the maximum `q10`), `dp = p10-p0` 0.18–0.59 and `dq = q10-q0`
   0–0.353 (from `p10` 0.3–0.6, `q10` 0.2–0.4); for a different one, rebuild with `BOX=`,
   e.g. `BOX="V=2.5:4" sbatch slurm/build_table.job ...`, or change the defaults
-  `DEFAULT_BOX`/`BAND_BOX_OVERRIDES`).
+  `DEFAULT_BOX`/`PDF_BOX_OVERRIDES`).
 - **Node counts** (`RECOMMENDED_NODES`, from per-axis studies against directly computed
   held-out points; region-dependent): NR `k=8 F0=3 V=4 p0=4 dp=3 q0=16 dq=4` (73,728
   points); ER `F0=3 V=9 p0=4 dp=6 q0=11 dq=9` (64,152 points). The counts depend on the
@@ -64,10 +64,10 @@ the band integrals ~25x slower — via `slurm/normgrid.sbatch`, a job-array temp
 single-core task per chunk of grid points; `OMP_NUM_THREADS=1` so an ifx build doesn't
 oversubscribe cores; a header comment gives the exact `sbatch` and `merge`/`validate`
 commands, and resubmitting the same array only redoes unfinished chunks). It runs the
-container `$BAND_SIF` (default `/scratch/$USER/containers/band.sif`, as pulled by
-`slurm/pull_container.job`), a `band.sif` built from `Dockerfile_intel` or `Dockerfile_llvm`
+container `$PDF_SIF` (default `/scratch/$USER/containers/pdf.sif`, as pulled by
+`slurm/pull_container.job`), a `pdf.sif` built from `Dockerfile_intel` or `Dockerfile_llvm`
 (see [Docker/Apptainer images](building-from-source.md#dockerapptainer-images)), or set
-`BAND_NATIVE=1` to use a library you built on the cluster. `osg/` holds a similar HTCondor
+`PDF_NATIVE=1` to use a library you built on the cluster. `osg/` holds a similar HTCondor
 template.
 
 ## One command for a whole table
@@ -92,7 +92,7 @@ runs until the whole chain is done; `slurm/build_table.job` runs it as a single-
 job that waits in the queue like any other (the environment at submission, e.g. `TOL`, is
 passed on). Every array is checked with `sacct` when it ends and a failed task stops the
 chain (`sbatch --wait` exits 0 on Alderaan even when tasks fail). The container is
-`BAND_SIF`, by default `/scratch/$USER/containers/band.sif` where `slurm/pull_container.job`
+`PDF_SIF`, by default `/scratch/$USER/containers/pdf.sif` where `slurm/pull_container.job`
 puts it. Options (`TOL`, `EPSREL`, `ACCEPT`, chunk sizes, `ACCOUNT`/`PARTITION`/`TIME`) are
 documented in the script header. The one-axis-at-a-time study cannot see cross terms
 between axes, which is why the held-out check is the gate.
@@ -112,7 +112,7 @@ the tables to `PpqPDF`; nothing else in the fit changes:
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = bd.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                       ppqn_table="norm_NR.h5", ppqg_table="norm_ER.h5")
 # band_pdf.ppqn_integral(...) / band_pdf.ppqg_integral(...) now interpolate instead of integrating
 ```
@@ -120,7 +120,7 @@ band_pdf = bd.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
 **Published tables** are listed in `python/cli/table_registry.json` and can be passed by
 name instead of a path: `python/cli/normtables.py` downloads them from
 [Zenodo](https://doi.org/10.5281/zenodo.23048215) on first use, checks their SHA-256, and
-caches them (`$BAND_TABLES_DIR`, else `~/.cache/band_distribution`; the containers ship
+caches them (`$PDF_TABLES_DIR`, else `~/.cache/phonon_charge_pdf`; the containers ship
 with every registered table in `/app/tables`). `python python/cli/normtables.py list` shows
 what is available.
 
@@ -158,7 +158,7 @@ BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = bd.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                       ppqn_table="NR_ep2.5-350_eq0.75-200", ppqg_table="ER_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # 1. fails now, not hours into the run
 

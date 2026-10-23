@@ -2,4 +2,4 @@
 
 See [Generating simulated events](../python-events.md) for a usage walkthrough.
 
-::: band_distribution.event_generator
+::: phonon_charge_pdf.event_generator

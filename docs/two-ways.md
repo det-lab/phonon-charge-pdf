@@ -24,8 +24,8 @@ first:
 | Option | Command |
 |---|---|
 | Pip install (bundles the compiled library) | `pip install phonon-charge-pdf` |
-| Published container — HPC/library use | `docker pull ghcr.io/det-lab/band_distribution_llvm:v2.1.0` |
-| Published container — Jupyter notebooks | `docker pull ghcr.io/det-lab/band_distribution_jupyter:v2.1.0` |
+| Published container — HPC/library use | `docker pull ghcr.io/det-lab/phonon-charge-pdf-llvm:v2.1.1` |
+| Published container — Jupyter notebooks | `docker pull ghcr.io/det-lab/phonon-charge-pdf-jupyter:v2.1.1` |
 
 Most users don't need to [build from source](building-from-source.md) at all — reach for
 that only for local development, a compiler this project doesn't publish, or to reproduce

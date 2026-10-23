@@ -7,9 +7,9 @@ pure Python/numpy built on [`ppq_dist.py`](ppq-dist.md), so it works in any envi
 package is installed into, container or not.
 
 ```python
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
-events = bd.generate_events(
+events = pdf.generate_events(
     target_size=20_000, ER_frac=0.6, seed_value=8,
     ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
     k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,

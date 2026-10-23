@@ -1,9 +1,9 @@
-site_name: band_distribution
+site_name: phonon-charge-pdf
 site_description: Neganov-Luke phonon / ionization-charge band PDF and event simulator for cryogenic detector NR/ER recoils
 site_url: https://det-lab.github.io/phonon-charge-pdf/
 repo_url: https://github.com/det-lab/phonon-charge-pdf
 repo_name: det-lab/phonon-charge-pdf
-edit_uri: edit/develop/docs/
+edit_uri: edit/main/docs/
 
 theme:
   name: material

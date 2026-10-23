@@ -1,4 +1,4 @@
-# band_distribution
+# phonon-charge-pdf
 
 This code is useful for dark matter searches where detector output is Ep (total phonon
 energy) and Eq (total charge energy). The point of the code is to provide the probability
@@ -13,9 +13,9 @@ pip install phonon-charge-pdf
 ```
 
 ```python
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
-events = bd.generate_events(
+events = pdf.generate_events(
     target_size=1000, ER_frac=0.6, seed_value=1,
     ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
     k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
@@ -29,9 +29,8 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
 library and `PpqPDF`; see [Two ways to use this](two-ways.md).
 
-Published on PyPI as `phonon-charge-pdf` — the PyPI *distribution* name differs from the
-Python *import* name (`import band_distribution` either way), the same split as
-`scikit-learn`/`sklearn`.
+Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
+underscore, the usual PyPI convention).
 
 ## Citing
 
