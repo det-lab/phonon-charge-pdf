@@ -1,0 +1,62 @@
+site_name: band_distribution
+site_description: Neganov-Luke phonon / ionization-charge band PDF and event simulator for cryogenic detector NR/ER recoils
+site_url: https://det-lab.github.io/phonon-charge-pdf/
+repo_url: https://github.com/det-lab/phonon-charge-pdf
+repo_name: det-lab/phonon-charge-pdf
+edit_uri: edit/develop/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+
+nav:
+  - Home: index.md
+  - Two ways to use this: two-ways.md
+  - Generating simulated events: python-events.md
+  - Resolution/yield model (ppq_dist): ppq-dist.md
+  - Fortran-backed PDF (PpqPDF): fortran-pdf.md
+  - Precomputed normalization tables: normalization-tables.md
+  - Building from source: building-from-source.md
+  - Verification and validation: testing.md
+  - Profiling: PROFILING.md
+  - API reference:
+      - event_generator: api/event_generator.md
+      - ppq_dist: api/ppq_dist.md
+      - ppq_pdf: api/ppq_pdf.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            docstring_section_style: list
+            merge_init_into_class: true
