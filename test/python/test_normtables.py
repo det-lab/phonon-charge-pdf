@@ -55,7 +55,7 @@ handler = functools.partial(QuietHandler, directory=served)
 server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 base = f"http://127.0.0.1:{server.server_address[1]}"
-os.environ["BAND_TABLES_DIR"] = cache
+os.environ["PDF_TABLES_DIR"] = cache
 
 registry = os.path.join(tmp, "registry.json")
 with open(registry, "w") as f:
@@ -80,7 +80,7 @@ try:
           raises(ValueError, lambda: nt.register([registry], url_base=base, registry=registry)))
 
     path = nt.fetch("NR_ep2.5-350_eq0.75-200", registry=registry)
-    check("fetch downloads into $BAND_TABLES_DIR", os.path.dirname(path) == cache and nt.sha256(path) == nt.sha256(table))
+    check("fetch downloads into $PDF_TABLES_DIR", os.path.dirname(path) == cache and nt.sha256(path) == nt.sha256(table))
     check("fetch by file name works too", nt.fetch("norm_NR_ep2.5-350_eq0.75-200.h5", registry=registry) == path)
 
     server.shutdown()

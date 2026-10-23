@@ -1,6 +1,6 @@
 # Python tests
 
-Everything in this directory validates the band-distribution PDFs; the code
+Everything in this directory validates the phonon-charge-pdf PDFs; the code
 that *computes* the PDFs lives in `python/` at the repository root.  If
 you're looking for how to *use* the library (a fit or MCMC), that's
 `PpqPDF` in `python/ppq_pdf.py`; if you want simulated events instead, that's
@@ -11,7 +11,7 @@ and `ppq_dist.py` against the raw, unnormalized Fortran PDF
 (`python/internal/_ppqfort_bindings.py`, private); each test that needs the
 raw PDF says why in a comment at its import.  Run all scripts from the
 repository root; see the main README for expected timings and for how to
-build `lib/libband_distribution.so` first.
+build `lib/libphonon_charge_pdf.so` first.
 
 ## Test scripts
 
@@ -29,7 +29,7 @@ build `lib/libband_distribution.so` first.
 | `test_normtables.py` | Published tables fetched by name (`python/cli/normtables.py`): register/fetch round trip, hash verification, cache reuse, a bad-hash cached file is not trusted. Needs `pooch`. |
 | `test_ppq_pdf_tables.py` | `PpqPDF`'s MCMC setup checks against tables: `prior_bounds` (shared and band-specific keys), `check_points`, `table_bounds`, and an unregistered table name. |
 | `test_version.py` | The compiled library's reported version (`PpqFort_version()`) matches `fpm.toml`'s `version` field — the regression guard for `scripts/generate_version_include.py` (see the main README's fpm section). |
-| `test_pip_packaging.py` | Runs against a `pip install -e ".[test]"` of this repository, before the Fortran library is built: `import band_distribution` and `event_generator.py`'s functions work with no compiled library anywhere, and `PpqPDF` fails clearly at construction instead of silently succeeding. |
+| `test_pip_packaging.py` | Runs against a `pip install -e ".[test]"` of this repository, before the Fortran library is built: `import phonon_charge_pdf` and `event_generator.py`'s functions work with no compiled library anywhere, and `PpqPDF` fails clearly at construction instead of silently succeeding. |
 
 The two simulator tests are the strongest statement: the event generator
 (`python/event_generator.py`, the public module -- see the main README's

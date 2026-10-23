@@ -1,4 +1,4 @@
-# band_distribution
+# phonon-charge-pdf
 
 [![PyPI](https://img.shields.io/pypi/v/phonon-charge-pdf.svg)](https://pypi.org/project/phonon-charge-pdf/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/det-lab/phonon-charge-pdf/build.yml?branch=main&label=tests)](https://github.com/det-lab/phonon-charge-pdf/actions/workflows/build.yml)
@@ -17,9 +17,9 @@ pip install phonon-charge-pdf
 ```
 
 ```python
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
-events = bd.generate_events(
+events = pdf.generate_events(
     target_size=1000, ER_frac=0.6, seed_value=1,
     ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
     k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
@@ -33,9 +33,8 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
 library and `PpqPDF` — see [Two ways to use this](#two-ways-to-use-this) below.
 
-Published on PyPI as `phonon-charge-pdf` -- the PyPI *distribution* name differs from the
-Python *import* name (`import band_distribution` either way), the same split as
-`scikit-learn`/`sklearn`. For local development instead of a pinned release,
+Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
+underscore, the usual PyPI convention). For local development instead of a pinned release,
 `pip install -e .` from a checkout does the same (add `[test]` for the test suite's
 dependencies, or `[docs]` to build the documentation site locally with `mkdocs serve`).
 
@@ -60,21 +59,21 @@ compiled library. Easiest first:
 | Option | Command |
 |---|---|
 | Pip install (bundles the compiled library) | `pip install phonon-charge-pdf` |
-| Published container -- HPC/library use | `docker pull ghcr.io/det-lab/band_distribution_llvm:v2.1.0` |
-| Published container -- Jupyter notebooks | `docker pull ghcr.io/det-lab/band_distribution_jupyter:v2.1.0` |
+| Published container -- HPC/library use | `docker pull ghcr.io/det-lab/phonon-charge-pdf-llvm:v2.1.1` |
+| Published container -- Jupyter notebooks | `docker pull ghcr.io/det-lab/phonon-charge-pdf-jupyter:v2.1.1` |
 
 Most users don't need to [build from source](docs/building-from-source.md) at all. For the
 Jupyter container, run it with your own repository mounted so your notebooks and edits
 persist (replace `/path/to/your/repo` with your own repository's path; leave
-`/home/jovyan/work/nrFano` as-is), then select the **Python (band)** kernel:
+`/home/jovyan/work/nrFano` as-is), then select the **Python (pdf)** kernel:
 
 ```bash
-docker run -it --rm -p 8888:8888 -v /path/to/your/repo:/home/jovyan/work/nrFano ghcr.io/det-lab/band_distribution_jupyter:v2.1.0
+docker run -it --rm -p 8888:8888 -v /path/to/your/repo:/home/jovyan/work/nrFano ghcr.io/det-lab/phonon-charge-pdf-jupyter:v2.1.1
 ```
 
-For the HPC container, replace `v2.1.0` with any other release tag (see
+For the HPC container, replace `v2.1.1` with any other release tag (see
 [releases](https://github.com/det-lab/phonon-charge-pdf/releases) or `git tag -l`), or
-`latest` for the newest; `apptainer build band.sif docker://ghcr.io/det-lab/band_distribution_llvm:v2.1.0`
+`latest` for the newest; `apptainer build pdf.sif docker://ghcr.io/det-lab/phonon-charge-pdf-llvm:v2.1.1`
 builds a `.sif` for HPC directly (what `slurm/pull_container.job` does).
 
 # Map of the documentation

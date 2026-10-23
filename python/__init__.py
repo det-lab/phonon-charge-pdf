@@ -1,4 +1,4 @@
-"""band_distribution: Neganov-Luke phonon / ionization-charge band PDF and
+"""phonon_charge_pdf: Neganov-Luke phonon / ionization-charge band PDF and
 event simulator for cryogenic detector nuclear-recoil (NR) and
 electron-recoil (ER) bands.
 
@@ -34,11 +34,10 @@ __all__ = ["PpqPDF", "generate_events", "generate_NR_events", "generate_ER_event
 
 try:
     from importlib.metadata import PackageNotFoundError, version
-    # The installed distribution name ("phonon-charge-pdf" on PyPI)
-    # deliberately differs from this package's import name
-    # (band_distribution) -- see pyproject.toml and the README's
-    # "Installing the Python package" section -- so it has to be
-    # hardcoded here rather than derived from __name__.
+    # importlib.metadata needs the PyPI distribution name
+    # ("phonon-charge-pdf", hyphenated by PyPI convention), not this
+    # package's import name (phonon_charge_pdf, underscored) -- so it has
+    # to be hardcoded here rather than derived from __name__.
     __version__ = version("phonon-charge-pdf")
 except PackageNotFoundError:
     __version__ = "0+unknown"

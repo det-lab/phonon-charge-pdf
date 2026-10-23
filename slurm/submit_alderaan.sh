@@ -11,7 +11,7 @@
 # already in the result files, so a resubmission only redoes unfinished
 # chunks (use it after a time-limit kill or preemption).
 #
-# Requires $BAND_SIF (default /scratch/$USER/containers/band.sif, as
+# Requires $PDF_SIF (default /scratch/$USER/containers/pdf.sif, as
 # produced by slurm/pull_container.job) built from *this* branch
 # (region_normalization) -- the container runs its own
 # /app/python/cli/normgrid.py and needs PpqN_region/PpqG_region in /app/lib.
@@ -26,9 +26,9 @@ GRID_CHUNK=${GRID_CHUNK:-500}   # points per array task (~1 s/point under flang)
 HELD_CHUNK=${HELD_CHUNK:-100}
 THROTTLE=${THROTTLE:-200}        # max concurrent array tasks
 
-: "${BAND_SIF:=/scratch/$USER/containers/band.sif}"
-[[ -f "$BAND_SIF" ]] || { echo "no container at $BAND_SIF (set BAND_SIF)" >&2; exit 1; }
-export BAND_SIF
+: "${PDF_SIF:=/scratch/$USER/containers/pdf.sif}"
+[[ -f "$PDF_SIF" ]] || { echo "no container at $PDF_SIF (set PDF_SIF)" >&2; exit 1; }
+export PDF_SIF
 
 
 mkdir -p logs results tables

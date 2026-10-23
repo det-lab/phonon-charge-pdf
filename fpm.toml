@@ -1,4 +1,4 @@
-name = "band_distribution"
+name = "phonon_charge_pdf"
 version = "2.1.0"
 
 [install]

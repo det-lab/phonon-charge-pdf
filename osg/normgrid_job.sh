@@ -1,8 +1,8 @@
 #!/bin/bash
 # One batch job of the normalization-table build: evaluate grid points
 # [START, STOP) of a spec and write result_<TAG>.txt (see python/cli/normgrid.py).
-# Runs inside the band container (built from Dockerfile_intel/_llvm and
-# converted to band.sif; the repo lives at /app there).  Idempotent and
+# Runs inside the pdf container (built from Dockerfile_intel/_llvm and
+# converted to pdf.sif; the repo lives at /app there).  Idempotent and
 # crash-tolerant: a point whose integral errors out is recorded as nan and
 # the worker restarts past it, so one bad point never loses the whole chunk.
 set -u

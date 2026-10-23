@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below."
-title: band_distribution
+title: phonon-charge-pdf
 type: software
 abstract: >-
   Probability densities of (Ep, Eq) -- total phonon and total charge energy -- for
@@ -29,7 +29,7 @@ keywords:
   - Fortran
 references:
   - type: data
-    title: band_distribution normalization tables
+    title: phonon-charge-pdf normalization tables
     doi: 10.5281/zenodo.23048215   # concept DOI: all versions (new windows are added as versions)
     authors:
       - family-names: Roberts

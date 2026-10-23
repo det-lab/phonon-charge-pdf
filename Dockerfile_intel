@@ -52,9 +52,9 @@ COPY environment.yaml .
 # the llvm/jupyter ones, which must never pull Intel's ifx), then add ifx on
 # top of it specifically for this image.
 RUN conda env create -f environment.yaml
-RUN conda install -n band -c https://software.repos.intel.com/python/conda ifx_linux-64 --yes
-RUN echo "conda activate band" >> ~/.bash_profile
-RUN echo "conda activate band" >> ~/.bashrc
+RUN conda install -n pdf -c https://software.repos.intel.com/python/conda ifx_linux-64 --yes
+RUN echo "conda activate pdf" >> ~/.bash_profile
+RUN echo "conda activate pdf" >> ~/.bashrc
 
 # Source - https://stackoverflow.com/a/39777387
 # Posted by Ahmad Abdelghany, modified by community. See post 'Timeline' for change history
@@ -65,30 +65,36 @@ SHELL ["/bin/bash", "--login", "-c"]
 
 # Stage the source: defaults to this local checkout; if GIT_REF is set,
 # the RUN step below discards this and clones that revision instead.
-COPY src /tmp/band_src/src/
-COPY test /tmp/band_src/test
-COPY app /tmp/band_src/app/
-COPY fpm.toml /tmp/band_src/
-COPY python /tmp/band_src/python/
-COPY scripts /tmp/band_src/scripts/
+COPY src /tmp/pdf_src/src/
+COPY test /tmp/pdf_src/test
+COPY app /tmp/pdf_src/app/
+COPY fpm.toml /tmp/pdf_src/
+COPY pyproject.toml /tmp/pdf_src/
+COPY LICENSE /tmp/pdf_src/
+COPY README.md /tmp/pdf_src/
+COPY python /tmp/pdf_src/python/
+COPY scripts /tmp/pdf_src/scripts/
 
 RUN if [ -n "$GIT_REF" ]; then \
-        echo "Building band_distribution @ $GIT_REF (overriding local checkout)" && \
-        rm -rf /tmp/band_src && \
-        git clone https://github.com/det-lab/band_distribution.git /tmp/band_src && \
-        cd /tmp/band_src && git checkout "$GIT_REF"; \
+        echo "Building phonon-charge-pdf @ $GIT_REF (overriding local checkout)" && \
+        rm -rf /tmp/pdf_src && \
+        git clone https://github.com/det-lab/phonon-charge-pdf.git /tmp/pdf_src && \
+        cd /tmp/pdf_src && git checkout "$GIT_REF"; \
     else \
-        echo "Building band_distribution from the local checkout"; \
+        echo "Building phonon-charge-pdf from the local checkout"; \
     fi
 
 RUN mkdir -p /app/src /app/test /app/app /app/python /app/scripts \
-    && cp -r /tmp/band_src/src/. /app/src/ \
-    && cp -r /tmp/band_src/test/. /app/test/ \
-    && cp -r /tmp/band_src/app/. /app/app/ \
-    && cp -r /tmp/band_src/python/. /app/python/ \
-    && cp -r /tmp/band_src/scripts/. /app/scripts/ \
-    && cp /tmp/band_src/fpm.toml /app/ \
-    && rm -rf /tmp/band_src
+    && cp -r /tmp/pdf_src/src/. /app/src/ \
+    && cp -r /tmp/pdf_src/test/. /app/test/ \
+    && cp -r /tmp/pdf_src/app/. /app/app/ \
+    && cp -r /tmp/pdf_src/python/. /app/python/ \
+    && cp -r /tmp/pdf_src/scripts/. /app/scripts/ \
+    && cp /tmp/pdf_src/fpm.toml /app/ \
+    && cp /tmp/pdf_src/pyproject.toml /app/ \
+    && cp /tmp/pdf_src/LICENSE /app/ \
+    && cp /tmp/pdf_src/README.md /app/ \
+    && rm -rf /tmp/pdf_src
 
 # version.f90.inc (PpqFort_version(); not committed, see the script) must
 # exist before fpm build/test -- it is a plain `include` in src/PpqFort_m.f90
@@ -97,7 +103,7 @@ RUN python scripts/generate_version_include.py
 # Link the Intel OpenMP runtime into everything fpm builds here (including
 # interactive fpm invocations inside the container).  The ifx-compiled
 # shared library references __kmpc_* symbols, and without -liomp5 the
-# Python ctypes load of libband_distribution.so fails.  This lives here
+# Python ctypes load of libphonon_charge_pdf.so fails.  This lives here
 # rather than in fpm.toml because libiomp5 is Intel-specific: the gfortran
 # build uses libgomp (linked automatically by -fopenmp).
 ENV FPM_LDFLAGS="-liomp5"
@@ -109,17 +115,17 @@ RUN fpm build --compiler ifx --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPOR
     && find /app/build -name "*.so" -exec cp {} /app/lib/ \;
 
 # Needed to find the shared objects from within Python
-# /opt/anaconda/envs/band/lib is where the ifx install above puts
+# /opt/anaconda/envs/pdf/lib is where the ifx install above puts
 # libiomp5.so (the Intel OpenMP runtime FPM_LDFLAGS=-liomp5 links against);
 # without it here, this image's own CMD (fpm test, below) fails at startup
 # with "libiomp5.so: cannot open shared object file" -- found and fixed
 # 2026-09-30, pre-existing, unrelated to any of this file's other changes.
-ENV LD_LIBRARY_PATH=/app/lib:/opt/anaconda/envs/band/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/app/lib:/opt/anaconda/envs/pdf/lib:${LD_LIBRARY_PATH}
 
 # Published normalization tables (python/cli/table_registry.json), fetched and
 # hash-checked at build time -- HPC compute nodes often have no internet.
 # python/cli/normtables.py (and so PpqPDF(ppqn_table=NAME)) finds them here.
-ENV BAND_TABLES_DIR=/app/tables
+ENV PDF_TABLES_DIR=/app/tables
 RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all
 
 CMD fpm test --compiler ifx --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPORT=0" --profile release \
