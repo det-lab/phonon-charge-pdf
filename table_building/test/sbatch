@@ -2,7 +2,7 @@
 # Stand-in for `sbatch` in tests: runs the script (or every task of --array=A-B[%T])
 # right here, one after another.  Like `sbatch --wait` on Alderaan it exits 0 even
 # when tasks fail; each task's state goes to $MOCK_SLURM_DIR for the mock sacct.
-# Only the options slurm/build_table.sh uses are understood.
+# Only the options table_building/slurm/build_table.sh uses are understood.
 set -u
 ARRAY="" PARSABLE=0
 while [[ $# -gt 0 ]]; do

@@ -74,7 +74,7 @@ docker run -it --rm -p 8888:8888 -v /path/to/your/repo:/home/jovyan/work/nrFano 
 For the HPC container, replace `v2.1.1` with any other release tag (see
 [releases](https://github.com/det-lab/phonon-charge-pdf/releases) or `git tag -l`), or
 `latest` for the newest; `apptainer build pdf.sif docker://ghcr.io/det-lab/phonon-charge-pdf-llvm:v2.1.1`
-builds a `.sif` for HPC directly (what `slurm/pull_container.job` does).
+builds a `.sif` for HPC directly (what `table_building/slurm/pull_container.job` does).
 
 # Map of the documentation
 
