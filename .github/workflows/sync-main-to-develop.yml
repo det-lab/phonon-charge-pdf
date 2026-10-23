@@ -1,0 +1,53 @@
+# Copyright (c) 2026, The Regents of the University of California
+# Terms of use are as specified in LICENSE.txt
+
+name: Sync main into develop
+
+# Every push to main (a release/* or hotfix/* merge -- see check-pr-base.yml)
+# can leave develop behind. Nothing used to notice: none of the three past
+# hotfixes (#38, #39, #40) were ever synced back, and the phonon_charge_pdf
+# rename (#48) sat unmerged into develop for most of a day before anyone
+# caught it. This opens a main -> develop PR after every such push so a sync
+# is always visible, instead of silently not happening. It cannot resolve
+# real content conflicts (a human still reviews and merges, same as #51) --
+# it only guarantees the PR gets opened.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether develop is already caught up
+        id: diff
+        run: |
+          git fetch origin develop main
+          ahead=$(git rev-list --count origin/develop..origin/main)
+          echo "main is $ahead commit(s) ahead of develop"
+          echo "ahead=$ahead" >> "$GITHUB_OUTPUT"
+
+      - name: Open (or reuse) a main -> develop sync PR
+        if: steps.diff.outputs.ahead != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base develop --head main --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "Sync PR already open: #$existing"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base develop --head main \
+              --title "Sync main -> develop" \
+              --body "Auto-opened by .github/workflows/sync-main-to-develop.yml after a push to main. Review and merge (resolving conflicts if GitHub reports any -- see PR #51 for what that looked like) so develop doesn't fall behind main."
+          fi

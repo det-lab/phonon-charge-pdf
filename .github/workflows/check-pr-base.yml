@@ -1,0 +1,36 @@
+# Copyright (c) 2026, The Regents of the University of California
+# Terms of use are as specified in LICENSE.txt
+
+name: PR base branch policy
+
+# Only release/* and hotfix/* branches may target main directly -- everything
+# else (feature/*, chore/*, or an unprefixed branch) must go through develop
+# first. This exists because two different branches landed PRs straight
+# against main in one day (one a feature-shaped rename, one an unrelated
+# reorg), each time leaving develop silently out of sync. The PR-required
+# status checks on main/develop (see the protect-main-develop ruleset)
+# already require this check to pass before such a PR can merge.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-head-branch:
+    name: Require release/* or hotfix/* to target main
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check head branch name
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          echo "PR head branch: $HEAD_REF"
+          if [[ "$HEAD_REF" =~ ^(release|hotfix)/ ]]; then
+            echo "OK: '$HEAD_REF' matches release/* or hotfix/*"
+          else
+            echo "::error::Pull requests into main must come from a release/* or hotfix/* branch (this one is '$HEAD_REF'). Target develop instead, or rename this branch to hotfix/... if it's a genuine urgent fix to what's already released."
+            exit 1
+          fi
