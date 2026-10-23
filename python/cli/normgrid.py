@@ -84,12 +84,12 @@ DEFAULT_FIXED = {"Z": 32.0, "eps": 3.0e-3}
 # factor at the low fields these detectors run at is ~0.2-0.3 (CDMSlite:
 # 0.21-0.29), above the literature 0.13, so the ER box brackets that instead
 # of the NR box's 1e-5..1.
-BAND_BOX_OVERRIDES = {"ER": {"F0": (0.1, 0.35)}}
+PDF_BOX_OVERRIDES = {"ER": {"F0": (0.1, 0.35)}}
 
 
 def default_box(band):
     """DEFAULT_BOX with the band's overrides applied."""
-    return {**DEFAULT_BOX, **BAND_BOX_OVERRIDES.get(band, {})}
+    return {**DEFAULT_BOX, **PDF_BOX_OVERRIDES.get(band, {})}
 
 
 def x10_ranges(box):

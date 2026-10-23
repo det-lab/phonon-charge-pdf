@@ -6,7 +6,7 @@ needs it, even with a precomputed normalization table -- fails clearly
 and immediately at construction rather than deep into a fit.
 
 Must run against a `pip install -e .[test]` of this repository (imports
-band_distribution as an installed package, not via sys.path hacks like
+phonon_charge_pdf as an installed package, not via sys.path hacks like
 the rest of this test suite), and before the Fortran library is ever
 built/installed to lib/ -- otherwise the "no Fortran available" half of
 this test exercises nothing.
@@ -25,9 +25,9 @@ def check(name, condition, detail=""):
         failures.append(name)
 
 
-import band_distribution as bd  # noqa: E402 -- the import itself is part of what's tested
+import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of what's tested
 
-check("import band_distribution with no compiled library present", True)
+check("import phonon_charge_pdf with no compiled library present", True)
 check("PpqPDF is exported", hasattr(bd, "PpqPDF"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
 check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
@@ -35,9 +35,9 @@ check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
 
 # ppq_dist.py's public API (pure Python, no Fortran -- see its module
 # docstring): every name in its own __all__ must also be re-exported here.
-from band_distribution.ppq_dist import __all__ as _ppq_dist_all  # noqa: E402
+from phonon_charge_pdf.ppq_dist import __all__ as _ppq_dist_all  # noqa: E402
 
-check("every ppq_dist.__all__ name is re-exported on band_distribution",
+check("every ppq_dist.__all__ name is re-exported on phonon_charge_pdf",
       all(hasattr(bd, name) for name in _ppq_dist_all),
       [name for name in _ppq_dist_all if not hasattr(bd, name)])
 
