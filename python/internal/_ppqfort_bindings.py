@@ -1,6 +1,6 @@
 """
 Private: low-level ctypes bindings to the compiled Fortran
-band_distribution library (lib/libband_distribution.so).
+phonon_charge_pdf library (lib/libphonon_charge_pdf.so).
 
 Leading underscore means what it usually does -- this is not a public API
 and carries no stability promise.  If you're using this library to do a fit
@@ -42,7 +42,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 _REPO_LIB_DIR = os.path.join(_REPO_ROOT, "lib")
 # fpm/the OS linker name this .dylib on macOS and .so everywhere else fpm
 # supports (Linux); there's no third platform to worry about.
-_LIB_NAME = "libband_distribution.dylib" if sys.platform == "darwin" else "libband_distribution.so"
+_LIB_NAME = "libphonon_charge_pdf.dylib" if sys.platform == "darwin" else "libphonon_charge_pdf.so"
 
 _DOUBLE_ARR = np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")
 
@@ -50,7 +50,7 @@ _api = None
 
 
 def _candidate_libs():
-    """Where to look for libband_distribution.so, in order.
+    """Where to look for libphonon_charge_pdf.so, in order.
 
     1. _REPO_LIB_DIR -- today's convention: running out of a git checkout
        with `fpm build`'s output at the repo root's lib/. This still makes
@@ -66,7 +66,7 @@ def _candidate_libs():
 
 
 def _load_library():
-    """Load libband_distribution.so, trying each of _candidate_libs() in turn.
+    """Load libphonon_charge_pdf.so, trying each of _candidate_libs() in turn.
 
     The library has no SONAME and its RUNPATH points at nix store paths,
     so its dependencies (libassert.so, libjulienne.so) can only be found

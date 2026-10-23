@@ -24,7 +24,7 @@ test-ifx: version
 test-flang: version
 	fpm test --compiler flang --profile release --flag "$(FLANG_FLAGS)"
 
-# Builds lib/libband_distribution.so for the python ctypes interface.
+# Builds lib/libphonon_charge_pdf.so for the python ctypes interface.
 install-gfortran: version
 	fpm install --prefix=. --compiler gfortran --profile release --flag "$(GFORTRAN_FLAGS)"
 

@@ -7,7 +7,7 @@
 #   TOL=1e-5 HELDOUT=20 sbatch slurm/build_table.job ER 2.5 350 0.75 200
 #
 # Submit from the repository root: the environment at submission (TOL,
-# HELDOUT, BAND_SIF, BAND_PYTHON_FROM_REPO, ...) is passed on to
+# HELDOUT, PDF_SIF, PDF_PYTHON_FROM_REPO, ...) is passed on to
 # build_table.sh and from there to the array tasks.  ACCOUNT, PARTITION and
 # TIME set the ARRAY tasks' sbatch options (Alderaan defaults below); this
 # job's own are the #SBATCH lines, and the time limit must outlast the chain.

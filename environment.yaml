@@ -1,4 +1,4 @@
-name: band
+name: pdf
 channels:
   - conda-forge
   - defaults
@@ -9,7 +9,7 @@ dependencies:
   - python=3.12
   # No compiler here: gfortran/flang come from the Dockerfile's base image
   # (apt, or gmao/llvm-flang), and ifx is added on top of this env by
-  # Dockerfile_intel/_tau_intel specifically (`mamba install -n band
+  # Dockerfile_intel/_tau_intel specifically (`mamba install -n pdf
   # -c https://software.repos.intel.com/python/conda ifx_linux-64`) -- NOT
   # unconditionally here, so the llvm and jupyter images never pull Intel's
   # ifx binaries at all (they used to, via this file, even though they

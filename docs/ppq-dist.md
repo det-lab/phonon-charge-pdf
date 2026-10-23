@@ -12,17 +12,17 @@ As of version 2.1.0, the commonly-used pieces are re-exported directly on the to
 package, with a stable public API — no need to import the `ppq_dist` submodule yourself:
 
 ```python
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
 # Phonon-energy resolution, sigma_p(Ep)
-sp = bd.sigp(Ep, eps=eps, V=V, p0=p0, p10=p10)
+sp = pdf.sigp(Ep, eps=eps, V=V, p0=p0, p10=p10)
 
 # Charge-energy resolution, sigma_q(Eq)
-sq = bd.sigq(Eq, q0=q0, q10=q10)
+sq = pdf.sigq(Eq, q0=q0, q10=q10)
 
 # Ionization yield Y(Er) and mean e/h pair count Nbar(Er)
-y    = bd.Y(Er, k=k, Z=Z)
-nbar = bd.Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
+y    = pdf.Y(Er, k=k, Z=Z)
+nbar = pdf.Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
 ```
 
 The true-recoil-energy spectra (`PErN`/`PErG`) and the per-Er unnormalized densities
@@ -37,9 +37,9 @@ integrating each with `scipy.integrate.quad`, instead of the Fortran side's anal
 location:
 
 ```python
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
-(PpqN, quad_error), (er_scan, integrand_scan), peaks = bd.PpqN_safe_inspect(
+(PpqN, quad_error), (er_scan, integrand_scan), peaks = pdf.PpqN_safe_inspect(
     Ep=10.0, Eq=5.0,
     k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,

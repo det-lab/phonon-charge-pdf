@@ -1,4 +1,4 @@
-"""band_distribution.ppq_dist: pure-Python reference implementation of the
+"""phonon_charge_pdf.ppq_dist: pure-Python reference implementation of the
 NR/ER (Ep, Eq) probability model.
 
 Promoted from internal/ to a public, stable module alongside PpqPDF

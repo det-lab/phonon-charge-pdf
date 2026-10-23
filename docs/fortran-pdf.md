@@ -6,7 +6,7 @@ needs the compiled Fortran library; see [Two ways to use this](two-ways.md) for 
 it (pip install, a published container, or [building from source](building-from-source.md)).
 
 ```python
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
 # define the data region: your analysis ROI in keV -- the same (Ep, Eq)
 # window your data is already cut to. 2.5-350 / 0.75-200 is this project's
@@ -14,7 +14,7 @@ import band_distribution as bd
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = bd.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
+band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
                       norm_epsrel=1e-4, norm_epsabs=1e-10)
 normalized = band_pdf.ppqn_normalized_values(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
                                               p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
@@ -51,12 +51,12 @@ actually varying:
 
 ```python
 import numpy as np
-import band_distribution as bd
+import phonon_charge_pdf as pdf
 
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = bd.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                       norm_epsrel=1e-4, norm_epsabs=1e-10)
 # norm_epsrel/norm_epsabs set how tightly two successive doubled quadrature
 # orders must agree before the normalization integral is trusted -- NOT

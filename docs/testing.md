@@ -26,7 +26,7 @@ in their environment.)
 
 `test/python/test_pip_packaging.py` is the one test here that's meant to run *without* the
 compiled library: against a `pip install -e ".[test]"` of this repository and before the
-library is built, it checks that `import band_distribution` and `event_generator.py`'s
+library is built, it checks that `import phonon_charge_pdf` and `event_generator.py`'s
 functions still work, and that `PpqPDF` fails clearly at construction instead of silently
 succeeding.
 
@@ -92,11 +92,11 @@ LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 10000    #
 Mac; native x86 hardware should be faster. gfortran builds run the band integrals
 serially and will be dramatically slower here — use ifx or flang.)
 
-To run inside the Intel docker container (built as `band` — see
+To run inside the Intel docker container (built as `pdf` — see
 [Docker/Apptainer images](building-from-source.md#dockerapptainer-images)), mount the
 repository's `figures/` directory so the plot survives the container:
 
 ```bash
-docker run --rm -v $(pwd)/figures:/app/figures band \
-    bash --login -c "conda activate band && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
+docker run --rm -v $(pwd)/figures:/app/figures pdf \
+    bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
 ```

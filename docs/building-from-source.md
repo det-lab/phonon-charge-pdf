@@ -61,7 +61,7 @@ Notes:
 
 ## Shared library for the python interface
 
-The python wrappers load `lib/libband_distribution.so`, which `fpm install` builds and
+The python wrappers load `lib/libphonon_charge_pdf.so`, which `fpm install` builds and
 places under the repository root. Use the same flags as the test commands above; for
 Intel and LLVM, `FPM_LDFLAGS` must also be set so the *shared library* links its OpenMP
 runtime — without it the library builds but fails to load from python with undefined
@@ -87,13 +87,13 @@ vendor (GNU, Intel, and LLVM).
 |---|---|---|
 | GNU | `Dockerfile_gfortran` | Slow: gfortran runs the band integrals serially, ~25x slower than ifx/flang (see the compiler notes above) |
 | Intel | `Dockerfile_intel` | Recommended for work that needs speed |
-| LLVM | `Dockerfile_llvm` | Same performance as the Intel build; preferred for any image meant to be published, since `environment.yaml` never installs Intel's ifx unless a Dockerfile explicitly adds it (`Dockerfile_intel`/`_tau_intel` do, via `conda install -n band ifx_linux-64` after the shared environment is created) |
+| LLVM | `Dockerfile_llvm` | Same performance as the Intel build; preferred for any image meant to be published, since `environment.yaml` never installs Intel's ifx unless a Dockerfile explicitly adds it (`Dockerfile_intel`/`_tau_intel` do, via `conda install -n pdf ifx_linux-64` after the shared environment is created) |
 
 Choose which compiler you want, determine the name of the dockerfile, and then issue the
 following command:
 
 ```bash
-docker build -f {dockerfile name} -t band .
+docker build -f {dockerfile name} -t pdf .
 ```
 
 By default this builds from your local checkout, including any uncommitted changes. To
@@ -103,7 +103,7 @@ a build argument. It clones the repository fresh from GitHub and checks out that
 commit hash in place of the local files:
 
 ```bash
-docker build -f {dockerfile name} -t band --build-arg GIT_REF=v0.9.0 .
+docker build -f {dockerfile name} -t pdf --build-arg GIT_REF=v0.9.0 .
 ```
 
 `GIT_REF` accepts any tag or commit hash (run `git tag -l` to see available versions) and
@@ -115,25 +115,25 @@ If you need to troubleshoot the docker build, you can shell into this container 
 command
 
 ```bash
-docker run -it band
+docker run -it pdf
 ```
 
 Now you have a docker container that contains the fortran binary, but this is not usable
-on HPC systems. Run this command to create `band.sif`, an image file that can be used on
+on HPC systems. Run this command to create `pdf.sif`, an image file that can be used on
 HPC systems. The command can be issued in any location (it is not directory dependent).
 
 ```bash
-apptainer build band.sif docker-daemon://band:latest
+apptainer build pdf.sif docker-daemon://pdf:latest
 ```
 
 ## Jupyter image
 
 ```bash
-docker build --rm -f Dockerfile_jupyter -t band_jupyter .
+docker build --rm -f Dockerfile_jupyter -t pdf_jupyter .
 ```
 
 Run it the same way as the published image (see [Two ways to use this](two-ways.md)),
-using `band_jupyter:latest` in place of the `ghcr.io` tag.
+using `pdf_jupyter:latest` in place of the `ghcr.io` tag.
 
 This image compiles with flang (LLVM), like `Dockerfile_llvm`, not ifx: it is meant to be
 publishable, and `environment.yaml` never installs Intel's ifx unless a Dockerfile
@@ -147,7 +147,7 @@ persists once you close the container. In this case you need to supply arguments
 `docker run` that mount the top-level directory:
 
 ```bash
-docker run -it --mount type=bind,src=.,dst=/app --entrypoint=/bin/bash band
+docker run -it --mount type=bind,src=.,dst=/app --entrypoint=/bin/bash pdf
 ```
 
 ## Profiling with TAU

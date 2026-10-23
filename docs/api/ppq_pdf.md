@@ -2,4 +2,4 @@
 
 See [Fortran-backed PDF (PpqPDF)](../fortran-pdf.md) for a usage walkthrough.
 
-::: band_distribution.ppq_pdf
+::: phonon_charge_pdf.ppq_pdf

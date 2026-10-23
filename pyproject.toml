@@ -25,10 +25,10 @@ Repository = "https://github.com/det-lab/phonon-charge-pdf"
 Documentation = "https://det-lab.github.io/phonon-charge-pdf/"
 
 [tool.setuptools]
-package-dir = {"band_distribution" = "python"}
-packages = ["band_distribution", "band_distribution.internal", "band_distribution.cli"]
+package-dir = {"phonon_charge_pdf" = "python"}
+packages = ["phonon_charge_pdf", "phonon_charge_pdf.internal", "phonon_charge_pdf.cli"]
 
 [tool.setuptools.package-data]
-"band_distribution.cli" = ["table_registry.json"]
+"phonon_charge_pdf.cli" = ["table_registry.json"]
 
 [tool.setuptools_scm]

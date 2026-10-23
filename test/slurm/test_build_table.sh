@@ -7,8 +7,8 @@
 #   bash test/slurm/test_build_table.sh          (from the repository root)
 set -uo pipefail
 cd "$(dirname "$0")/../.."
-export PATH="$PWD/test/slurm:$PATH" BAND_NATIVE=1 PYTHON=${PYTHON:-python}
-export BAND_PYTHON=$PYTHON
+export PATH="$PWD/test/slurm:$PATH" PDF_NATIVE=1 PYTHON=${PYTHON:-python}
+export PDF_PYTHON=$PYTHON
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 export MOCK_SLURM_DIR=$TMP
 fail=0
@@ -44,7 +44,7 @@ grep -q "not resolved by 33 nodes" $TMP/kink.log; check "kink: says which axis a
 [[ ! -e $TMP/k/tol1e-7/spec.json ]]; check "kink: no grid spec was written" $?
 
 # 5. a failed array task stops the chain, although (as on Alderaan) sbatch --wait exits 0
-NORMGRID_FAKE=smooth BAND_PYTHON=false WORKDIR=$TMP/f OUT_TABLE=$TMP/t4.h5 slurm/build_table.sh ER 2.5 350 0.75 200 > $TMP/taskfail.log 2>&1
+NORMGRID_FAKE=smooth PDF_PYTHON=false WORKDIR=$TMP/f OUT_TABLE=$TMP/t4.h5 slurm/build_table.sh ER 2.5 350 0.75 200 > $TMP/taskfail.log 2>&1
 [[ $? -ne 0 ]]; check "failed task: chain stops with an error" $?
 grep -q "not every one of its .* tasks COMPLETED" $TMP/taskfail.log; check "failed task: says which array job" $?
 [[ ! -e $TMP/f/tol1e-7/plan.json ]]; check "failed task: stopped before the plan" $?

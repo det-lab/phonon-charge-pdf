@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pull the prebuilt band_distribution container from GHCR into a .sif.
+# Pull the prebuilt phonon-charge-pdf container from GHCR into a .sif.
 #
 #   sbatch slurm/pull_container.job [IMAGE] [DEST]
 #
@@ -39,8 +39,8 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR" || exit 1
 
-IMAGE=${1:-docker://ghcr.io/det-lab/band_distribution_llvm:v1.1.3}
-DEST=${2:-/scratch/$USER/containers/band.sif}
+IMAGE=${1:-docker://ghcr.io/det-lab/phonon-charge-pdf-llvm:v1.1.3}
+DEST=${2:-/scratch/$USER/containers/pdf.sif}
 
 SCRATCH=/scratch/$USER/singularity
 mkdir -p "$SCRATCH/cache" "$SCRATCH/tmp" "$(dirname "$DEST")" "/scratch/$USER/bin"
@@ -97,7 +97,7 @@ ls -lh "$DEST"
 # Smoke test: the library must load and report its version, and normgrid must
 # be importable inside the image.  A pull that "succeeds" into an image built
 # from the wrong branch fails here rather than 4,500 array tasks later.
-singularity exec "$DEST" /opt/anaconda/envs/band/bin/python -c "
+singularity exec "$DEST" /opt/anaconda/envs/pdf/bin/python -c "
 import sys
 sys.path.insert(0, '/app/python/internal')
 sys.path.insert(0, '/app/python/cli')
@@ -109,4 +109,4 @@ print('normgrid axes', normgrid.AXES)
 "
 
 echo
-echo "done.  use it with:  BAND_SIF=$DEST ./slurm/submit_alderaan.sh"
+echo "done.  use it with:  PDF_SIF=$DEST ./slurm/submit_alderaan.sh"
