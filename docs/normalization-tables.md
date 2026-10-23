@@ -105,14 +105,14 @@ and restarts past it; re-run failures with a looser tolerance via
 `run --retry-failed --epsrel 1e-6`. `merge` refuses to build a table with missing points.
 The HDF5 file records the region, fixed parameters, library version and git commit it was
 built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
-the tables to `PpqPDF`; nothing else in the fit changes:
+the tables to `pqPDF`; nothing else in the fit changes:
 
 ```python
 # define the data region: must match what the tables were built for exactly
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+band_pdf = pdf.pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                       ppqn_table="norm_NR.h5", ppqg_table="norm_ER.h5")
 # band_pdf.ppqn_integral(...) / band_pdf.ppqg_integral(...) now interpolate instead of integrating
 ```
@@ -131,7 +131,7 @@ an MCMC is the same: **keep every parameter inside the tables' box, with `p10 >=
 `q10 >= q0`** (the PDF is undefined otherwise). The library checks this and says what to
 change; the fit or MCMC code has to enforce it.
 
-- `PpqPDF(..., prior_bounds=BOUNDS)` checks hard bounds against every table given, at
+- `pqPDF(..., prior_bounds=BOUNDS)` checks hard bounds against every table given, at
   construction. If they reach outside a table it raises `PriorNotCoveredError`, listing
   each short axis and the `BOX=` rebuild command that would cover them.
 - `band_pdf.table_bounds()` gives, per band, the widest bounds each table covers: a
@@ -158,7 +158,7 @@ BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+band_pdf = pdf.pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                       ppqn_table="NR_ep2.5-350_eq0.75-200", ppqg_table="ER_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # 1. fails now, not hours into the run
 

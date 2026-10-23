@@ -2,7 +2,7 @@
 
 If you want simulated `(Ep, Eq)` detector events instead of PDF values — to validate a fit
 pipeline end to end, or to feed a downstream analysis — `event_generator.py` is the
-entrypoint, independent of `PpqPDF`. Unlike `PpqPDF`, it has **no Fortran dependency**: it's
+entrypoint, independent of `pqPDF`. Unlike `pqPDF`, it has **no Fortran dependency**: it's
 pure Python/numpy built on [`ppq_dist.py`](ppq-dist.md), so it works in any environment this
 package is installed into, container or not.
 
@@ -21,7 +21,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 `target_size` events are returned, cropped to `[ep_min, ep_max] x [eq_min, eq_max]` (your
-real analysis ROI, the same box `PpqPDF` would be normalized over); the ER/NR split is
+real analysis ROI, the same box `pqPDF` would be normalized over); the ER/NR split is
 `Binomial(target_size, ER_frac)`, so `ER_frac=1.0`/`0.0` give deterministic pure-ER/pure-NR
 samples and anything in between carries the same sampling fluctuation a real dataset would.
 The returned `DataFrame` has columns `EP, EQ, N0, is_ER, seed_value, is_bkg` — `is_bkg` is

@@ -1,8 +1,8 @@
 """phonon_charge_pdf.ppq_dist: pure-Python reference implementation of the
 NR/ER (Ep, Eq) probability model.
 
-Promoted from internal/ to a public, stable module alongside PpqPDF
-(ppq_pdf.py) and event_generator.py -- it has no compiled-library
+Promoted from internal/ to a public, stable module alongside pqPDF
+(pq_pdf.py) and event_generator.py -- it has no compiled-library
 dependency at all (pure numpy/scipy), so it works anywhere this package
 is installed, compiler or not.
 
@@ -10,8 +10,8 @@ This is deliberately the *slow*, brute-force path: PpqN_safe_inspect and
 PpqG_safe_inspect scan a uniform Er grid (resolution set by `res`) rather
 than using the Fortran side's analytic peak location and windowed
 quadrature, specifically so they can serve as an independent cross-check
-of PpqPDF/_ppqfort_bindings (see test/python/test_chisquare_ppqn.py and
-test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use PpqPDF
+of pqPDF/_ppqfort_bindings (see test/python/test_chisquare_ppqn.py and
+test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use pqPDF
 for that.
 
 Public functions:
@@ -290,7 +290,7 @@ def PpqN_safe_inspect(Ep, Eq,
     brute-force reference this package's event_generator.py and the
     compiled Fortran PpqN are cross-checked against (see
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
-    in a fit/MCMC inner loop; use PpqPDF for that.
+    in a fit/MCMC inner loop; use pqPDF for that.
 
     Returns ((value, quad_error), (er_scan_grid, er_scan_integrand),
     peak_info_list): peak_info_list is one dict per located peak, with

@@ -39,5 +39,5 @@ references:
         given-names: Damian
         orcid: "https://orcid.org/0000-0002-2344-868X"
     notes: >-
-      Precomputed region-normalization tables used by python/ppq_pdf.py and fetched by
+      Precomputed region-normalization tables used by python/pq_pdf.py and fetched by
       python/cli/normtables.py (python/cli/table_registry.json).

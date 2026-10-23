@@ -1,14 +1,14 @@
 """
-PpqPDF is the one intended entrypoint for using this library in a fit or
+pqPDF is the one intended entrypoint for using this library in a fit or
 MCMC -- if you want normalized PDF values or a likelihood, start here:
 
-    from ppq_pdf import PpqPDF
-    fit = PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+    from pq_pdf import pqPDF
+    fit = pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                  norm_epsrel=1e-4, norm_epsabs=1e-10)
     normalized = fit.ppqn_normalized_values(k=k, Z=Z, F0=F0, eps=eps, V=V,
                                              p0=p0, p10=p10, q0=q0, q10=q10)
 
-PpqPDF always needs the compiled Fortran library (a table only replaces the
+pqPDF always needs the compiled Fortran library (a table only replaces the
 normalization integral, never the per-event PDF evaluation), so
 construction eagerly loads it and raises immediately if it can't be found,
 rather than succeeding and failing on the first likelihood call instead.
@@ -23,11 +23,11 @@ entrypoint: the pure-Python reference implementation event_generator.py
 and this module are themselves checked against -- see its own module
 docstring.  Everything else under python/ -- python/internal/
 _ppqfort_bindings.py (raw, unnormalized PDF evaluation) and python/cli/
-normgrid.py (table machinery) -- is either what PpqPDF/event_generator.py
+normgrid.py (table machinery) -- is either what pqPDF/event_generator.py
 are built from or infrastructure for maintaining this library, not a
 fourth way to use it.
 
-PpqPDF: the fixed context for one fit/MCMC run -- an (Ep, Eq) region, the
+pqPDF: the fixed context for one fit/MCMC run -- an (Ep, Eq) region, the
 observed dataset, and the normalization-integral's convergence tolerance
 -- exposing, per parameter point, the un-normalized PDF at the bound
 dataset, the region's normalization integral, and their ratio (normalized
@@ -80,7 +80,7 @@ from _ppqfort_bindings import (make_ppqg_pdf_unnormalized, make_ppqn_pdf_unnorma
                                 ppqg_region, ppqn_region, version as _fort_version)
 
 
-class PpqPDF:
+class pqPDF:
     """
     ep_min, ep_max, eq_min, eq_max : float
         The (Ep, Eq) region the PDF is normalized over.
@@ -117,7 +117,7 @@ class PpqPDF:
                  n_workers=None):
         # A table only ever replaces the normalization integral, never the
         # per-event PDF evaluation (ppqn_values/ppqg_values always need
-        # PpqN_vector/PpqG_vector) -- so every PpqPDF needs the compiled
+        # PpqN_vector/PpqG_vector) -- so every pqPDF needs the compiled
         # library eventually. Load it now and raise here, with the clear
         # LD_LIBRARY_PATH message from _load_library(), rather than
         # succeeding silently and failing on the first likelihood call

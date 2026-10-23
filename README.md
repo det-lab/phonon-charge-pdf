@@ -31,7 +31,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
-library and `PpqPDF` — see [Two ways to use this](#two-ways-to-use-this) below.
+library and `pqPDF` — see [Two ways to use this](#two-ways-to-use-this) below.
 
 Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
 underscore, the usual PyPI convention). For local development instead of a pinned release,
@@ -53,7 +53,7 @@ and the resolution/yield model ([`sigp`, `sigq`, `Y`, `Nbar`, ...](docs/ppq-dist
 
 **2. The Fortran-backed PDF — needs the compiled library.** If you want normalized PDF
 values or a likelihood — a fit, an MCMC, anything beyond generating or describing
-simulated events — you need [`PpqPDF`](docs/fortran-pdf.md), and it always needs the
+simulated events — you need [`pqPDF`](docs/fortran-pdf.md), and it always needs the
 compiled library. Easiest first:
 
 | Option | Command |
@@ -85,9 +85,9 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](docs/python-events.md) |
 | Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (ppq_dist)](docs/ppq-dist.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (PpqPDF)](docs/fortran-pdf.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (pqPDF)](docs/fortran-pdf.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](docs/normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](docs/testing.md) |
 | Profile the Fortran library itself (maintainer workflow) | [Profiling with TAU](docs/PROFILING.md) |
-| Browse the auto-generated API reference | <https://det-lab.github.io/phonon-charge-pdf/api/event_generator/> (and `ppq_dist`, `ppq_pdf`) |
+| Browse the auto-generated API reference | <https://det-lab.github.io/phonon-charge-pdf/api/event_generator/> (and `ppq_dist`, `pq_pdf`) |

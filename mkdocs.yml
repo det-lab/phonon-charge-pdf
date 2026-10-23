@@ -31,7 +31,7 @@ nav:
   - Two ways to use this: two-ways.md
   - Generating simulated events: python-events.md
   - Resolution/yield model (ppq_dist): ppq-dist.md
-  - Fortran-backed PDF (PpqPDF): fortran-pdf.md
+  - Fortran-backed PDF (pqPDF): fortran-pdf.md
   - Precomputed normalization tables: normalization-tables.md
   - Building from source: building-from-source.md
   - Verification and validation: testing.md
@@ -39,7 +39,7 @@ nav:
   - API reference:
       - event_generator: api/event_generator.md
       - ppq_dist: api/ppq_dist.md
-      - ppq_pdf: api/ppq_pdf.md
+      - pq_pdf: api/pq_pdf.md
 
 markdown_extensions:
   - admonition
