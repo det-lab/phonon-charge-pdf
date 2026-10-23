@@ -1,0 +1,61 @@
+# Copyright (c) 2026, The Regents of the University of California
+# Terms of use are as specified in LICENSE.txt
+
+name: Docs
+
+# Builds the MkDocs site and deploys it to GitHub Pages. No Fortran build
+# needed: mkdocstrings only imports the pure-Python modules to pull their
+# docstrings, and importing phonon_charge_pdf never touches the compiled
+# library (see python/__init__.py) -- only constructing a PpqPDF does.
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install package and docs dependencies
+        run: python -m pip install -e ".[docs]"
+
+      - name: Build site
+        run: mkdocs build --strict --site-dir site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    # The github-pages environment's deployment branch policy only allows
+    # main, so skip deploy (but still build, to catch broken docs early) on
+    # pushes to develop.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

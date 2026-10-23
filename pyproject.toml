@@ -18,9 +18,11 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["matplotlib", "equibin"]
+docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.urls]
 Repository = "https://github.com/det-lab/phonon-charge-pdf"
+Documentation = "https://det-lab.github.io/phonon-charge-pdf/"
 
 [tool.setuptools]
 package-dir = {"phonon_charge_pdf" = "python"}

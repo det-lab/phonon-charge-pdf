@@ -1,8 +1,8 @@
 # Profiling with TAU
 
 This is a maintainer workflow for profiling the Fortran library itself — not
-needed to use `phonon_charge_pdf` for a fit or MCMC.  See the main
-[README](../README.md) for that.
+needed to use `phonon_charge_pdf` for a fit or MCMC.  See
+[Two ways to use this](two-ways.md) for that.
 
 TAU is built into `Dockerfile_tau_intel`. This image uses the ifx compiler because that compiler is the easiest to install outside a Docker container.  Build that image first:
 
