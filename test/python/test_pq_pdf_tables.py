@@ -1,11 +1,11 @@
 """
-Tests for PpqPDF's MCMC setup checks with normalization tables: prior_bounds
+Tests for pqPDF's MCMC setup checks with normalization tables: prior_bounds
 (shared and band-specific keys), check_points, table_bounds, and table names
 that are neither files nor registered.  Small in-memory tables stand in for
-real ones, so no data files are needed -- but importing ppq_pdf loads the
+real ones, so no data files are needed -- but importing pq_pdf loads the
 Fortran library, so run it where that is built (e.g. in the container):
 
-    LD_LIBRARY_PATH=lib python test/python/test_ppq_pdf_tables.py
+    LD_LIBRARY_PATH=lib python test/python/test_pq_pdf_tables.py
 """
 
 import os
@@ -17,7 +17,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "cli"))
 import normgrid as ng
-from ppq_pdf import PpqPDF
+from pq_pdf import pqPDF
 
 failures = []
 
@@ -50,7 +50,7 @@ def fake_table(band):
 
 
 nr, er = fake_table("NR"), fake_table("ER")
-make = lambda **kw: PpqPDF(*REGION, [10.0], [5.0], ppqn_table=nr, ppqg_table=er, **kw)
+make = lambda **kw: pqPDF(*REGION, [10.0], [5.0], ppqn_table=nr, ppqg_table=er, **kw)
 
 shared = dict(V=(2.7, 3.3), p0=(0.2 * ng.P0_MEAN, 1.8 * ng.P0_MEAN), p10=(0.3, 0.6),
               q0=(0.2 * ng.Q0_MEAN, 1.8 * ng.Q0_MEAN), q10=(0.2, 0.4))
@@ -67,7 +67,7 @@ check("shared V too wide fails", msg is not None and "V: prior reaches" in msg)
 check("k at the top level is ignored for ER", error_of(Exception, lambda: make(prior_bounds=dict(
     shared, k=(0.13, 0.22), NR={"F0": (1e-5, 1.0)}, ER={"F0": (0.15, 0.3)}))) is None)
 check("prior_bounds without a table is an error",
-      error_of(ValueError, lambda: PpqPDF(*REGION, [10.0], [5.0], prior_bounds=prior)) is not None)
+      error_of(ValueError, lambda: pqPDF(*REGION, [10.0], [5.0], prior_bounds=prior)) is not None)
 
 pdf = make()
 tb = pdf.table_bounds()
@@ -95,7 +95,7 @@ walkers["ER"]["F0"][5] = 0.5
 msg = error_of(ng.PriorNotCoveredError, lambda: pdf.check_points(walkers))
 check("one walker outside the ER F0 range fails, naming it", msg is not None and "1 of 32" in msg and "point 5" in msg)
 
-msg = error_of(KeyError, lambda: PpqPDF(*REGION, [10.0], [5.0], ppqn_table="no_such_table"))
+msg = error_of(KeyError, lambda: pqPDF(*REGION, [10.0], [5.0], ppqn_table="no_such_table"))
 check("a table that is neither a file nor registered: KeyError", msg is not None and "registered" in msg)
 
 print()

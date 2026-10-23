@@ -138,7 +138,7 @@ ENV FPM_LDFLAGS="-liomp5"
 
 # Published normalization tables (python/cli/table_registry.json), fetched and
 # hash-checked at build time -- HPC compute nodes often have no internet.
-# python/cli/normtables.py (and so PpqPDF(ppqn_table=NAME)) finds them here.
+# python/cli/normtables.py (and so pqPDF(ppqn_table=NAME)) finds them here.
 ENV PDF_TABLES_DIR=/app/tables
 RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all
 

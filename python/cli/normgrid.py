@@ -508,7 +508,7 @@ class NormInterpolator:
                     + " ".join(f"{n}={v:.6g}" for n, v in query.items())
                     + "\n  The table covers the prior it was built for, so a query outside it means the "
                       "MCMC prior does not match the table, or a NaN/bug.  Check the prior at setup "
-                      "(PpqPDF(prior_bounds=...) or table.check_prior), and have log_prob return -inf "
+                      "(pqPDF(prior_bounds=...) or table.check_prior), and have log_prob return -inf "
                       "for points outside the prior BEFORE calling the likelihood.",
                     axis=a, value=x, box=(lo, hi), query=query, source=self.source)
             coef = cheb.chebval(self._to_unit(d, np.float64(min(max(x, lo), hi))), coef)   # contracts the first remaining axis
@@ -517,7 +517,7 @@ class NormInterpolator:
     # ---- MCMC setup checks: is the prior (are the starting points) inside the box? ----
 
     def params(self):
-        """The physical parameters this table varies, in PpqPDF's keyword names."""
+        """The physical parameters this table varies, in pqPDF's keyword names."""
         return (("k",) if self.band == "NR" else ()) + ("F0", "V", "p0", "p10", "q0", "q10")
 
     def table_bounds(self):
@@ -728,11 +728,11 @@ def main(argv=None):
     # table that is complete, internally consistent and wrong.  Neither merge
     # nor validate can see it -- they only ever compare a table against points
     # computed from the same spec -- so it would surface at the earliest in
-    # PpqPDF's region check, and only if the fit gets that far.  (--nodes and
+    # pqPDF's region check, and only if the fit gets that far.  (--nodes and
     # the box do default: validate measures node adequacy directly, and a bad
     # box raises OutOfBoxError at query time.  Both fail loudly.)
     p.add_argument("--region", nargs=4, type=float, required=True, metavar=("EP_MIN", "EP_MAX", "EQ_MIN", "EQ_MAX"),
-                   help="fit region the table normalizes over; must match the region PpqPDF is built with")
+                   help="fit region the table normalizes over; must match the region pqPDF is built with")
     p.add_argument("--epsrel", type=float, required=True,
                    help="quadrature convergence tolerance per point, e.g. 1e-7")
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",

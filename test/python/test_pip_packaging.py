@@ -1,7 +1,7 @@
 """
 Validates the pip-installable package's graceful-degradation promise:
 pure-Python functionality (event_generator.py) works with no compiled
-Fortran library anywhere on the system, while PpqPDF -- which always
+Fortran library anywhere on the system, while pqPDF -- which always
 needs it, even with a precomputed normalization table -- fails clearly
 and immediately at construction rather than deep into a fit.
 
@@ -28,7 +28,7 @@ def check(name, condition, detail=""):
 import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of what's tested
 
 check("import phonon_charge_pdf with no compiled library present", True)
-check("PpqPDF is exported", hasattr(bd, "PpqPDF"))
+check("pqPDF is exported", hasattr(bd, "pqPDF"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
 check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
 check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
@@ -62,13 +62,13 @@ except Exception as e:
     check("PpqN_safe_inspect runs with no Fortran library", False, repr(e))
 
 try:
-    bd.PpqPDF(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
-    check("PpqPDF() raises at construction without the Fortran library", False,
+    bd.pqPDF(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
+    check("pqPDF() raises at construction without the Fortran library", False,
           "construction succeeded -- it should have failed fast instead")
 except RuntimeError as e:
-    check("PpqPDF() raises at construction without the Fortran library", True, str(e)[:80])
+    check("pqPDF() raises at construction without the Fortran library", True, str(e)[:80])
 except Exception as e:
-    check("PpqPDF() raises at construction without the Fortran library", False,
+    check("pqPDF() raises at construction without the Fortran library", False,
           f"wrong exception type: {e!r}")
 
 print()

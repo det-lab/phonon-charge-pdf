@@ -9,7 +9,7 @@ docstring for the general workflow).  Specific to this test:
   (threaded chunked PpqN_vector calls), unnormalized -- fine here since this
   test only checks the PDF's *shape* (sampled events vs. its own density),
   which a constant normalization factor doesn't affect.  For a fit or MCMC,
-  use PpqPDF (python/ppq_pdf.py) instead.
+  use pqPDF (python/pq_pdf.py) instead.
 - The lintsampler grid uses feature-scaled (non-uniform) edges: the band
   width tracks the detector resolutions sigp(Ep) and sigq(Eq), which grow
   roughly linearly with energy, so the edges are spaced proportionally to

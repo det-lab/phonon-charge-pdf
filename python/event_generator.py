@@ -3,9 +3,9 @@ event_generator is the public entrypoint for generating simulated (Ep, Eq)
 detector events -- an independent physics simulator, not a second way to
 evaluate the PDF (see "Physical picture" below for why that independence
 matters). If you want normalized PDF values or a likelihood instead, use
-PpqPDF (python/ppq_pdf.py).
+pqPDF (python/pq_pdf.py).
 
-Unlike PpqPDF, this module has no Fortran dependency at all -- it is pure
+Unlike pqPDF, this module has no Fortran dependency at all -- it is pure
 Python/numpy built on python/ppq_dist.py's Y/Nbar/sigp/sigq (itself a
 public entrypoint; see its module docstring), so it works in any
 environment that can `pip install` this package, compiled library or not.
@@ -24,7 +24,7 @@ Quickstart
     Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 All physics parameters are required keyword arguments -- there are no
-defaults, matching the rest of this library (PpqPDF, _ppqfort_bindings.py,
+defaults, matching the rest of this library (pqPDF, _ppqfort_bindings.py,
 ppq_dist.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
 and anything in between generates a mix.
 
@@ -289,7 +289,7 @@ def generate_events(target_size, ER_frac, seed_value, *,
     k, Z : float
         Lindhard ionization yield calibration constant and target atomic
         number (nuclear recoils only; unused but still required when
-        ER_frac=1.0, for the same reason PpqPDF always requires them).
+        ER_frac=1.0, for the same reason pqPDF always requires them).
     F0_ER, F0_NR : float
         Fano factor (constant), one per species -- ER and NR generally
         have different Fano factors even at the same operating point.

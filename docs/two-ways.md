@@ -17,7 +17,7 @@ no compiler.
 ## 2. The Fortran-backed PDF — needs the compiled library
 
 **If you want normalized PDF values or a likelihood** — a fit, an MCMC, anything beyond
-generating or describing simulated events — you need [`PpqPDF`](fortran-pdf.md), and it
+generating or describing simulated events — you need [`pqPDF`](fortran-pdf.md), and it
 always needs the compiled Fortran library (`PpqN`/`PpqG`). Three ways to get it, easiest
 first:
 
@@ -36,7 +36,7 @@ an exact uncommitted state.
 ```text
 Do you need normalized PDF values or a likelihood (a fit, an MCMC)?
 ├── No  → pure Python is enough: event_generator.py / ppq_dist.py
-└── Yes → you need PpqPDF, so you need the compiled library:
+└── Yes → you need pqPDF, so you need the compiled library:
           ├── pip install phonon-charge-pdf   (simplest)
           ├── a published container           (HPC / Jupyter)
           └── build from source                (only if you have a specific reason)

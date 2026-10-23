@@ -1,7 +1,7 @@
-# Fortran-backed PDF: `PpqPDF`
+# Fortran-backed PDF: `pqPDF`
 
 **If you want normalized PDF values or a likelihood — a fit, an MCMC, anything beyond
-generating or describing simulated events — `PpqPDF` is the one entrypoint.** It always
+generating or describing simulated events — `pqPDF` is the one entrypoint.** It always
 needs the compiled Fortran library; see [Two ways to use this](two-ways.md) for how to get
 it (pip install, a published container, or [building from source](building-from-source.md)).
 
@@ -14,7 +14,7 @@ import phonon_charge_pdf as pdf
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
+band_pdf = pdf.pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
                       norm_epsrel=1e-4, norm_epsabs=1e-10)
 normalized = band_pdf.ppqn_normalized_values(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
                                               p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
@@ -24,7 +24,7 @@ The region is the box the normalization integral is computed over — it has to 
 analysis ROI, not an arbitrary wide range, or the normalization (and so the likelihood) is
 wrong. **If you use precomputed tables (`ppqn_table=`/`ppqg_table=`, see
 [Precomputed normalization tables](normalization-tables.md)) and your region doesn't match
-the one a table was built for exactly, `PpqPDF` raises at construction** rather than
+the one a table was built for exactly, `pqPDF` raises at construction** rather than
 silently normalizing wrong — the fix is to build a new table for your region.
 
 Same shape for the ER band (`ppqg_normalized_values`, no `k`/`Z` — `Y=1` there — also
@@ -38,13 +38,13 @@ A likelihood fit needs the *un-normalized* PDF at each data point and the PDF's 
 over the fit region (to normalize it) — both re-evaluated at every step as the fit/MCMC
 explores parameter space. Computing that normalization with `scipy.integrate.quad` is
 several seconds per call (it evaluates the PDF one point at a time, at the ~3-25 ms/point
-*scalar* cost). `PpqPDF` instead uses a doubling-verified nested Gauss-Legendre quadrature
+*scalar* cost). `pqPDF` instead uses a doubling-verified nested Gauss-Legendre quadrature
 evaluated in one batched, thread-parallel call (`PpqN_region`/`PpqG_region` in Fortran —
 the ridge location/width is already known exactly, so it needs far fewer points than a
 naive grid for the same accuracy), landing well under a second per call even for a wide
 region under `ifx`/`flang`.
 
-`PpqPDF` bundles the things that *don't* change across a fit/MCMC run — the region, the
+`pqPDF` bundles the things that *don't* change across a fit/MCMC run — the region, the
 observed dataset, and the normalization quadrature's convergence tolerance — at
 construction, so every subsequent call only needs the physics parameters that the fit is
 actually varying:
@@ -56,7 +56,7 @@ import phonon_charge_pdf as pdf
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+band_pdf = pdf.pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                       norm_epsrel=1e-4, norm_epsabs=1e-10)
 # norm_epsrel/norm_epsabs set how tightly two successive doubled quadrature
 # orders must agree before the normalization integral is trusted -- NOT

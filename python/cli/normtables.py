@@ -5,7 +5,7 @@ The tables (python/cli/normgrid.py, built by slurm/build_table.sh) are data, so
 they live on Zenodo rather than in git; python/cli/table_registry.json maps each
 name to its URL and SHA-256.  fetch() downloads a table the first time with
 pooch (https://www.fatiando.org/pooch/), checks the hash, and caches it;
-later calls use the cached file with no network.  PpqPDF(ppqn_table=NAME)
+later calls use the cached file with no network.  pqPDF(ppqn_table=NAME)
 calls it for any table argument that is not an existing file.
 
     import normtables

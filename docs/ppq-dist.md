@@ -48,10 +48,10 @@ import phonon_charge_pdf as pdf
 ```
 
 !!! warning "Deliberately the slow path"
-    Never use this in a fit/MCMC inner loop. Use [`PpqPDF`](fortran-pdf.md) for a
-    fit/MCMC; use this to independently verify `PpqPDF`/`event_generator.py` agree with
+    Never use this in a fit/MCMC inner loop. Use [`pqPDF`](fortran-pdf.md) for a
+    fit/MCMC; use this to independently verify `pqPDF`/`event_generator.py` agree with
     the underlying physics, or when you want the scan grid and per-peak width/location
-    diagnostics (`peaks` above — one dict per located peak) that `PpqPDF` doesn't expose.
+    diagnostics (`peaks` above — one dict per located peak) that `pqPDF` doesn't expose.
 
 ### Choosing `res`
 
