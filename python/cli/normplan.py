@@ -22,7 +22,7 @@ m whose tail is below tol / safety.  An axis that is not resolved by 33 nodes
 
 This sees one axis at a time, so it cannot see cross terms between axes;
 `normgrid.py validate` against held-out points remains the final check.
-slurm/build_table.sh chains all of it.
+table_building/slurm/build_table.sh chains all of it.
 """
 
 import argparse

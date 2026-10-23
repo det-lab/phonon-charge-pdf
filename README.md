@@ -15,7 +15,7 @@ Most users don't need to build anything from source.  Pull a container, then ski
 docker pull ghcr.io/det-lab/phonon-charge-pdf-llvm:v1.1.4
 ```
 
-or, directly to a `.sif` for HPC — this is what `slurm/pull_container.job` does:
+or, directly to a `.sif` for HPC — this is what `table_building/slurm/pull_container.job` does:
 
 ```
 apptainer build pdf.sif docker://ghcr.io/det-lab/phonon-charge-pdf-llvm:v1.1.4
@@ -172,7 +172,7 @@ Even at ~2 s, computing the normalization integral at every MCMC step is out of 
 A few design points worth knowing:
 
 * **Axes.** `k`, `F0` (used *linearly* — the integral is smooth in F0 but not in log F0, so 3 nodes give ~3e-9 where log F0 needs 9+), `V`, `p0`, `dp = p10 - p0`, `q0`, `dq = q10 - q0`.  The resolution model `sigp² = p0² + (p10² - p0²)(Ep/c)²` is only defined for `p10 >= p0` (likewise `q10 >= q0`), so a plain `(p0, p10)` or `(q0, q10)` box would contain unphysical corners (the `q0` and `q10` ranges overlap); `dp >= 0` and `dq >= 0` keep the box rectangular.  Query the table with the physical `p10`/`q10`; it converts.  `PpqN_region`/`PpqG_region` now error out in ~0.3 s on such inputs (and on `F0, eps, p0, q0, k, Z <= 0`, an empty region, or NaN) instead of grinding for minutes.
-* **Interpolant.** Tensor-product Chebyshev series through Chebyshev–Lobatto nodes, built and evaluated with `numpy.polynomial.chebyshev` (`chebfit`/`chebval`; exact at the nodes, ~40 µs per lookup natively — about 0.1% of a 20,000-event likelihood evaluation).  It **never extrapolates** — a query outside the table's box raises `OutOfBoxError`, so keep the MCMC prior inside the box (see [Fits and MCMC with the tables](#fits-and-mcmc-with-the-tables); default box: `k` 0.13–0.22, `F0` 1e-5–1 (ER: 0.1–0.35, bracketing the effective low-field electron-recoil Fano factor of ~0.2–0.3), `V` 2.7–3.3, `p0` 0.0128–0.1156 and `q0` 0.0474–0.4 (the ±4σ range of Gaussian priors centred on 0.0642 and 0.2372 with a 20% 1σ width, `q0` capped at the maximum `q10`), `dp = p10-p0` 0.18–0.59 and `dq = q10-q0` 0–0.353 (from `p10` 0.3–0.6, `q10` 0.2–0.4); for a different one, rebuild with `BOX=`, e.g. `BOX="V=2.5:4" sbatch slurm/build_table.job ...`, or change the defaults `DEFAULT_BOX` / `PDF_BOX_OVERRIDES`).
+* **Interpolant.** Tensor-product Chebyshev series through Chebyshev–Lobatto nodes, built and evaluated with `numpy.polynomial.chebyshev` (`chebfit`/`chebval`; exact at the nodes, ~40 µs per lookup natively — about 0.1% of a 20,000-event likelihood evaluation).  It **never extrapolates** — a query outside the table's box raises `OutOfBoxError`, so keep the MCMC prior inside the box (see [Fits and MCMC with the tables](#fits-and-mcmc-with-the-tables); default box: `k` 0.13–0.22, `F0` 1e-5–1 (ER: 0.1–0.35, bracketing the effective low-field electron-recoil Fano factor of ~0.2–0.3), `V` 2.7–3.3, `p0` 0.0128–0.1156 and `q0` 0.0474–0.4 (the ±4σ range of Gaussian priors centred on 0.0642 and 0.2372 with a 20% 1σ width, `q0` capped at the maximum `q10`), `dp = p10-p0` 0.18–0.59 and `dq = q10-q0` 0–0.353 (from `p10` 0.3–0.6, `q10` 0.2–0.4); for a different one, rebuild with `BOX=`, e.g. `BOX="V=2.5:4" sbatch table_building/slurm/build_table.job ...`, or change the defaults `DEFAULT_BOX` / `PDF_BOX_OVERRIDES`).
 * **Node counts** (`RECOMMENDED_NODES`, from per-axis studies against directly computed held-out points; region-dependent): NR `k=8 F0=3 V=4 p0=4 dp=3 q0=16 dq=4` (73,728 points); ER `F0=3 V=9 p0=4 dp=6 q0=11 dq=9` (64,152 points).  The counts depend on the region: these are for the analysis ROI Ep 2.5–350 / Eq 0.75–200 (the earlier 2–200 / 4–100 region needed far fewer, e.g. 5 nodes in `q0`).  `q0` is the hard axis for NR — its error falls only ~4× per two nodes — so check it with `validate`.  At roughly 1–3 s per point on one core that is tens of core-hours.  These target ~1e-7 worst-case error per axis, i.e. ~0.02 in the log-likelihood at 20,000 events (the error is `N_events × δN/N`).  Always confirm with `validate` — the per-axis studies cannot see cross terms.
 
 ```
@@ -181,7 +181,7 @@ A few design points worth knowing:
 python python/cli/normgrid.py make-spec --band NR --region 2.5 350 0.75 200 --epsrel 1e-7 --out spec_NR.json
 python python/cli/normgrid.py make-random-spec --band NR --n 200 --region 2.5 350 0.75 200 --epsrel 1e-7 --out held_NR.json
 
-# run it: on one machine, or as batch jobs (osg/normgrid.sub + osg/normgrid_job.sh are an HTCondor template)
+# run it: on one machine, or as batch jobs (table_building/osg/normgrid.sub + table_building/osg/normgrid_job.sh are an HTCondor template)
 python python/cli/normgrid.py chunks spec_NR.json --size 100        # "start stop" ranges, one per job
 python python/cli/normgrid.py run --spec spec_NR.json --start 0 --stop 100 --out res_0.txt
 python python/cli/normgrid.py run --spec held_NR.json --out res_held.txt
@@ -191,16 +191,16 @@ python python/cli/normgrid.py merge --spec spec_NR.json --results 'res_*.txt' --
 python python/cli/normgrid.py validate --table norm_NR.h5 --heldout-spec held_NR.json --results res_held.txt
 ```
 
-**On a Slurm cluster** use the **ifx (or flang) container, not gfortran** — gfortran runs the band integrals ~25x slower — via `slurm/normgrid.sbatch`, a job-array template (one single-core task per chunk of grid points; `OMP_NUM_THREADS=1` so an ifx build doesn't oversubscribe cores; a header comment gives the exact `sbatch` and `merge`/`validate` commands, and resubmitting the same array only redoes unfinished chunks).  It runs the container `$PDF_SIF` (default `/scratch/$USER/containers/pdf.sif`, as pulled by `slurm/pull_container.job`), a `pdf.sif` built from `Dockerfile_intel` or `Dockerfile_llvm` (see Docker / Apptainer images under [Building from source](#building-from-source)), or set `PDF_NATIVE=1` to use a library you built on the cluster.  `osg/` holds a similar HTCondor template.
+**On a Slurm cluster** use the **ifx (or flang) container, not gfortran** — gfortran runs the band integrals ~25x slower — via `table_building/slurm/normgrid.sbatch`, a job-array template (one single-core task per chunk of grid points; `OMP_NUM_THREADS=1` so an ifx build doesn't oversubscribe cores; a header comment gives the exact `sbatch` and `merge`/`validate` commands, and resubmitting the same array only redoes unfinished chunks).  It runs the container `$PDF_SIF` (default `/scratch/$USER/containers/pdf.sif`, as pulled by `table_building/slurm/pull_container.job`), a `pdf.sif` built from `Dockerfile_intel` or `Dockerfile_llvm` (see Docker / Apptainer images under [Building from source](#building-from-source)), or set `PDF_NATIVE=1` to use a library you built on the cluster.  `table_building/osg/` holds a similar HTCondor template.
 
-**One command for a whole table.**  How many nodes an axis needs depends on the fit region (the same box needed 5 nodes in `q0` for Eq 4–100 and about 16 for Eq 0.75–200), so `slurm/build_table.sh` measures instead of assuming.  For a region it (1) evaluates 33 Chebyshev–Lobatto nodes along each axis at three baseline points (`python/cli/normplan.py points`, about 700 integrals), (2) reads the Chebyshev coefficients of each axis to find the fewest nodes whose truncation error is below `TOL` (`python/cli/normplan.py analyze`; it stops with an error if an axis is not resolved by 33 nodes, rather than guessing), (3) evaluates the resulting grid and a set of held-out points, and (4) merges and validates, exiting with status 1 if the worst held-out error exceeds `ACCEPT`:
+**One command for a whole table.**  How many nodes an axis needs depends on the fit region (the same box needed 5 nodes in `q0` for Eq 4–100 and about 16 for Eq 0.75–200), so `table_building/slurm/build_table.sh` measures instead of assuming.  For a region it (1) evaluates 33 Chebyshev–Lobatto nodes along each axis at three baseline points (`python/cli/normplan.py points`, about 700 integrals), (2) reads the Chebyshev coefficients of each axis to find the fewest nodes whose truncation error is below `TOL` (`python/cli/normplan.py analyze`; it stops with an error if an axis is not resolved by 33 nodes, rather than guessing), (3) evaluates the resulting grid and a set of held-out points, and (4) merges and validates, exiting with status 1 if the worst held-out error exceeds `ACCEPT`:
 
 ```
-sbatch slurm/build_table.job NR 2.5 350 0.75 200              # -> tables/norm_NR_ep2.5-350_eq0.75-200.h5
-TOL=2.5e-8 sbatch slurm/build_table.job NR 2.5 350 0.75 200   # retry with more nodes; earlier results are reused
+sbatch table_building/slurm/build_table.job NR 2.5 350 0.75 200              # -> tables/norm_NR_ep2.5-350_eq0.75-200.h5
+TOL=2.5e-8 sbatch table_building/slurm/build_table.job NR 2.5 350 0.75 200   # retry with more nodes; earlier results are reused
 ```
 
-Each Slurm stage is `sbatch --wait slurm/normgrid.sbatch ...`, so `slurm/build_table.sh` runs until the whole chain is done; `slurm/build_table.job` runs it as a single-core driver job that waits in the queue like any other (the environment at submission, e.g. `TOL`, is passed on).  Every array is checked with `sacct` when it ends and a failed task stops the chain (`sbatch --wait` exits 0 on Alderaan even when tasks fail).  The container is `PDF_SIF`, by default `/scratch/$USER/containers/pdf.sif` where `slurm/pull_container.job` puts it.  Options (`TOL`, `EPSREL`, `ACCEPT`, chunk sizes, `ACCOUNT`/`PARTITION`/`TIME`) are documented in the script header.  The one-axis-at-a-time study cannot see cross terms between axes, which is why the held-out check is the gate.  `test/slurm/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and an analytic stand-in for the integrals.
+Each Slurm stage is `sbatch --wait table_building/slurm/normgrid.sbatch ...`, so `table_building/slurm/build_table.sh` runs until the whole chain is done; `table_building/slurm/build_table.job` runs it as a single-core driver job that waits in the queue like any other (the environment at submission, e.g. `TOL`, is passed on).  Every array is checked with `sacct` when it ends and a failed task stops the chain (`sbatch --wait` exits 0 on Alderaan even when tasks fail).  The container is `PDF_SIF`, by default `/scratch/$USER/containers/pdf.sif` where `table_building/slurm/pull_container.job` puts it.  Options (`TOL`, `EPSREL`, `ACCEPT`, chunk sizes, `ACCOUNT`/`PARTITION`/`TIME`) are documented in the script header.  The one-axis-at-a-time study cannot see cross terms between axes, which is why the held-out check is the gate.  `table_building/test/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and an analytic stand-in for the integrals.
 
 `run` is resumable and crash-tolerant: Fortran `error stop` (e.g. the quadrature not certifying `epsrel=1e-7`) kills the process, so a supervisor records that point as `nan` and restarts past it; re-run failures with a looser tolerance via `run --retry-failed --epsrel 1e-6`.  `merge` refuses to build a table with missing points.  The HDF5 file records the region, fixed parameters, library version and git commit it was built with — rebuild if any of those change.  (`h5py` is in `environment.yaml`.)  Then hand the tables to `PpqPDF`; nothing else in the fit changes:
 
@@ -291,7 +291,7 @@ LD_LIBRARY_PATH=lib python test/python/test_PpqFort_vectorFuncs.py
 See `test/python/README.md` for a map of the test scripts and their supporting modules, including where the PDF-over-bin integration lives.
 
 ## PDF self-consistency tests
-These verify that data sampled from the PDFs produces Pearson chi-square values that follow the theoretical chi2(n_bins − 1) distribution.  Reference plots are committed in `figures/`.
+These verify that data sampled from the PDFs produces Pearson chi-square values that follow the theoretical chi2(n_bins − 1) distribution.  Reference plots are committed in `test/figures/`.
 
 ```
 python test/python/verify_sample_from_pdf.py                       # sampler moment checks (~2 s)
@@ -316,7 +316,7 @@ LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws]
 LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]   # ER band vs PpqG
 ```
 
-Both write their chi-square histograms to `figures/chisquare_nr_simulator.png` and `figures/chisquare_er_simulator.png`.  `n_throws` defaults to 1000 and `n_bins` to 400.  The one-time integration of the PDF over the bins dominates the wall time, so reducing `n_bins` is the way to get a fast smoke test:
+Both write their chi-square histograms to `test/figures/chisquare_nr_simulator.png` and `test/figures/chisquare_er_simulator.png`.  `n_throws` defaults to 1000 and `n_bins` to 400.  The one-time integration of the PDF over the bins dominates the wall time, so reducing `n_bins` is the way to get a fast smoke test:
 
 ```
 # smoke test: 100 throws, 64 bins
@@ -330,7 +330,7 @@ LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 10000    #
 
 (Timings measured with the ifx build, 18 workers, under x86 emulation on an Apple Silicon Mac; native x86 hardware should be faster.  gfortran builds run the band integrals serially and will be dramatically slower here — use ifx or flang.)
 
-To run inside the Intel docker container (built as `pdf` — see Docker / Apptainer images under [Building from source](#building-from-source)), mount the repository's `figures/` directory so the plot survives the container:
+To run inside the Intel docker container (built as `pdf` — see Docker / Apptainer images under [Building from source](#building-from-source)), mount the repository's `test/figures/` directory so the plot survives the container:
 
 ```
 docker run --rm -v $(pwd)/figures:/app/figures pdf \

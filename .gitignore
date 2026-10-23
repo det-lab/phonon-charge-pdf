@@ -39,7 +39,7 @@ dist/
 # fpm install output
 bin/
 
-# Slurm output and normgrid run artifacts (slurm/normgrid.sbatch writes these)
+# Slurm output and normgrid run artifacts (table_building/slurm/normgrid.sbatch writes these)
 logs/
 results/
 
