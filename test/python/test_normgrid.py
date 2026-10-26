@@ -209,7 +209,7 @@ check("wide prior: every short axis is listed", msg is not None and "V: prior re
       and "k: prior" not in msg)
 check("wide prior: q10 above 0.4 lifts the q0 cap, so q0 is short too", msg is not None and "q0: prior reaches" in msg)
 check("wide prior: rebuild command with BOX rounded outward",
-      msg is not None and 'BOX="V=2.5:4 q0=0.04743:0.427 dq=0:0.4226"' in msg and "sbatch slurm/build_table.job NR" in msg)
+      msg is not None and 'BOX="V=2.5:4 q0=0.04743:0.427 dq=0:0.4226"' in msg and "sbatch table_building/slurm/build_table.job NR" in msg)
 hint = msg.split("BOX=\"")[1].split("\"")[0] if msg else ""
 wider = ng.parse_box(hint, "NR")
 check("the suggested box covers the prior", wider["V"][0] <= 2.5 and wider["V"][1] >= 4.0

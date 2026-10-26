@@ -13,10 +13,10 @@
 #   python python/cli/normgrid.py make-random-spec --band NR --n 200 \
 #          --region 2 200 4 100 --epsrel 1e-7 --out held_NR.json
 #   N=$(python python/cli/normgrid.py chunks spec_NR.json --size 500 | wc -l)
-#   sbatch --array=0-$((N-1))%200 slurm/normgrid.sbatch spec_NR.json 500 results
+#   sbatch --array=0-$((N-1))%200 table_building/slurm/normgrid.sbatch spec_NR.json 500 results
 #   # same for the held-out validation points (used by `validate` below):
 #   N=$(python python/cli/normgrid.py chunks held_NR.json --size 100 | wc -l)
-#   sbatch --array=0-$((N-1)) slurm/normgrid.sbatch held_NR.json 100 results
+#   sbatch --array=0-$((N-1)) table_building/slurm/normgrid.sbatch held_NR.json 100 results
 #
 #   # when the arrays are done (quick; run on a login node or interactively):
 #   python python/cli/normgrid.py merge --spec spec_NR.json --results 'results/res_spec_NR_*.txt' \
@@ -40,7 +40,7 @@
 #
 # Environment (all optional):
 #   PDF_SIF         container image (default /scratch/$USER/containers/pdf.sif,
-#                    where slurm/pull_container.job puts it; or build one from
+#                    where table_building/slurm/pull_container.job puts it; or build one from
 #                    Dockerfile_intel or _llvm as in the README).  Set
 #                    PDF_NATIVE=1 to skip the container and use the repo's own
 #                    python/ and lib/ (i.e. you built the library on the cluster).
@@ -63,8 +63,8 @@
 
 set -euo pipefail
 
-: "${SLURM_ARRAY_TASK_ID:?submit as a job array: sbatch --array=0-N-1 slurm/normgrid.sbatch SPEC [SIZE] [DIR] (see the header)}"
-SPEC=${1:?usage: slurm/normgrid.sbatch SPEC.json [CHUNK_SIZE] [RESULTS_DIR]}
+: "${SLURM_ARRAY_TASK_ID:?submit as a job array: sbatch --array=0-N-1 table_building/slurm/normgrid.sbatch SPEC [SIZE] [DIR] (see the header)}"
+SPEC=${1:?usage: table_building/slurm/normgrid.sbatch SPEC.json [CHUNK_SIZE] [RESULTS_DIR]}
 SIZE=${2:-500}
 OUT_DIR=${3:-results}
 mkdir -p "$OUT_DIR"

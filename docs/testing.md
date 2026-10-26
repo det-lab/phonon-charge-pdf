@@ -37,7 +37,7 @@ including where the PDF-over-bin integration lives.
 
 These verify that data sampled from the PDFs produces Pearson chi-square values that
 follow the theoretical chi2(n_bins - 1) distribution. Reference plots are committed in
-`figures/`.
+`test/figures/`.
 
 ```bash
 python test/python/verify_sample_from_pdf.py                       # sampler moment checks (~2 s)
@@ -73,8 +73,8 @@ LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws]
 LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]   # ER band vs PpqG
 ```
 
-Both write their chi-square histograms to `figures/chisquare_nr_simulator.png` and
-`figures/chisquare_er_simulator.png`. `n_throws` defaults to 1000 and `n_bins` to 400. The
+Both write their chi-square histograms to `test/figures/chisquare_nr_simulator.png` and
+`test/figures/chisquare_er_simulator.png`. `n_throws` defaults to 1000 and `n_bins` to 400. The
 one-time integration of the PDF over the bins dominates the wall time, so reducing
 `n_bins` is the way to get a fast smoke test:
 
@@ -94,9 +94,9 @@ serially and will be dramatically slower here — use ifx or flang.)
 
 To run inside the Intel docker container (built as `pdf` — see
 [Docker/Apptainer images](building-from-source.md#dockerapptainer-images)), mount the
-repository's `figures/` directory so the plot survives the container:
+repository's `test/figures/` directory so the plot survives the container:
 
 ```bash
-docker run --rm -v $(pwd)/figures:/app/figures pdf \
+docker run --rm -v $(pwd)/test/figures:/app/test/figures pdf \
     bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
 ```
