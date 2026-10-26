@@ -2,11 +2,15 @@
 region-integral evaluation for both bands, before committing a cluster batch
 or an HPC pull to it.
 
-Deliberately goes through normgrid.py's own public interface (make_grid_spec/
-coords_at/physical_params/_evaluate) rather than checking for a specific
-Fortran-binding symbol name directly -- that way a future internal rename
-(like Ppq_region_NR/Ppq_region_ER's own naming) doesn't require editing this
-script, only normgrid.py's own interface has to keep working.
+Deliberately goes only through normgrid.py's own public interface
+(make_grid_spec/coords_at/physical_params/_evaluate), never importing the
+Fortran-binding module directly by name -- that way a future internal
+rename (like Ppq_region_NR/Ppq_region_ER's own naming, or the binding
+module's own name) doesn't require editing this script, only normgrid.py's
+own interface has to keep working. normgrid.py (baked into whichever
+container this runs against) reaches the binding module under whatever
+name was correct for *its own* version internally -- this script never
+needs to know what that name is, since it never imports it directly.
 
 Shared between slurm/pull_container.job (pulls a published image from GHCR)
 and slurm/verify_local_image.sh (builds and checks a local image) -- run
@@ -20,10 +24,7 @@ import sys
 sys.path.insert(0, "/app/python/internal")
 sys.path.insert(0, "/app/python/cli")
 
-import _Ppq_fort_bindings
 import normgrid
-
-print("library version", ".".join(map(str, _Ppq_fort_bindings.version())))
 
 for band in ("NR", "ER"):
     spec = normgrid.make_grid_spec(band, {a: 1 for a in normgrid.BAND_AXES[band]})
