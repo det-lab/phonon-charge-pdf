@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/det-lab/phonon-charge-pdf.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23049123.svg)](https://doi.org/10.5281/zenodo.23049123)
 
-This code is useful for dark matter searches where detector output is Ep (total phonon energy) and Eq (total charge energy).  The point of the code is to provide the probability of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`PpqG`, where the G is for gamma because gammas are the cause of most electron recoils) and neutron recoils (`PpqN`, where the N is for neutron).
+This code is useful for dark matter searches where detector output is Ep (total phonon energy) and Eq (total charge energy).  The point of the code is to provide the probability of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`Ppq_ER`) and nuclear recoils (`Ppq_NR`).
 
 **Full documentation, including an API reference, is at <https://det-lab.github.io/phonon-charge-pdf/>.** This README covers the quickstart and a map of where everything lives.
 
@@ -31,7 +31,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
-library and `pqPDF` — see [Two ways to use this](#two-ways-to-use-this) below.
+library and `Ppq` — see [Two ways to use this](#two-ways-to-use-this) below.
 
 Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
 underscore, the usual PyPI convention). For local development instead of a pinned release,
@@ -49,11 +49,11 @@ dependencies.
 
 **1. Pure Python — no Fortran, no container needed.** `pip install phonon-charge-pdf` is
 enough. This covers generating simulated events ([`generate_events`](docs/python-events.md))
-and the resolution/yield model ([`sigp`, `sigq`, `Y`, `Nbar`, ...](docs/pq-dist.md)).
+and the resolution/yield model ([`sigp`, `sigq`, `Y`, `Nbar`, ...](docs/ppq-py.md)).
 
 **2. The Fortran-backed PDF — needs the compiled library.** If you want normalized PDF
 values or a likelihood — a fit, an MCMC, anything beyond generating or describing
-simulated events — you need [`pqPDF`](docs/fortran-pdf.md), and it always needs the
+simulated events — you need [`Ppq`](docs/ppq-fort.md), and it always needs the
 compiled library. Easiest first:
 
 | Option | Command |
@@ -84,10 +84,10 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](docs/python-events.md) |
-| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (pq_dist)](docs/pq-dist.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (pqPDF)](docs/fortran-pdf.md) |
+| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (Ppq_py)](docs/ppq-py.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq)](docs/ppq-fort.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](docs/normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](docs/testing.md) |
 | Profile the Fortran library itself (maintainer workflow) | [Profiling with TAU](docs/PROFILING.md) |
-| Browse the auto-generated API reference | <https://det-lab.github.io/phonon-charge-pdf/api/event_generator/> (and `pq_dist`, `pq_pdf`) |
+| Browse the auto-generated API reference | <https://det-lab.github.io/phonon-charge-pdf/api/event_generator/> (and `Ppq_py`, `Ppq_fort`) |

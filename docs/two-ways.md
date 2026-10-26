@@ -8,7 +8,7 @@ dependencies:
 `pip install phonon-charge-pdf` is enough. This covers:
 
 - **Generating simulated events** — [`generate_events`/`generate_NR_events`/`generate_ER_events`](python-events.md), built on `event_generator.py`.
-- **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](pq-dist.md), built on `pq_dist.py`, the pure-Python reference implementation.
+- **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](ppq-py.md), built on `Ppq_py.py`, the pure-Python reference implementation.
 
 Use this bucket to generate or describe simulated data, or to get resolution/yield model
 values directly. It works in any environment the package installs into — no container,
@@ -17,8 +17,8 @@ no compiler.
 ## 2. The Fortran-backed PDF — needs the compiled library
 
 **If you want normalized PDF values or a likelihood** — a fit, an MCMC, anything beyond
-generating or describing simulated events — you need [`pqPDF`](fortran-pdf.md), and it
-always needs the compiled Fortran library (`PpqN`/`PpqG`). Three ways to get it, easiest
+generating or describing simulated events — you need [`Ppq`](ppq-fort.md), and it
+always needs the compiled Fortran library (`Ppq_NR`/`Ppq_ER`). Three ways to get it, easiest
 first:
 
 | Option | Command |
@@ -35,8 +35,8 @@ an exact uncommitted state.
 
 ```text
 Do you need normalized PDF values or a likelihood (a fit, an MCMC)?
-├── No  → pure Python is enough: event_generator.py / pq_dist.py
-└── Yes → you need pqPDF, so you need the compiled library:
+├── No  → pure Python is enough: event_generator.py / Ppq_py.py
+└── Yes → you need Ppq, so you need the compiled library:
           ├── pip install phonon-charge-pdf   (simplest)
           ├── a published container           (HPC / Jupyter)
           └── build from source                (only if you have a specific reason)

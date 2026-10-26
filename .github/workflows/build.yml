@@ -205,7 +205,7 @@ jobs:
         done
 
     - name: Generate version include
-      # src/PpqFort_m.f90 `include`s src/version.f90.inc (not committed --
+      # src/Ppq_fort_m.f90 `include`s src/version.f90.inc (not committed --
       # see scripts/generate_version_include.py), generated here from
       # fpm.toml's version field directly in POSIX sh/sed rather than by
       # calling that script, since several matrix jobs run in minimal
@@ -232,7 +232,7 @@ jobs:
         echo "FFLAGS=$FFLAGS"
         fpm test                              ${FPM_FLAGS} --flag "$FFLAGS"
 
-    # Python validation of python/pq_dist.py and python/event_generator.py
+    # Python validation of python/Ppq_py.py and python/event_generator.py
     # against the compiled Fortran library. Skipped for:
     # - the phhargrove/llvm-flang containers, which are minimal
     #   (non-apt-based) images that can't reliably get a Python + pip
@@ -278,7 +278,7 @@ jobs:
         # Deliberately before "Install compiled library to lib/": the
         # point is to prove the package imports and its pure-Python half
         # (event_generator.py) works with no Fortran library anywhere on
-        # the system, while pqPDF fails clearly at construction instead
+        # the system, while Ppq fails clearly at construction instead
         # of silently succeeding.
         "$pythonLocation/bin/python" test/python/test_pip_packaging.py
 
@@ -288,7 +288,7 @@ jobs:
         set -x
         fpm install --prefix=. ${FPM_FLAGS} --flag "$FFLAGS"
 
-    - name: Validate pq_dist.py against the compiled library
+    - name: Validate Ppq_py.py against the compiled library
       if: ${{ !contains(matrix.container, 'phhargrove') && matrix.compiler != 'ifx' }}
       run: |
         set -x

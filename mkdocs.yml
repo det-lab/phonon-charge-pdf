@@ -30,16 +30,16 @@ nav:
   - Home: index.md
   - Two ways to use this: two-ways.md
   - Generating simulated events: python-events.md
-  - Resolution/yield model (pq_dist): pq-dist.md
-  - Fortran-backed PDF (pqPDF): fortran-pdf.md
+  - Resolution/yield model (Ppq_py): ppq-py.md
+  - Fortran-backed PDF (Ppq): ppq-fort.md
   - Precomputed normalization tables: normalization-tables.md
   - Building from source: building-from-source.md
   - Verification and validation: testing.md
   - Profiling: PROFILING.md
   - API reference:
       - event_generator: api/event_generator.md
-      - pq_dist: api/pq_dist.md
-      - pq_pdf: api/pq_pdf.md
+      - Ppq_py: api/ppq_py.md
+      - Ppq_fort: api/ppq_fort.md
 
 markdown_extensions:
   - admonition

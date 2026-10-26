@@ -2,8 +2,8 @@
 
 If you want simulated `(Ep, Eq)` detector events instead of PDF values — to validate a fit
 pipeline end to end, or to feed a downstream analysis — `event_generator.py` is the
-entrypoint, independent of `pqPDF`. Unlike `pqPDF`, it has **no Fortran dependency**: it's
-pure Python/numpy built on [`pq_dist.py`](pq-dist.md), so it works in any environment this
+entrypoint, independent of `Ppq`. Unlike `Ppq`, it has **no Fortran dependency**: it's
+pure Python/numpy built on [`Ppq_py.py`](ppq-py.md), so it works in any environment this
 package is installed into, container or not.
 
 ```python
@@ -21,7 +21,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 `target_size` events are returned, cropped to `[ep_min, ep_max] x [eq_min, eq_max]` (your
-real analysis ROI, the same box `pqPDF` would be normalized over); the ER/NR split is
+real analysis ROI, the same box `Ppq` would be normalized over); the ER/NR split is
 `Binomial(target_size, ER_frac)`, so `ER_frac=1.0`/`0.0` give deterministic pure-ER/pure-NR
 samples and anything in between carries the same sampling fluctuation a real dataset would.
 The returned `DataFrame` has columns `EP, EQ, N0, is_ER, seed, is_bkg` — `is_bkg` is
@@ -29,11 +29,11 @@ always `False` here; it exists only so these rows can be concatenated directly w
 separate zero-charge/surface-background generator that produces the same columns (e.g. a
 KDE-based one kept in a downstream analysis repo, out of scope for this library).
 
-The same generative model this draws from — `Er ~ PErN`/`PErG`, `N | Er ~ TruncNormal`,
-`(Ep, Eq) | Er, N ~ Normal` — is what `PpqN`/`PpqG` are obtained by marginalizing
+The same generative model this draws from — `Er ~ PEr_NR`/`PEr_ER`, `N | Er ~ TruncNormal`,
+`(Ep, Eq) | Er, N ~ Normal` — is what `Ppq_NR`/`Ppq_ER` are obtained by marginalizing
 analytically over `N` and numerically over `Er`; `test/python/test_chisquare_{nr,er}_simulator.py`
-checks that events from this module land on the Fortran `PpqN`/`PpqG`, which is a real
-physics check since this module never touches `PpqN`/`PpqG` itself. See
+checks that events from this module land on the Fortran `Ppq_NR`/`Ppq_ER`, which is a real
+physics check since this module never touches `Ppq_NR`/`Ppq_ER` itself. See
 [Verification and validation](testing.md).
 
 For single-species sampling without the ROI retry/mixing logic (e.g. for a custom

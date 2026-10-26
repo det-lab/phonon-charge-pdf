@@ -15,7 +15,7 @@ of the code). Build and install the shared library first (see
 LD_LIBRARY_PATH=lib python test/python/test_PpqFort.py
 ```
 
-or if you just want to test the vectorized functions `PpqN_vector` and `PpqG_vector`
+or if you just want to test the vectorized functions `Ppq_vector_NR` and `Ppq_vector_ER`
 
 ```bash
 LD_LIBRARY_PATH=lib python test/python/test_PpqFort_vectorFuncs.py
@@ -27,7 +27,7 @@ in their environment.)
 `test/python/test_pip_packaging.py` is the one test here that's meant to run *without* the
 compiled library: against a `pip install -e ".[test]"` of this repository and before the
 library is built, it checks that `import phonon_charge_pdf` and `event_generator.py`'s
-functions still work, and that `pqPDF` fails clearly at construction instead of silently
+functions still work, and that `Ppq` fails clearly at construction instead of silently
 succeeding.
 
 See `test/python/README.md` for a map of the test scripts and their supporting modules,
@@ -41,7 +41,7 @@ follow the theoretical chi2(n_bins - 1) distribution. Reference plots are commit
 
 ```bash
 python test/python/verify_sample_from_pdf.py                       # sampler moment checks (~2 s)
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_ppqn.py      # Fortran PpqN PDF (~2 min first run)
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_ppqn.py      # Fortran Ppq_NR PDF (~2 min first run)
 ```
 
 `test_chisquare_ppqn.py` takes the same two optional positional arguments as the
@@ -52,7 +52,7 @@ smoke test with fewer throws, run
 LD_LIBRARY_PATH=lib python test/python/test_chisquare_ppqn.py 2000 64
 ```
 
-It caches its PDF grid evaluation in `ppqn_vertex_grid.npz` (not committed) and reuses it
+It caches its PDF grid evaluation in `ppq_nr_vertex_grid.npz` (not committed) and reuses it
 on later runs.
 
 The `test_chisquare_ppqn.py` timing assumes an ifx or flang build; gfortran builds run the
@@ -66,11 +66,11 @@ match that same PDF). The two tests below are the stronger check: they generate 
 from an independent physics simulator ([`event_generator.py`](python-events.md), which
 draws Er from the recoil spectrum, N from a truncated normal, and applies detector
 resolution) and compare the binned counts against the Fortran PDFs. A pass means the
-Fortran `PpqN`/`PpqG` implementations correctly describe the physics.
+Fortran `Ppq_NR`/`Ppq_ER` implementations correctly describe the physics.
 
 ```bash
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws] [n_bins]   # NR band vs PpqN
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]   # ER band vs PpqG
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws] [n_bins]   # NR band vs Ppq_NR
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]   # ER band vs Ppq_ER
 ```
 
 Both write their chi-square histograms to `figures/chisquare_nr_simulator.png` and

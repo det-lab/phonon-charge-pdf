@@ -4,7 +4,7 @@ title: phonon-charge-pdf
 type: software
 abstract: >-
   Probability densities of (Ep, Eq) -- total phonon and total charge energy -- for
-  electron recoils (PpqG) and nuclear recoils (PpqN) in cryogenic germanium dark matter
+  electron recoils (Ppq_ER) and nuclear recoils (Ppq_NR) in cryogenic germanium dark matter
   detectors, given a set of detector parameters.  A Fortran library parallelized with
   do concurrent, with Python bindings, region-normalization integrals, and precomputed
   normalization tables for MCMC.
@@ -39,5 +39,5 @@ references:
         given-names: Damian
         orcid: "https://orcid.org/0000-0002-2344-868X"
     notes: >-
-      Precomputed region-normalization tables used by python/pq_pdf.py and fetched by
+      Precomputed region-normalization tables used by python/Ppq_fort.py and fetched by
       python/cli/normtables.py (python/cli/table_registry.json).

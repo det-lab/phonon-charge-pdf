@@ -16,7 +16,7 @@ inside a table and checked on every call.
   for `p10 >= p0` (likewise `q10 >= q0`), so a plain `(p0, p10)` or `(q0, q10)` box would
   contain unphysical corners (the `q0` and `q10` ranges overlap); `dp >= 0` and `dq >= 0`
   keep the box rectangular. Query the table with the physical `p10`/`q10`; it converts.
-  `PpqN_region`/`PpqG_region` now error out in ~0.3 s on such inputs (and on
+  `Ppq_region_NR`/`Ppq_region_ER` now error out in ~0.3 s on such inputs (and on
   `F0, eps, p0, q0, k, Z <= 0`, an empty region, or NaN) instead of grinding for minutes.
 - **Interpolant.** Tensor-product Chebyshev series through Chebyshev–Lobatto nodes, built
   and evaluated with `numpy.polynomial.chebyshev` (`chebfit`/`chebval`; exact at the nodes,
@@ -105,16 +105,16 @@ and restarts past it; re-run failures with a looser tolerance via
 `run --retry-failed --epsrel 1e-6`. `merge` refuses to build a table with missing points.
 The HDF5 file records the region, fixed parameters, library version and git commit it was
 built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
-the tables to `pqPDF`; nothing else in the fit changes:
+the tables to `Ppq`; nothing else in the fit changes:
 
 ```python
 # define the data region: must match what the tables were built for exactly
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = pdf.pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
-                      ppqn_table="norm_NR.h5", ppqg_table="norm_ER.h5")
-# band_pdf.ppqn_integral(...) / band_pdf.ppqg_integral(...) now interpolate instead of integrating
+likelihood = pdf.Ppq(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+                      Ppq_table_NR="norm_NR.h5", Ppq_table_ER="norm_ER.h5")
+# likelihood.Ppq_integral_NR(...) / likelihood.Ppq_integral_ER(...) now interpolate instead of integrating
 ```
 
 **Published tables** are listed in `python/cli/table_registry.json` and can be passed by
@@ -131,13 +131,13 @@ an MCMC is the same: **keep every parameter inside the tables' box, with `p10 >=
 `q10 >= q0`** (the PDF is undefined otherwise). The library checks this and says what to
 change; the fit or MCMC code has to enforce it.
 
-- `pqPDF(..., prior_bounds=BOUNDS)` checks hard bounds against every table given, at
+- `Ppq(..., prior_bounds=BOUNDS)` checks hard bounds against every table given, at
   construction. If they reach outside a table it raises `PriorNotCoveredError`, listing
   each short axis and the `BOX=` rebuild command that would cover them.
-- `band_pdf.table_bounds()` gives, per band, the widest bounds each table covers: a
+- `likelihood.table_bounds()` gives, per band, the widest bounds each table covers: a
   ready-made set of hard bounds. Take bounds from it, or round inward: the box edges are
   not round numbers (`p0` starts at 0.0128438), and bounds rounded outward fail the check.
-- `band_pdf.check_points(points)` checks a set of points, e.g. an MCMC's starting walkers.
+- `likelihood.check_points(points)` checks a set of points, e.g. an MCMC's starting walkers.
 - At run time, a query outside a table raises `OutOfBoxError` naming the axis, the value,
   the box and the table file. After the setup checks pass, that means a bug or a NaN.
 
@@ -158,8 +158,8 @@ BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-band_pdf = pdf.pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
-                      ppqn_table="NR_ep2.5-350_eq0.75-200", ppqg_table="ER_ep2.5-350_eq0.75-200",
+likelihood = pdf.Ppq(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+                      Ppq_table_NR="NR_ep2.5-350_eq0.75-200", Ppq_table_ER="ER_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # 1. fails now, not hours into the run
 
 def log_prior(theta):                             # 2. -inf outside the hard bounds and the ordering
@@ -172,9 +172,9 @@ def log_prob(theta):                              # 3. the prior first: the tabl
     lp = log_prior(theta)                         #    a point outside it
     if not np.isfinite(lp):
         return -np.inf
-    return lp + log_likelihood(theta, band_pdf)
+    return lp + log_likelihood(theta, likelihood)
 
-band_pdf.check_points(as_params(start))          # 4. starting walkers inside, before sampling
+likelihood.check_points(as_params(start))        # 4. starting walkers inside, before sampling
                                                   #    ({param: array}, laid out like BOUNDS)
 ```
 
@@ -189,7 +189,7 @@ which is what step 4 catches.
   with L-BFGS-B, Powell or trust-constr), and check them once with `prior_bounds` or
   `table_bounds()`.
 - Box bounds cannot express `p10 >= p0`. Either fit `dp = p10 - p0` and `dq = q10 - q0`
-  directly, bounded by the tables' own `dp`/`dq` axes (`band_pdf.ppqn_table.box["dp"]`,
+  directly, bounded by the tables' own `dp`/`dq` axes (`likelihood.Ppq_table_NR.box["dp"]`,
   0.18–0.59 by default; `dq` 0–0.353), and convert back when calling the PDF, or add the
   inequalities as constraints (trust-constr, SLSQP).
 - A fit that ends on a bound is being limited by the box, not the data: widen it with

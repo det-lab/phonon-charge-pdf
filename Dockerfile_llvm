@@ -90,7 +90,7 @@ RUN mkdir -p /app/src /app/test /app/python /app/scripts \
     && rm -rf /tmp/pdf_src
 
 # version.f90.inc (PpqFort_version(); not committed, see the script) must
-# exist before fpm build/test -- it is a plain `include` in src/PpqFort_m.f90
+# exist before fpm build/test -- it is a plain `include` in src/Ppq_fort_m.f90
 RUN python scripts/generate_version_include.py
 
 # Link the LLVM OpenMP runtime into everything fpm builds here (including
@@ -114,6 +114,6 @@ ENV LD_LIBRARY_PATH=/app/lib:$LD_LIBRARY_PATH
 
 # Published normalization tables (python/cli/table_registry.json), fetched and
 # hash-checked at build time -- HPC compute nodes often have no internet.
-# python/cli/normtables.py (and so pqPDF(ppqn_table=NAME)) finds them here.
+# python/cli/normtables.py (and so Ppq(Ppq_table_NR=NAME)) finds them here.
 ENV PDF_TABLES_DIR=/app/tables
 RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all

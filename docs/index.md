@@ -2,9 +2,8 @@
 
 This code is useful for dark matter searches where detector output is Ep (total phonon
 energy) and Eq (total charge energy). The point of the code is to provide the probability
-of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`PpqG`,
-where the G is for gamma because gammas are the cause of most electron recoils) and
-neutron recoils (`PpqN`, where the N is for neutron).
+of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`Ppq_ER`)
+and nuclear recoils (`Ppq_NR`).
 
 ## Quickstart
 
@@ -27,7 +26,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
-library and `pqPDF`; see [Two ways to use this](two-ways.md).
+library and `Ppq`; see [Two ways to use this](two-ways.md).
 
 Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
 underscore, the usual PyPI convention).
@@ -45,8 +44,8 @@ by name.
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](python-events.md) |
-| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (pq_dist)](pq-dist.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (pqPDF)](fortran-pdf.md) |
+| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (Ppq_py)](ppq-py.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq)](ppq-fort.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](testing.md) |
