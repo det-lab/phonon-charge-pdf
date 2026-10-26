@@ -3,11 +3,11 @@
 
 program test_suite_driver
   use julienne_m, only : test_fixture_t, test_harness_t
-  use PpqFort_test_m, only : PpqFort_test_t
+  use Ppq_fort_test_m, only : Ppq_fort_test_t
   implicit none
 
   associate(test_harness => test_harness_t([ &
-     test_fixture_t(PpqFort_test_t()) &
+     test_fixture_t(Ppq_fort_test_t()) &
   ]))
     call test_harness%report_results
   end associate

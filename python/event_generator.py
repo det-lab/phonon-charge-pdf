@@ -3,10 +3,10 @@ event_generator is the public entrypoint for generating simulated (Ep, Eq)
 detector events -- an independent physics simulator, not a second way to
 evaluate the PDF (see "Physical picture" below for why that independence
 matters). If you want normalized PDF values or a likelihood instead, use
-pqPDF (python/pq_pdf.py).
+Ppq (python/Ppq_fort.py).
 
-Unlike pqPDF, this module has no Fortran dependency at all -- it is pure
-Python/numpy built on python/pq_dist.py's Y/Nbar/sigp/sigq (itself a
+Unlike Ppq, this module has no Fortran dependency at all -- it is pure
+Python/numpy built on python/Ppq.py's Y/Nbar/sigp/sigq (itself a
 public entrypoint; see its module docstring), so it works in any
 environment that can `pip install` this package, compiled library or not.
 
@@ -24,27 +24,27 @@ Quickstart
     Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 All physics parameters are required keyword arguments -- there are no
-defaults, matching the rest of this library (pqPDF, _ppqfort_bindings.py,
-pq_dist.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
+defaults, matching the rest of this library (Ppq, _Ppq_fort_bindings.py,
+Ppq.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
 and anything in between generates a mix.
 
 Physical picture
 -----------------
 Each event starts from a true recoil energy Er, drawn from the species'
-biexponential spectrum (PErG for electron recoils, PErN for nuclear
+biexponential spectrum (PEr_ER for electron recoils, PEr_NR for nuclear
 recoils). Er then produces a Fano-broadened number of e/h pairs N, which
 in turn sets the phonon energy Ep (recoil + Neganov-Luke) and charge
 energy Eq (N * eps), each further smeared by its own detector resolution:
 
-    Er ~ PErN or PErG        (biexponential true-recoil-energy spectrum)
+    Er ~ PEr_NR or PEr_ER        (biexponential true-recoil-energy spectrum)
     N  | Er ~ TruncNormal     (Fano-factor fluctuation, truncated at N >= 0)
     Ep | Er, N ~ Normal       (phonon detector: Neganov-Luke + thermal)
     Eq | N ~ Normal           (charge detector)
 
-The analytic PDFs PpqN/PpqG are obtained by marginalizing this same chain
+The analytic PDFs Ppq_NR/Ppq_ER are obtained by marginalizing this same chain
 analytically over N and numerically over Er -- so agreement between events
-generated here and PpqN/PpqG (see test/python/test_chisquare_{nr,er}_simulator.py)
-is a real physics check, not a tautology: this module never touches PpqN/PpqG.
+generated here and Ppq_NR/Ppq_ER (see test/python/test_chisquare_{nr,er}_simulator.py)
+is a real physics check, not a tautology: this module never touches Ppq_NR/Ppq_ER.
 
 Returned DataFrame
 -------------------
@@ -75,12 +75,12 @@ import sys
 
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PYTHON_DIR)
-import pq_dist as ppq
+import Ppq as ppq
 
 
 def _sample_biexponential(n, rng, *, mix_frac, scale_fast, scale_slow):
     """n draws from a two-component exponential mixture -- the shared shape
-    of both PErN (nuclear recoils) and PErG (electron recoils)."""
+    of both PEr_NR (nuclear recoils) and PEr_ER (electron recoils)."""
     is_fast = rng.random(n) < mix_frac
     return np.where(is_fast, rng.exponential(scale_fast, n), rng.exponential(scale_slow, n))
 
@@ -155,11 +155,11 @@ def generate_NR_events(n_events, *,
                         mix_frac, scale_fast, scale_slow,
                         seed):
     """
-    Generate (Ep, Eq) pairs distributed according to PpqN -- no ROI
+    Generate (Ep, Eq) pairs distributed according to Ppq_NR -- no ROI
     cropping, no species mixing; see generate_events() for that.
 
-    mix_frac, scale_fast, scale_slow are PErN's biexponential
-    true-recoil-energy spectrum parameters (see pq_dist.py's PErN).
+    mix_frac, scale_fast, scale_slow are PEr_NR's biexponential
+    true-recoil-energy spectrum parameters (see Ppq.py's PEr_NR).
 
     Returns
     -------
@@ -181,12 +181,12 @@ def generate_ER_events(n_events, *,
                         mix_frac, scale_fast, scale_slow,
                         seed):
     """
-    Generate (Ep, Eq) pairs distributed according to PpqG -- no ROI
+    Generate (Ep, Eq) pairs distributed according to Ppq_ER -- no ROI
     cropping, no species mixing; see generate_events() for that.
 
     Gamma / electron-recoil events have ionization yield Y = 1. mix_frac,
-    scale_fast, scale_slow are PErG's biexponential true-recoil-energy
-    spectrum parameters (see pq_dist.py's PErG).
+    scale_fast, scale_slow are PEr_ER's biexponential true-recoil-energy
+    spectrum parameters (see Ppq.py's PEr_ER).
 
     Returns
     -------
@@ -295,18 +295,18 @@ def generate_events(target_size, ER_frac, seed, *,
     k, Z : float
         Lindhard ionization yield calibration constant and target atomic
         number (nuclear recoils only; unused but still required when
-        ER_frac=1.0, for the same reason pqPDF always requires them).
+        ER_frac=1.0, for the same reason Ppq always requires them).
     F0_ER, F0_NR : float
         Fano factor (constant), one per species -- ER and NR generally
         have different Fano factors even at the same operating point.
     eps, V, p0, p10, q0, q10 : float
         Shared detector parameters (energy per e/h pair, bias voltage,
-        phonon/charge resolution parameters) -- see pq_dist.py's
+        phonon/charge resolution parameters) -- see Ppq.py's
         sigp/sigq.
     mix_frac_NR, scale_fast_NR, scale_slow_NR : float
-        NR true-recoil-energy (PErN) biexponential spectrum parameters.
+        NR true-recoil-energy (PEr_NR) biexponential spectrum parameters.
     mix_frac_ER, scale_fast_ER, scale_slow_ER : float
-        ER true-recoil-energy (PErG) biexponential spectrum parameters.
+        ER true-recoil-energy (PEr_ER) biexponential spectrum parameters.
     max_retries : int
         Cap on retry batches per species before giving up with a warning.
 

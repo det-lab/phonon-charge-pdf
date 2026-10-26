@@ -1,4 +1,4 @@
-submodule(PpqFort_m) PpqFort_s
+submodule(Ppq_fort_m) Ppq_fort_s
   implicit none
 
   ! Number of composite Simpson 1/3 points for the N integral (must be
@@ -25,8 +25,8 @@ submodule(PpqFort_m) PpqFort_s
   ! Lower edge of the Er integration domain (keV)
   real(c_double), parameter :: er_min = 1.0d-6
 
-  ! Shortest decay length in the gamma recoil spectrum PErG (keV); must
-  ! stay in sync with PGb inside the PErG module procedure.  The Er
+  ! Shortest decay length in the gamma recoil spectrum PEr_ER (keV); must
+  ! stay in sync with PGb inside the PEr_ER module procedure.  The Er
   ! sampling step is capped at a fraction of this scale when the
   ! integration window reaches down to the low-Er spectrum spike.
   real(c_double), parameter :: PGb_scale = 0.169520023d0
@@ -38,9 +38,9 @@ submodule(PpqFort_m) PpqFort_s
   integer, parameter :: max_modes = 4
 
   ! Bundles the scalar model/detector constants that are fixed for one
-  ! PpqN/PpqG/PpqFullN call, so the internal engine below threads one
+  ! Ppq_NR/Ppq_ER/pq_given_Er_NR call, so the internal engine below threads one
   ! argument instead of nine.  Internal-only: never crosses the bind(c)
-  ! boundary, so the public interface in PpqFort_m.f90 is unaffected.
+  ! boundary, so the public interface in Ppq_fort_m.f90 is unaffected.
   ! Zfac = Z**(-7/3) (not raw Z) since that's the form the hot path needs,
   ! computed once here rather than once per Er sample.
   type :: detector_params_t
@@ -48,7 +48,7 @@ submodule(PpqFort_m) PpqFort_s
   end type detector_params_t
 
   ! ---------------------------------------------------------------------
-  ! Gauss-Legendre doubling-verified quadrature: PpqN_region / PpqG_region.
+  ! Gauss-Legendre doubling-verified quadrature: Ppq_region_NR / Ppq_region_ER.
   ! Replaces an earlier fixed-grid trapezoid implementation (superseded
   ! entirely -- no reason to keep both once this is faster and more
   ! accurate) and, before that, a Cuba/Cuhre-based implementation
@@ -79,7 +79,7 @@ submodule(PpqFort_m) PpqFort_s
 
 contains
 
-  ! Zfac is 0 (and unused downstream) when is_gamma is .true.: PpqG passes
+  ! Zfac is 0 (and unused downstream) when is_gamma is .true.: Ppq_ER passes
   ! a placeholder Z that may be 0, and Z**(-7/3) would be invalid there.
   pure function make_params(k, Z, F0, eps, V, p0, p10, q0, q10, is_gamma) result(pars)
       real(c_double), intent(in) :: k, Z, F0, eps, V, p0, p10, q0, q10
@@ -101,23 +101,23 @@ contains
       end if
   end function make_params
 
-  module procedure PpqN_vector
+  module procedure Ppq_vector_NR
       integer :: i
 
       do concurrent(i = 1:n) default (none) shared(res_arr, Ep_arr, Eq_arr, k, Z, F0, eps, V, p0, p10, q0, q10)
-          res_arr(i) = PpqN(Ep_arr(i), Eq_arr(i), k, Z, F0, eps, V, p0, p10, q0, q10)
+          res_arr(i) = Ppq_NR(Ep_arr(i), Eq_arr(i), k, Z, F0, eps, V, p0, p10, q0, q10)
       end do
-  end procedure PpqN_vector
+  end procedure Ppq_vector_NR
 
-  module procedure PpqG_vector
+  module procedure Ppq_vector_ER
       integer :: i
 
       do concurrent(i = 1:n) default (none) shared(res_arr, Ep_arr, Eq_arr, F0, eps, V, p0, p10, q0, q10)
-          res_arr(i) = PpqG(Ep_arr(i), Eq_arr(i), F0, eps, V, p0, p10, q0, q10)
+          res_arr(i) = Ppq_ER(Ep_arr(i), Eq_arr(i), F0, eps, V, p0, p10, q0, q10)
       end do
-  end procedure PpqG_vector
+  end procedure Ppq_vector_ER
 
-  ! PpqN, PpqG: integrate P(Ep,Eq|Er)*P(Er) dEr.
+  ! Ppq_NR, Ppq_ER: integrate P(Ep,Eq|Er)*P(Er) dEr.
   !
   ! The integrand is a narrow bump in Er: the phonon and ionization
   ! measurements each constrain Er to within a few sigma, so sampling the
@@ -128,16 +128,16 @@ contains
   ! trapezoid rule converges spectrally, so ~100 points reproduce the old
   ! full-range fine grid (~35,000 points) to near machine precision.
 
-  module procedure PpqN
+  module procedure Ppq_NR
       type(detector_params_t) :: pars
 
       if (F0 == 0.0d0) &
           error stop "Fano factor F(Er) = F0 is zero for all Er"
       pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
       res = integrate_band(Ep, Eq, pars, .false.)
-  end procedure PpqN
+  end procedure Ppq_NR
 
-  module procedure PpqG
+  module procedure Ppq_ER
       type(detector_params_t) :: pars
 
       if (F0 == 0.0d0) &
@@ -146,7 +146,7 @@ contains
       ! always 1); the placeholders below are never read.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
       res = integrate_band(Ep, Eq, pars, .true.)
-  end procedure PpqG
+  end procedure Ppq_ER
 
   module procedure Y
       real(c_double) :: eps_L, g
@@ -179,13 +179,13 @@ contains
   ! The bind(c) module procedures cannot themselves be elemental, so the
   ! spectrum formulas live in elemental implementations that array-valued
   ! internal code (the mode scan) can evaluate in vectorizable form.
-  module procedure PErN
+  module procedure PEr_NR
       res = PErN_impl(Er)
-  end procedure PErN
+  end procedure PEr_NR
 
-  module procedure PErG
+  module procedure PEr_ER
       res = PErG_impl(Er)
-  end procedure PErG
+  end procedure PEr_ER
 
   elemental function PErN_impl(Er) result(res)
       real(c_double), intent(in) :: Er
@@ -212,7 +212,7 @@ contains
   end function PErG_impl
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
-  ! per PpqN/PpqG call (by integrate_band) instead of recomputing the Z
+  ! per Ppq_NR/Ppq_ER call (by integrate_band) instead of recomputing the Z
   ! power at every one of the thousands of Er samples in the mode scan and
   ! window integration.  Matches the public Y module procedure's formula.
   elemental function lindhard_yield_zfac(Er, k, Zfac) result(res)
@@ -231,36 +231,36 @@ contains
       patch = version_patch
   end procedure PpqFort_version
 
-  ! PpqFullN: integrand for the Er integral, P(Ep,Eq|Er)*P(Er), NR case.
+  ! pq_given_Er_NR: integrand for the Er integral, P(Ep,Eq|Er)*P(Er), NR case.
   ! Evaluates the N integral numerically via 21-point Simpson's rule.
   ! sigp and sigq are evaluated at exact noiseless energies (Er+V*N/1000,
   ! eps*N) per sample point, matching the data simulator exactly.
-  module procedure PpqFullN
+  module procedure pq_given_Er_NR
       type(detector_params_t) :: pars
 
       pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
-      res = PpqCondN(Er, Ep, Eq, pars, .false.) * PErN(Er)
-  end procedure PpqFullN
+      res = PpqCondN(Er, Ep, Eq, pars, .false.) * PEr_NR(Er)
+  end procedure pq_given_Er_NR
 
-  ! PpqN_region / PpqG_region: integral of PpqN/PpqG over a rectangular
+  ! Ppq_region_NR / Ppq_region_ER: integral of Ppq_NR/Ppq_ER over a rectangular
   ! (Ep,Eq) region, e.g. to normalize a likelihood to its fit region.
   ! See region_integral_gl for the algorithm.
-  module procedure PpqN_region
+  module procedure Ppq_region_NR
       type(detector_params_t) :: pars
 
       pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
       res = region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                                pars, .false.)
-  end procedure PpqN_region
+  end procedure Ppq_region_NR
 
-  module procedure PpqG_region
+  module procedure Ppq_region_ER
       type(detector_params_t) :: pars
 
       ! k, Z are unused when is_gamma is .true.; placeholders as elsewhere.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
       res = region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                                pars, .true.)
-  end procedure PpqG_region
+  end procedure Ppq_region_ER
 
   ! ---------------------------------------------------------------------
   ! Private helpers
@@ -269,7 +269,7 @@ contains
   ! P(Ep,Eq|Er): the 21-point Simpson N integral, without the recoil
   ! spectrum factor.  is_gamma selects the electron-recoil yield (Y=1)
   ! instead of the Lindhard NR yield; pars%Zfac is Z**(-7/3), precomputed
-  ! once per PpqN/PpqG call (unused when is_gamma is .true.).
+  ! once per Ppq_NR/Ppq_ER call (unused when is_gamma is .true.).
   pure function PpqCondN(Er, Ep, Eq, pars, is_gamma) result(res)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
@@ -346,8 +346,8 @@ contains
   end function PpqCondN
 
   ! The full integrand P(Ep,Eq|Er)*P(Er) with the spectrum and yield
-  ! selected by is_gamma (electron recoils: Y=1, PErG; nuclear recoils:
-  ! Lindhard(k,Zfac), PErN).
+  ! selected by is_gamma (electron recoils: Y=1, PEr_ER; nuclear recoils:
+  ! Lindhard(k,Zfac), PEr_NR).
   pure function band_integrand(Er, Ep, Eq, pars, is_gamma) result(res)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
@@ -356,9 +356,9 @@ contains
 
       res = PpqCondN(Er, Ep, Eq, pars, is_gamma)
       if (is_gamma) then
-          res = res * PErG(Er)
+          res = res * PEr_ER(Er)
       else
-          res = res * PErN(Er)
+          res = res * PEr_NR(Er)
       end if
   end function band_integrand
 
@@ -446,7 +446,7 @@ contains
       ! two peaks separated by a valley narrower than the local scan
       ! spacing, which would show up as a large (order-unity) relative
       ! error, not a small one.  Empirically, dropping to n_scan = 64
-      ! changed PpqN/PpqG values by at most ~1e-8 relative (vs a 4096-
+      ! changed Ppq_NR/Ppq_ER values by at most ~1e-8 relative (vs a 4096-
       ! point reference) across the physical parameters and 10 random
       ! draws from the fit-parameter space, including the draws that
       ! produced genuine multimodality -- no mode was ever lost, and
@@ -666,7 +666,7 @@ contains
 
   end function integrate_piecewise
 
-  ! Shared driver for PpqN / PpqG: locate every integrand mode, place an
+  ! Shared driver for Ppq_NR / Ppq_ER: locate every integrand mode, place an
   ! integration window around each, merge overlapping windows, and guard
   ! the window edges.
   pure function integrate_band(Ep, Eq, pars, is_gamma) result(res)
@@ -1067,30 +1067,30 @@ contains
       logical, intent(in) :: is_gamma
 
       if (.not. (ep_max > ep_min .and. eq_max > eq_min)) &
-          error stop "PpqN_region/PpqG_region: invalid region: need ep_max > ep_min and eq_max > eq_min"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid region: need ep_max > ep_min and eq_max > eq_min"
       if (.not. (epsrel >= 0.0d0 .and. epsabs >= 0.0d0)) &
-          error stop "PpqN_region/PpqG_region: invalid tolerance: epsrel and epsabs must be >= 0"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid tolerance: epsrel and epsabs must be >= 0"
       if (.not. (pars%F0 > 0.0d0)) &
-          error stop "PpqN_region/PpqG_region: invalid parameters: Fano factor F0 must be > 0"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: Fano factor F0 must be > 0"
       if (.not. (pars%eps > 0.0d0)) &
-          error stop "PpqN_region/PpqG_region: invalid parameters: eps must be > 0"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: eps must be > 0"
       if (.not. (1.0d0 + pars%V / (pars%eps * 1.0d3) > 0.0d0)) &
-          error stop "PpqN_region/PpqG_region: invalid parameters: need 1 + V/(1000*eps) > 0"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: need 1 + V/(1000*eps) > 0"
       if (.not. (pars%p0 > 0.0d0 .and. pars%q0 > 0.0d0)) &
-          error stop "PpqN_region/PpqG_region: invalid parameters: p0 and q0 must be > 0"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: p0 and q0 must be > 0"
       if (.not. (pars%p10 >= pars%p0)) &
-          error stop "PpqN_region/PpqG_region: invalid parameters: p10 < p0 makes the phonon resolution sigp^2 negative at high energy"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: p10 < p0 makes the phonon resolution sigp^2 negative at high energy"
       if (.not. (pars%q10 >= pars%q0)) &
-          error stop "PpqN_region/PpqG_region: invalid parameters: q10 < q0 makes the charge resolution sigq^2 negative at high energy"
+          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: q10 < q0 makes the charge resolution sigq^2 negative at high energy"
       if (.not. is_gamma) then
           if (.not. (pars%k > 0.0d0)) &
-              error stop "PpqN_region: invalid parameters: k must be > 0"
+              error stop "Ppq_region_NR: invalid parameters: k must be > 0"
           if (.not. (pars%Zfac > 0.0d0 .and. pars%Zfac < huge(1.0d0))) &
-              error stop "PpqN_region: invalid parameters: Z must be > 0"
+              error stop "Ppq_region_NR: invalid parameters: Z must be > 0"
       end if
   end subroutine validate_region_inputs
 
-  ! Doubling-verified driver for PpqN_region/PpqG_region:
+  ! Doubling-verified driver for Ppq_region_NR/Ppq_region_ER:
   ! order 32 vs 64, then 64 vs 128, then 128 vs 256; accepts the finer
   ! estimate the first time two successive orders agree within
   ! max(epsabs, epsrel*|result|), or fails loudly (error stop) if order
@@ -1170,8 +1170,8 @@ contains
           return
       end if
 
-      error stop "PpqN_region/PpqG_region: Gauss-Legendre doubling " // &
+      error stop "Ppq_region_NR/Ppq_region_ER: Gauss-Legendre doubling " // &
                   "did not converge to the requested epsrel/epsabs by order 256"
   end function region_integral_gl
 
-end submodule PpqFort_s
+end submodule Ppq_fort_s

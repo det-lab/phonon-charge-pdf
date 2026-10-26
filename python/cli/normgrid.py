@@ -1,7 +1,7 @@
 """
 Precomputed, interpolated region-normalization tables for MCMC.
 
-The region-normalization integral (_ppqfort_bindings.ppqn_region/ppqg_region) is
+The region-normalization integral (_Ppq_fort_bindings.Ppq_region_NR/Ppq_region_ER) is
 ~2 s per call -- fine for one fit, hopeless inside an MCMC.  But the region
 is fixed for a whole run and the integral is a very smooth function of the
 handful of physics parameters the MCMC varies, so it can be evaluated once
@@ -53,7 +53,7 @@ import time
 import numpy as np
 from numpy.polynomial import chebyshev as cheb
 
-# _ppqfort_bindings.py is a sibling package, not a sibling file, now that the
+# _Ppq_fort_bindings.py is a sibling package, not a sibling file, now that the
 # CLI tools and the private ctypes layer live in their own subdirectories.
 _INTERNAL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "internal")
 
@@ -256,7 +256,7 @@ def coords_at(spec, i):
 
 
 def physical_params(spec, coords):
-    """Axis coordinates -> the keyword arguments of ppqn_region/ppqg_region
+    """Axis coordinates -> the keyword arguments of Ppq_region_NR/Ppq_region_ER
     (minus the region and tolerances)."""
     p = {"F0": coords["F0"], "eps": spec["fixed"]["eps"], "V": coords["V"],
          "p0": coords["p0"], "p10": coords["p0"] + coords["dp"],
@@ -283,8 +283,8 @@ def _evaluate(spec, params, epsrel):
     if fake:
         return 1.0 + sum(params[k] * (i + 1) for i, k in enumerate(sorted(params))) * 1e-3
     sys.path.insert(0, _INTERNAL_DIR)
-    from _ppqfort_bindings import ppqg_region, ppqn_region
-    fn = ppqn_region if spec["band"] == "NR" else ppqg_region
+    from _Ppq_fort_bindings import Ppq_region_ER, Ppq_region_NR
+    fn = Ppq_region_NR if spec["band"] == "NR" else Ppq_region_ER
     return fn(*spec["region"], epsrel=epsrel, epsabs=spec["epsabs"], **params)
 
 
@@ -408,8 +408,8 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
     lib_version = ""
     try:
         sys.path.insert(0, _INTERNAL_DIR)
-        import _ppqfort_bindings
-        lib_version = ".".join(map(str, _ppqfort_bindings.version()))
+        import _Ppq_fort_bindings
+        lib_version = ".".join(map(str, _Ppq_fort_bindings.version()))
     except Exception:
         pass
     with h5py.File(out_path, "w") as f:
@@ -508,7 +508,7 @@ class NormInterpolator:
                     + " ".join(f"{n}={v:.6g}" for n, v in query.items())
                     + "\n  The table covers the prior it was built for, so a query outside it means the "
                       "MCMC prior does not match the table, or a NaN/bug.  Check the prior at setup "
-                      "(pqPDF(prior_bounds=...) or table.check_prior), and have log_prob return -inf "
+                      "(Ppq(prior_bounds=...) or table.check_prior), and have log_prob return -inf "
                       "for points outside the prior BEFORE calling the likelihood.",
                     axis=a, value=x, box=(lo, hi), query=query, source=self.source)
             coef = cheb.chebval(self._to_unit(d, np.float64(min(max(x, lo), hi))), coef)   # contracts the first remaining axis
@@ -517,7 +517,7 @@ class NormInterpolator:
     # ---- MCMC setup checks: is the prior (are the starting points) inside the box? ----
 
     def params(self):
-        """The physical parameters this table varies, in pqPDF's keyword names."""
+        """The physical parameters this table varies, in Ppq's keyword names."""
         return (("k",) if self.band == "NR" else ()) + ("F0", "V", "p0", "p10", "q0", "q10")
 
     def table_bounds(self):
@@ -724,15 +724,15 @@ def main(argv=None):
     p.add_argument("--nodes", nargs="+", default=None, metavar="AXIS=N",
                    help="nodes per axis, e.g. k=7 F0=3 V=4 p0=2 dp=3 q0=3 dq=3 (ER: no k); default: RECOMMENDED_NODES")
     # --region and --epsrel are required, not defaulted, for the same reason
-    # ppqn_region takes no default epsrel/epsabs: a wrong value here produces a
+    # Ppq_region_NR takes no default epsrel/epsabs: a wrong value here produces a
     # table that is complete, internally consistent and wrong.  Neither merge
     # nor validate can see it -- they only ever compare a table against points
     # computed from the same spec -- so it would surface at the earliest in
-    # pqPDF's region check, and only if the fit gets that far.  (--nodes and
+    # Ppq's region check, and only if the fit gets that far.  (--nodes and
     # the box do default: validate measures node adequacy directly, and a bad
     # box raises OutOfBoxError at query time.  Both fail loudly.)
     p.add_argument("--region", nargs=4, type=float, required=True, metavar=("EP_MIN", "EP_MAX", "EQ_MIN", "EQ_MAX"),
-                   help="fit region the table normalizes over; must match the region pqPDF is built with")
+                   help="fit region the table normalizes over; must match the region Ppq is built with")
     p.add_argument("--epsrel", type=float, required=True,
                    help="quadrature convergence tolerance per point, e.g. 1e-7")
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",

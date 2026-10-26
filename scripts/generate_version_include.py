@@ -1,7 +1,7 @@
 """
 Generate src/version.f90.inc from fpm.toml's version field.
 
-PpqFort_version() (src/PpqFort_m.f90) reports the package version at
+PpqFort_version() (src/Ppq_fort_m.f90) reports the package version at
 runtime as three integers.  Those constants used to be hand-typed in
 Fortran source, with a comment asking whoever bumped fpm.toml's version to
 also update them -- easy to forget (and it was: v1.1.0 and v1.1.1 both
@@ -11,7 +11,7 @@ there is nothing left to keep in sync by hand.
 
 Run this before `fpm build`/`fpm test` (every Dockerfile does; for a local,
 non-container build, run it yourself first -- src/version.f90.inc is not
-committed, so PpqFort_m.f90's `include` fails loudly if you forget, rather
+committed, so Ppq_fort_m.f90's `include` fails loudly if you forget, rather
 than silently building a stale version in):
 
     python scripts/generate_version_include.py

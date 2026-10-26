@@ -24,7 +24,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python"))
-from pq_dist import integrate_inspect
+from Ppq import integrate_inspect
 
 
 def make_gaussian_sum(centers, sigma):

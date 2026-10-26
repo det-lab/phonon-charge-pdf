@@ -1,7 +1,7 @@
 """
 Validates the pip-installable package's graceful-degradation promise:
 pure-Python functionality (event_generator.py) works with no compiled
-Fortran library anywhere on the system, while pqPDF -- which always
+Fortran library anywhere on the system, while Ppq -- which always
 needs it, even with a precomputed normalization table -- fails clearly
 and immediately at construction rather than deep into a fit.
 
@@ -28,18 +28,18 @@ def check(name, condition, detail=""):
 import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of what's tested
 
 check("import phonon_charge_pdf with no compiled library present", True)
-check("pqPDF is exported", hasattr(bd, "pqPDF"))
+check("Ppq is exported", hasattr(bd, "Ppq"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
 check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
 check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
 
-# pq_dist.py's public API (pure Python, no Fortran -- see its module
+# Ppq.py's public API (pure Python, no Fortran -- see its module
 # docstring): every name in its own __all__ must also be re-exported here.
-from phonon_charge_pdf.pq_dist import __all__ as _pq_dist_all  # noqa: E402
+from phonon_charge_pdf.Ppq import __all__ as _Ppq_all  # noqa: E402
 
-check("every pq_dist.__all__ name is re-exported on phonon_charge_pdf",
-      all(hasattr(bd, name) for name in _pq_dist_all),
-      [name for name in _pq_dist_all if not hasattr(bd, name)])
+check("every Ppq.__all__ name is re-exported on phonon_charge_pdf",
+      all(hasattr(bd, name) for name in _Ppq_all),
+      [name for name in _Ppq_all if not hasattr(bd, name)])
 
 PARAMS = dict(
     k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
@@ -55,20 +55,20 @@ except Exception as e:
     check("generate_NR_events runs with no Fortran library", False, repr(e))
 
 try:
-    (val, err), _, peaks = bd.PpqN_inspect(10.0, 5.0, **PARAMS, er_step=0.1)
-    check("PpqN_inspect runs with no Fortran library",
+    (val, err), _, peaks = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, er_step=0.1)
+    check("Ppq_inspect_NR runs with no Fortran library",
           val > 0 and len(peaks) >= 1, (val, len(peaks)))
 except Exception as e:
-    check("PpqN_inspect runs with no Fortran library", False, repr(e))
+    check("Ppq_inspect_NR runs with no Fortran library", False, repr(e))
 
 try:
-    bd.pqPDF(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
-    check("pqPDF() raises at construction without the Fortran library", False,
+    bd.Ppq(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
+    check("Ppq() raises at construction without the Fortran library", False,
           "construction succeeded -- it should have failed fast instead")
 except RuntimeError as e:
-    check("pqPDF() raises at construction without the Fortran library", True, str(e)[:80])
+    check("Ppq() raises at construction without the Fortran library", True, str(e)[:80])
 except Exception as e:
-    check("pqPDF() raises at construction without the Fortran library", False,
+    check("Ppq() raises at construction without the Fortran library", False,
           f"wrong exception type: {e!r}")
 
 print()

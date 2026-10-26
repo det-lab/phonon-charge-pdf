@@ -1,14 +1,14 @@
 """
-pqPDF is the one intended entrypoint for using this library in a fit or
+Ppq is the one intended entrypoint for using this library in a fit or
 MCMC -- if you want normalized PDF values or a likelihood, start here:
 
-    from pq_pdf import pqPDF
-    fit = pqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+    from Ppq_fort import Ppq
+    likelihood = Ppq(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                  norm_epsrel=1e-4, norm_epsabs=1e-10)
-    normalized = fit.ppqn_normalized_values(k=k, Z=Z, F0=F0, eps=eps, V=V,
+    normalized = likelihood.Ppq_normalized_values_NR(k=k, Z=Z, F0=F0, eps=eps, V=V,
                                              p0=p0, p10=p10, q0=q0, q10=q10)
 
-pqPDF always needs the compiled Fortran library (a table only replaces the
+Ppq always needs the compiled Fortran library (a table only replaces the
 normalization integral, never the per-event PDF evaluation), so
 construction eagerly loads it and raises immediately if it can't be found,
 rather than succeeding and failing on the first likelihood call instead.
@@ -18,34 +18,34 @@ full walkthrough, including precomputed tables for MCMC.  If you instead
 want to generate simulated (Ep, Eq) events -- e.g. to validate a fit
 pipeline or feed a downstream analysis -- see event_generator.py
 (python/event_generator.py), a second, independent entrypoint with no
-Fortran dependency.  pq_dist.py (python/pq_dist.py) is a third, public
+Fortran dependency.  Ppq.py (python/Ppq.py) is a third, public
 entrypoint: the pure-Python reference implementation event_generator.py
 and this module are themselves checked against -- see its own module
 docstring.  Everything else under python/ -- python/internal/
-_ppqfort_bindings.py (raw, unnormalized PDF evaluation) and python/cli/
-normgrid.py (table machinery) -- is either what pqPDF/event_generator.py
+_Ppq_fort_bindings.py (raw, unnormalized PDF evaluation) and python/cli/
+normgrid.py (table machinery) -- is either what Ppq/event_generator.py
 are built from or infrastructure for maintaining this library, not a
 fourth way to use it.
 
-pqPDF: the fixed context for one fit/MCMC run -- an (Ep, Eq) region, the
+Ppq: the fixed context for one fit/MCMC run -- an (Ep, Eq) region, the
 observed dataset, and the normalization-integral's convergence tolerance
 -- exposing, per parameter point, the un-normalized PDF at the bound
 dataset, the region's normalization integral, and their ratio (normalized
-PDF values), for both the NR (PpqN) and ER (PpqG) bands.
+PDF values), for both the NR (Ppq_NR) and ER (Ppq_ER) bands.
 
 All physics parameters (k, Z, F0, eps, V, p0, p10, q0, q10) are passed
 fresh to every method call rather than bound at construction: those are
 what an MCMC step actually varies, while the region, dataset, and
 tolerance don't change across a run.
 
-Built entirely on the already-validated primitives in _ppqfort_bindings.py --
-ppqn_region/ppqg_region (-> Fortran PpqN_region/PpqG_region, a doubling-
-verified nested Gauss-Legendre quadrature) and make_ppqn_pdf_unnormalized/
-make_ppqg_pdf_unnormalized (-> Fortran PpqN_vector/PpqG_vector) -- no new
-Fortran code and no new numerics.
+Built entirely on the already-validated primitives in _Ppq_fort_bindings.py --
+Ppq_region_NR/Ppq_region_ER (-> the Fortran symbols of the same name, a
+doubling-verified nested Gauss-Legendre quadrature) and
+make_Ppq_unnormalized_NR/make_Ppq_unnormalized_ER (-> Fortran
+Ppq_vector_NR/Ppq_vector_ER) -- no new Fortran code and no new numerics.
 
 For MCMC, pass precomputed normalization tables (python/cli/normgrid.py,
-built once on a batch system) as ppqn_table/ppqg_table: the integral then
+built once on a batch system) as Ppq_table_NR/Ppq_table_ER: the integral then
 costs tens of microseconds instead of ~2 s, and raises rather than ever
 extrapolating outside the table's parameter box.  A table is a file path or
 a registered name (python/cli/normtables.py fetches and caches it).
@@ -69,18 +69,18 @@ import sys
 
 import numpy as np
 
-# _ppqfort_bindings.py and normgrid.py/normtables.py are no longer siblings
+# _Ppq_fort_bindings.py and normgrid.py/normtables.py are no longer siblings
 # of this file -- they live in internal/ and cli/ respectively.
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 _INTERNAL_DIR = os.path.join(_PYTHON_DIR, "internal")
 _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 
 sys.path.insert(0, _INTERNAL_DIR)
-from _ppqfort_bindings import (make_ppqg_pdf_unnormalized, make_ppqn_pdf_unnormalized,
-                                ppqg_region, ppqn_region, version as _fort_version)
+from _Ppq_fort_bindings import (make_Ppq_unnormalized_ER, make_Ppq_unnormalized_NR,
+                                 Ppq_region_ER, Ppq_region_NR, version as _fort_version)
 
 
-class pqPDF:
+class Ppq:
     """
     ep_min, ep_max, eq_min, eq_max : float
         The (Ep, Eq) region the PDF is normalized over.
@@ -88,13 +88,13 @@ class pqPDF:
         The fixed observed dataset this fit is evaluated against.
     norm_epsrel, norm_epsabs : float or None
         Convergence tolerance for the normalization integral's doubling-
-        verified quadrature (see PpqN_region's doc comment in
-        src/PpqFort_m.f90) -- unrelated to the size of ep_data/eq_data,
+        verified quadrature (see Ppq_region_NR's doc comment in
+        src/Ppq_fort_m.f90) -- unrelated to the size of ep_data/eq_data,
         hence the norm_ prefix.  Required for any band without a table.
-    ppqn_table, ppqg_table : path, normgrid.NormInterpolator, or None
+    Ppq_table_NR, Ppq_table_ER : path, normgrid.NormInterpolator, or None
         Precomputed normalization table for that band (built by
         python/cli/normgrid.py for exactly this region), or a name registered in
-        python/cli/table_registry.json.  If given, ppqn_integral/ppqg_integral
+        python/cli/table_registry.json.  If given, Ppq_integral_NR/Ppq_integral_ER
         interpolate it instead of running the quadrature.
     prior_bounds : dict or None
         The MCMC prior's hard bounds, {param: (lo, hi)} for k (NR), F0, V,
@@ -107,17 +107,17 @@ class pqPDF:
         p10 >= p0 and q10 >= q0; raises normgrid.PriorNotCoveredError if it
         reaches outside one.
     n_workers : int or None
-        Threads used for large batched PpqN_vector/PpqG_vector calls;
-        see make_ppqn_pdf_unnormalized.
+        Threads used for large batched Ppq_vector_NR/Ppq_vector_ER calls;
+        see make_Ppq_unnormalized_NR.
     """
 
     def __init__(self, ep_min, ep_max, eq_min, eq_max, ep_data, eq_data, *,
                  norm_epsrel=None, norm_epsabs=None,
-                 ppqn_table=None, ppqg_table=None, prior_bounds=None,
+                 Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
                  n_workers=None):
         # A table only ever replaces the normalization integral, never the
-        # per-event PDF evaluation (ppqn_values/ppqg_values always need
-        # PpqN_vector/PpqG_vector) -- so every pqPDF needs the compiled
+        # per-event PDF evaluation (Ppq_values_NR/Ppq_values_ER always need
+        # Ppq_vector_NR/Ppq_vector_ER) -- so every Ppq needs the compiled
         # library eventually. Load it now and raise here, with the clear
         # LD_LIBRARY_PATH message from _load_library(), rather than
         # succeeding silently and failing on the first likelihood call
@@ -130,8 +130,8 @@ class pqPDF:
         self.norm_epsrel = norm_epsrel
         self.norm_epsabs = norm_epsabs
         self.n_workers = n_workers
-        self.ppqn_table = self._load_table(ppqn_table, "NR")
-        self.ppqg_table = self._load_table(ppqg_table, "ER")
+        self.Ppq_table_NR = self._load_table(Ppq_table_NR, "NR")
+        self.Ppq_table_ER = self._load_table(Ppq_table_ER, "ER")
         if prior_bounds is not None:
             if not self._tables():
                 raise ValueError("prior_bounds is checked against the tables; no table was given")
@@ -139,7 +139,7 @@ class pqPDF:
                 t.check_prior(self._band_view(prior_bounds, t.band))
 
     def _tables(self):
-        return [t for t in (self.ppqn_table, self.ppqg_table) if t is not None]
+        return [t for t in (self.Ppq_table_NR, self.Ppq_table_ER) if t is not None]
 
     @staticmethod
     def _band_view(d, band):
@@ -188,44 +188,44 @@ class pqPDF:
                              "integral without a precomputed table")
         return dict(epsrel=self.norm_epsrel, epsabs=self.norm_epsabs)
 
-    # ---- NR (PpqN) band ----
+    # ---- NR (Ppq_NR) band ----
 
-    def ppqn_integral(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
-        """Normalization: integral of PpqN over this region."""
-        if self.ppqn_table is not None:
-            return self.ppqn_table(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-        return ppqn_region(self.ep_min, self.ep_max, self.eq_min, self.eq_max,
+    def Ppq_integral_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
+        """Normalization: integral of Ppq_NR over this region."""
+        if self.Ppq_table_NR is not None:
+            return self.Ppq_table_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+        return Ppq_region_NR(self.ep_min, self.ep_max, self.eq_min, self.eq_max,
                             **self._quadrature_tolerances(),
                             k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    def ppqn_values(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
-        """Un-normalized PpqN at the bound dataset."""
-        pdf_func = make_ppqn_pdf_unnormalized(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
+    def Ppq_values_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
+        """Un-normalized Ppq_NR at the bound dataset."""
+        pdf_func = make_Ppq_unnormalized_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
                                                q0=q0, q10=q10, n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
-    def ppqn_normalized_values(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
-        """ppqn_values(...) / ppqn_integral(...), elementwise."""
-        return (self.ppqn_values(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-                / self.ppqn_integral(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10))
+    def Ppq_normalized_values_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
+        """Ppq_values_NR(...) / Ppq_integral_NR(...), elementwise."""
+        return (self.Ppq_values_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+                / self.Ppq_integral_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10))
 
-    # ---- ER (PpqG) band ----
+    # ---- ER (Ppq_ER) band ----
 
-    def ppqg_integral(self, *, F0, eps, V, p0, p10, q0, q10):
-        """Normalization: integral of PpqG over this region."""
-        if self.ppqg_table is not None:
-            return self.ppqg_table(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-        return ppqg_region(self.ep_min, self.ep_max, self.eq_min, self.eq_max,
+    def Ppq_integral_ER(self, *, F0, eps, V, p0, p10, q0, q10):
+        """Normalization: integral of Ppq_ER over this region."""
+        if self.Ppq_table_ER is not None:
+            return self.Ppq_table_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+        return Ppq_region_ER(self.ep_min, self.ep_max, self.eq_min, self.eq_max,
                             **self._quadrature_tolerances(),
                             F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    def ppqg_values(self, *, F0, eps, V, p0, p10, q0, q10):
-        """Un-normalized PpqG at the bound dataset."""
-        pdf_func = make_ppqg_pdf_unnormalized(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
+    def Ppq_values_ER(self, *, F0, eps, V, p0, p10, q0, q10):
+        """Un-normalized Ppq_ER at the bound dataset."""
+        pdf_func = make_Ppq_unnormalized_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
                                                q0=q0, q10=q10, n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
-    def ppqg_normalized_values(self, *, F0, eps, V, p0, p10, q0, q10):
-        """ppqg_values(...) / ppqg_integral(...), elementwise."""
-        return (self.ppqg_values(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-                / self.ppqg_integral(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10))
+    def Ppq_normalized_values_ER(self, *, F0, eps, V, p0, p10, q0, q10):
+        """Ppq_values_ER(...) / Ppq_integral_ER(...), elementwise."""
+        return (self.Ppq_values_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+                / self.Ppq_integral_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10))

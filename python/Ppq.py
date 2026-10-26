@@ -1,38 +1,38 @@
-"""phonon_charge_pdf.pq_dist: pure-Python reference implementation of the
+"""phonon_charge_pdf.Ppq: pure-Python reference implementation of the
 NR/ER (Ep, Eq) probability model.
 
-Promoted from internal/ to a public, stable module alongside pqPDF
-(pq_pdf.py) and event_generator.py -- it has no compiled-library
+Promoted from internal/ to a public, stable module alongside Ppq
+(Ppq_fort.py) and event_generator.py -- it has no compiled-library
 dependency at all (pure numpy/scipy), so it works anywhere this package
 is installed, compiler or not.
 
-This is deliberately the *slow*, brute-force path: PpqN_inspect and
-PpqG_inspect scan a uniform Er grid (step set by `er_step`) rather than
+This is deliberately the *slow*, brute-force path: Ppq_inspect_NR and
+Ppq_inspect_ER scan a uniform Er grid (step set by `er_step`) rather than
 using the Fortran side's analytic peak location and windowed quadrature,
 specifically so they can serve as an independent cross-check of
-pqPDF/_ppqfort_bindings (see test/python/test_chisquare_ppqn.py and
-test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use pqPDF
+Ppq/_Ppq_fort_bindings (see test/python/test_chisquare_ppqn.py and
+test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use Ppq
 for that.
 
 Public functions:
 * Y, Nbar, sigp, sigq -- the ionization-yield, mean pair-count, and
   phonon/ionization resolution models.
-* PErN, PErG -- the true-recoil-energy spectra (NR, ER).
-* aN, bN, cN, PpqExp -- the Gaussian-in-N exponent's quadratic
+* PEr_NR, PEr_ER -- the true-recoil-energy spectra (NR, ER).
+* aN, bN, cN, N_exponent -- the Gaussian-in-N exponent's quadratic
   coefficients, and the exponent itself.
-* PpqFullN, PpqFullG -- the unnormalized (Ep, Eq) density at one Er,
+* pq_given_Er_NR, pq_given_Er_ER -- the unnormalized (Ep, Eq) density at one Er,
   integrated over N by a fixed 21-point Simpson rule.
-* PpqN_inspect(_vec), PpqG_inspect(_vec) -- the full PpqN/PpqG value at
+* Ppq_inspect_NR(_vec), Ppq_inspect_ER(_vec) -- the full Ppq_NR/Ppq_ER value at
   (Ep, Eq), found by scanning for peak(s) in Er and integrating each
   with scipy.integrate.quad. The non-"_vec" form additionally returns
   the scan grid and per-peak diagnostics (width, location) for
   inspection -- the point of reaching for this over the Fortran side;
   "_vec" loops over paired (Ep, Eq) arrays and returns just the values.
-* integrate_inspect -- the peak-finding/integration engine PpqN_inspect/
-  PpqG_inspect are built on; also useful directly against a custom
+* integrate_inspect -- the peak-finding/integration engine Ppq_inspect_NR/
+  Ppq_inspect_ER are built on; also useful directly against a custom
   integrand (see test_integrate_inspect_multimodal.py). Its "g" argument
   is a generic placeholder for "the function being integrated" (called
-  with PpqFullN for NR, PpqFullG for ER) -- not a reference to gamma/ER.
+  with pq_given_Er_NR for NR, pq_given_Er_ER for ER) -- not a reference to gamma/ER.
 * consecutive_groups, gaussian_profile -- small helpers (grouping
   consecutive indices; evaluating a Gaussian) used by integrate_inspect's
   peak-width fit. Not part of the public API (not in __all__) -- purely
@@ -46,10 +46,10 @@ import scipy.integrate as integrate
 from scipy.optimize import curve_fit
 
 __all__ = [
-    "Y", "Nbar", "sigp", "sigq", "PErN", "PErG",
-    "aN", "bN", "cN", "PpqExp", "PpqFullN", "PpqFullG",
-    "PpqN_inspect", "PpqN_inspect_vec",
-    "PpqG_inspect", "PpqG_inspect_vec",
+    "Y", "Nbar", "sigp", "sigq", "PEr_NR", "PEr_ER",
+    "aN", "bN", "cN", "N_exponent", "pq_given_Er_NR", "pq_given_Er_ER",
+    "Ppq_inspect_NR", "Ppq_inspect_vec_NR",
+    "Ppq_inspect_ER", "Ppq_inspect_vec_ER",
     "integrate_inspect",
 ]
 
@@ -91,7 +91,7 @@ def sigp(Ep,
     """Phonon-energy resolution at measured phonon energy Ep (keV)."""
     e2pre = (p10**2 - p0**2)
     e2e = (Ep/(10*(1+(V/eps/1000))))**2
-    #e2e = (Ep/(10*((V/eps/1000))))**2 #THIS ERROR WAS IN pq_dist v1!! it makes a difference!
+    #e2e = (Ep/(10*((V/eps/1000))))**2 #THIS ERROR WAS IN Ppq v1!! it makes a difference!
     return np.sqrt(p0**2+e2pre*e2e)
 
 
@@ -105,11 +105,11 @@ def sigq(Eq,
 
 
 # Fit parameters -- matches the Fortran PErN_impl constants exactly (not
-# exposed as arguments there either: PErN(Er) is the public signature)
+# exposed as arguments there either: PEr_NR(Er) is the public signature)
 _PNa, _PNb, _PNd = 0.53693208, 6.41515782, 23.71789286
 
 
-def PErN(Er):
+def PEr_NR(Er):
     """Probability density of the *true* recoil energy Er (keV) for
     neutron recoils: a two-component exponential mixture, zero for Er < 0."""
     Er = np.asarray(Er)  # Convert input to a NumPy array
@@ -122,7 +122,7 @@ def PErN(Er):
 _PGa, _PGb, _PGd = 5.73211975e-01, 1.69520023e-01, 2.79552394e+02
 
 
-def PErG(Er):
+def PEr_ER(Er):
     """Probability density of the *true* recoil energy Er (keV) for
     electron recoils (Cf gammas): a two-component exponential mixture,
     zero for Er < 0."""
@@ -138,7 +138,7 @@ def aN(Er, Ep, Eq,
        V,
        p0, p10,
        q0, q10):
-    """Linear coefficient of PpqExp's Gaussian-in-N exponent."""
+    """Linear coefficient of N_exponent's Gaussian-in-N exponent."""
     t1 = (V/1e3)*(Ep-Er)/sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2
     t2 = eps*Eq/sigq(Eq,q0=q0,q10=q10)**2
     t3 = 1/F0
@@ -154,7 +154,7 @@ def bN(Er, Ep, Eq,
        p0, p10,
        q0, q10,
        is_gamma):
-    """Quadratic coefficient of PpqExp's Gaussian-in-N exponent. is_gamma
+    """Quadratic coefficient of N_exponent's Gaussian-in-N exponent. is_gamma
     selects the electron-recoil yield (Y=1) instead of the Lindhard NR
     yield Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when
     is_gamma=True."""
@@ -174,7 +174,7 @@ def cN(Er, Ep, Eq,
        p0, p10,
        q0, q10,
        is_gamma):
-    """Constant term of PpqExp's Gaussian-in-N exponent. is_gamma selects
+    """Constant term of N_exponent's Gaussian-in-N exponent. is_gamma selects
     the electron-recoil yield (Y=1) instead of the Lindhard NR yield
     Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_gamma=True."""
     Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_gamma=is_gamma)
@@ -184,7 +184,7 @@ def cN(Er, Ep, Eq,
     return t1+t2+t3
 
 
-def PpqExp(Er, Ep, Eq,
+def N_exponent(Er, Ep, Eq,
            *,
            k, Z,
            F0,
@@ -193,7 +193,7 @@ def PpqExp(Er, Ep, Eq,
            p0, p10,
            q0, q10,
            is_gamma):
-    """The exponent of the Gaussian-in-N integral that PpqFullN/PpqFullG
+    """The exponent of the Gaussian-in-N integral that pq_given_Er_NR/pq_given_Er_ER
     evaluate -- completing the square of cN + aN*N + bN*N**2 in N gives
     cN + aN**2/(4*bN), which is what this returns. is_gamma selects the
     electron-recoil yield (Y=1) instead of the Lindhard NR yield
@@ -205,7 +205,7 @@ def PpqExp(Er, Ep, Eq,
     return exponent
 
 
-def PpqFullN(Er, Ep, Eq,
+def pq_given_Er_NR(Er, Ep, Eq,
              *,
              k, Z,
              F0,
@@ -214,7 +214,7 @@ def PpqFullN(Er, Ep, Eq,
              p0, p10,
              q0, q10):
     """Unnormalized NR (Ep, Eq) density at one true recoil energy Er (keV):
-    PErN(Er) times the N-integral (a fixed 21-point Simpson rule over a
+    PEr_NR(Er) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak)."""
     F_val    = F0
     Nbar_val = Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
@@ -256,10 +256,10 @@ def PpqFullN(Er, Ep, Eq,
     integrand[mask] = (norm_const / (sigma_N * sig_p[mask] * sig_q[mask])
                        * np.exp(exp_arg[mask]))
     simps_w = np.array([1,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,1], dtype=float)
-    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PErN(Er))
+    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PEr_NR(Er))
 
 
-def PpqN_inspect_vec(Ep, Eq,
+def Ppq_inspect_vec_NR(Ep, Eq,
               *,
               k, Z,
               F0,
@@ -268,17 +268,17 @@ def PpqN_inspect_vec(Ep, Eq,
               p0, p10,
               q0, q10,
               er_step):
-    """Vectorized PpqN_inspect: PpqN at each paired (Ep[i], Eq[i]),
+    """Vectorized Ppq_inspect_NR: Ppq_NR at each paired (Ep[i], Eq[i]),
     returned as a plain list of values (no scan grid/diagnostics -- use
-    PpqN_inspect directly if you need those)."""
-    ppqNArr = []
+    Ppq_inspect_NR directly if you need those)."""
+    valuesArr = []
     for this_Ep, this_Eq in zip(Ep, Eq):
-        PpqNval, _, _ = PpqN_inspect(this_Ep, this_Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
-        ppqNArr.append(PpqNval[0])
-    return ppqNArr
+        thisVal, _, _ = Ppq_inspect_NR(this_Ep, this_Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
+        valuesArr.append(thisVal[0])
+    return valuesArr
 
 
-def PpqN_inspect(Ep, Eq,
+def Ppq_inspect_NR(Ep, Eq,
               *,
               k, Z,
               F0,
@@ -287,20 +287,20 @@ def PpqN_inspect(Ep, Eq,
               p0, p10,
               q0, q10,
               er_step):
-    """The full NR PDF value PpqN(Ep, Eq), found by scanning a uniform Er
+    """The full NR PDF value Ppq_NR(Ep, Eq), found by scanning a uniform Er
     grid (step `er_step`, in keV) for the Gaussian-in-N exponent's peak
-    and integrating PpqFullN around it with scipy.integrate.quad -- the
+    and integrating pq_given_Er_NR around it with scipy.integrate.quad -- the
     slow, brute-force reference this package's event_generator.py and
-    the compiled Fortran PpqN are cross-checked against (see
+    the compiled Fortran Ppq_NR are cross-checked against (see
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
-    in a fit/MCMC inner loop; use pqPDF for that.
+    in a fit/MCMC inner loop; use Ppq for that.
 
     Returns ((value, quad_error), (er_scan_grid, er_scan_integrand),
     peak_info_list): peak_info_list is one dict per located peak, with
     "minx"/"maxx" (the integration window), "integral"/"error" (that
     peak's own quad result), and "width"/"Ermx"/"integrand_max" from a
     Gaussian fit (nan if the fit didn't converge). Usage to just get the
-    value: (PpqN, _), _, _ = PpqN_inspect(...).
+    value: (value, _), _, _ = Ppq_inspect_NR(...).
 
     WARNING: the peak search only works if your peaks have a width
     greater than ~0.1 keV, which holds for all reasonable CDMS
@@ -311,16 +311,16 @@ def PpqN_inspect(Ep, Eq,
         raise ValueError("Fano factor F(Er) = F0 is zero for all Er")
 
     # find Er_max
-    f = lambda er,ep,eq: -1*PpqExp(er,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
+    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
 
     maxx = max(Ep, Eq) + 5
     er_arr = np.arange(5e-21, maxx, er_step)
     f_arr = np.zeros(len(er_arr), dtype=np.float64)
     for idx, er in enumerate(er_arr):
         try:
-            f_arr[idx] = -1*PpqExp(er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
+            f_arr[idx] = -1*N_exponent(er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
         except Exception:
-            # PpqExp can over/underflow at extreme Er; leaving this
+            # N_exponent can over/underflow at extreme Er; leaving this
             # sample at its default 0 and continuing the scan is correct
             # here, since a real peak is never isolated to a single
             # sample on a grid this fine.
@@ -335,12 +335,12 @@ def PpqN_inspect(Ep, Eq,
         min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
         Ermx = er_arr[min_idx]
 
-    g = lambda er, ep, eq: PpqFullN(er, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    g = lambda er, ep, eq: pq_given_Er_NR(er, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
     return integrate_inspect(g, Ep, Eq, Ermx, er_step)
 
 
-def PpqFullG(Er, Ep, Eq,
+def pq_given_Er_ER(Er, Ep, Eq,
              *,
              F0,
              eps,
@@ -348,9 +348,9 @@ def PpqFullG(Er, Ep, Eq,
              p0, p10,
              q0, q10):
     """Unnormalized ER (Ep, Eq) density at one true recoil energy Er (keV):
-    PErG(Er) times the N-integral (a fixed 21-point Simpson rule over a
+    PEr_ER(Er) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak), with the electron-
-    recoil yield Y=1 (see PpqFullN for the analogous NR calculation)."""
+    recoil yield Y=1 (see pq_given_Er_NR for the analogous NR calculation)."""
     F_val    = F0
     Nbar_val = Nbar(Er, k=0.0, Z=1.0, eps=eps, is_gamma=True)   # k, Z unused: Y=1 for electron recoils
     if Nbar_val <= 0.0 or F_val <= 0.0:
@@ -391,7 +391,7 @@ def PpqFullG(Er, Ep, Eq,
     integrand[mask] = (norm_const / (sigma_N * sig_p[mask] * sig_q[mask])
                        * np.exp(exp_arg[mask]))
     simps_w = np.array([1,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,1], dtype=float)
-    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PErG(Er))
+    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PEr_ER(Er))
 
 
 def consecutive_groups(data, stepsize=1):
@@ -414,17 +414,17 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     """Integrate g(Er, Ep, Eq) over Er by locating its peak(s) on a
     uniform scan grid (step `er_step/2`, in keV, starting from an
     approximate peak location Ermx) and integrating each located peak
-    with scipy.integrate.quad. This is the engine PpqN_inspect and
-    PpqG_inspect are built on; it also works directly against any custom
+    with scipy.integrate.quad. This is the engine Ppq_inspect_NR and
+    Ppq_inspect_ER are built on; it also works directly against any custom
     integrand g (see test/python/test_integrate_inspect_multimodal.py for
     a multi-peak example). The "g" here is a generic placeholder for
-    "the function being integrated" (it's called with PpqFullN for NR,
-    PpqFullG for ER) -- not a reference to gamma/ER, which is why this
-    function's own name doesn't carry an N/G suffix the way PpqN_inspect/
-    PpqG_inspect do.
+    "the function being integrated" (it's called with pq_given_Er_NR for NR,
+    pq_given_Er_ER for ER) -- not a reference to gamma/ER, which is why this
+    function's own name doesn't carry an N/G suffix the way Ppq_inspect_NR/
+    Ppq_inspect_ER do.
 
     Returns ((integral, quad_error), (er_scan_grid, er_scan_integrand),
-    peak_info_list) -- see PpqN_inspect's docstring for the shape of each
+    peak_info_list) -- see Ppq_inspect_NR's docstring for the shape of each
     peak_info_list entry.
     """
     minx = 5e-21
@@ -589,7 +589,7 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     return (integral, error), (er_arr, er_integrand_arr), peak_info_array
 
 
-def PpqG_inspect_vec(Ep, Eq,
+def Ppq_inspect_vec_ER(Ep, Eq,
               *,
               F0,
               eps,
@@ -597,17 +597,17 @@ def PpqG_inspect_vec(Ep, Eq,
               p0, p10,
               q0, q10,
               er_step):
-    """Vectorized PpqG_inspect: PpqG at each paired (Ep[i], Eq[i]),
+    """Vectorized Ppq_inspect_ER: Ppq_ER at each paired (Ep[i], Eq[i]),
     returned as a plain list of values (no scan grid/diagnostics -- use
-    PpqG_inspect directly if you need those)."""
-    ppqGArr = []
+    Ppq_inspect_ER directly if you need those)."""
+    valuesArr = []
     for this_Ep, this_Eq in zip(Ep, Eq):
-        PpqGval, _, _ = PpqG_inspect(this_Ep, this_Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
-        ppqGArr.append(PpqGval[0])
-    return ppqGArr
+        thisVal, _, _ = Ppq_inspect_ER(this_Ep, this_Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
+        valuesArr.append(thisVal[0])
+    return valuesArr
 
 
-def PpqG_inspect(Ep, Eq,
+def Ppq_inspect_ER(Ep, Eq,
               *,
               F0,
               eps,
@@ -615,27 +615,27 @@ def PpqG_inspect(Ep, Eq,
               p0, p10,
               q0, q10,
               er_step):
-    """The full ER PDF value PpqG(Ep, Eq) -- the ER counterpart of
-    PpqN_inspect (see its docstring for the method, return shape, and
+    """The full ER PDF value Ppq_ER(Ep, Eq) -- the ER counterpart of
+    Ppq_inspect_NR (see its docstring for the method, return shape, and
     the "never use this in a fit/MCMC loop" caveat). `er_step` (keV)
     should be scanned finer than the narrowest expected peak: ER peaks
     can be as narrow as the zero-energy ionization resolution q0 (~0.06
     keV for typical CDMS parameters), so e.g. er_step=0.01 (a 0.005 keV
-    scan step) is finer than the 0.01 keV grid the Fortran PpqG
+    scan step) is finer than the 0.01 keV grid the Fortran Ppq_ER
     integrates on. Usage to just get the value:
-    (PpqG, _), _, _ = PpqG_inspect(...).
+    (value, _), _, _ = Ppq_inspect_ER(...).
     """
     if F0 == 0:
         raise ValueError("Fano factor F(Er) = F0 is zero for all Er")
 
-    g = lambda er, ep, eq: PpqFullG(er, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    g = lambda er, ep, eq: pq_given_Er_ER(er, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    # k, Z are unused placeholders here: is_gamma=True forces Y=1 in PpqExp
-    f = lambda er,ep,eq: -1*PpqExp(er,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=True)
+    # k, Z are unused placeholders here: is_gamma=True forces Y=1 in N_exponent
+    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=True)
 
     # WARNING: this will only work if your peaks have a width greater
     # than 0.1 keV, which seems to be true for all reasonable CDMS
-    # parameters (see PpqN_inspect's docstring).
+    # parameters (see Ppq_inspect_NR's docstring).
     maxx = max(Ep, Eq) + 5
     er_arr = np.arange(5e-21, maxx, er_step)
     f_arr = np.zeros(len(er_arr))

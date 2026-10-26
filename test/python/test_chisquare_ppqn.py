@@ -1,21 +1,21 @@
 """
-Chi-square distribution test for the Fortran PpqN (nuclear-recoil band) PDF.
+Chi-square distribution test for the Fortran Ppq_NR (nuclear-recoil band) PDF.
 
 Uses chisquare_harness.run_chisquare_test (equibin bins, PDF-integrated
 expected counts, batched chi-square throws; see that module's
 docstring for the general workflow).  Specific to this test:
 
-- The PDF comes from lib/libphonon_charge_pdf.so via python/internal/_ppqfort_bindings.py
-  (threaded chunked PpqN_vector calls), unnormalized -- fine here since this
+- The PDF comes from lib/libphonon_charge_pdf.so via python/internal/_Ppq_fort_bindings.py
+  (threaded chunked Ppq_vector_NR calls), unnormalized -- fine here since this
   test only checks the PDF's *shape* (sampled events vs. its own density),
   which a constant normalization factor doesn't affect.  For a fit or MCMC,
-  use pqPDF (python/pq_pdf.py) instead.
+  use Ppq (python/Ppq_fort.py) instead.
 - The lintsampler grid uses feature-scaled (non-uniform) edges: the band
   width tracks the detector resolutions sigp(Ep) and sigq(Eq), which grow
   roughly linearly with energy, so the edges are spaced proportionally to
   the local resolution.  This keeps a constant number of cells per band
   width with far fewer points than a uniform grid would need.
-- The grid evaluation (~1e6 Fortran calls) is cached in PPQN_GRID_CACHE;
+- The grid evaluation (~1e6 Fortran calls) is cached in PPQ_NR_GRID_CACHE;
   delete the file to force re-evaluation.
 - Expected counts integrate the *true* Fortran PDF per bin.  Because the
   band is a narrow ridge crossing wide tail bins, the inner (Eq)
@@ -41,13 +41,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _ppqfort_bindings
-sys.path.insert(0, str(REPO_ROOT / "python"))  # pq_dist
-import pq_dist as ppq
+sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _Ppq_fort_bindings
+sys.path.insert(0, str(REPO_ROOT / "python"))  # Ppq
+import Ppq as ppq
 import sample_from_pdf as spdf
 from band_breakpoints import make_ridge_breakpoints
 from chisquare_harness import run_chisquare_test
-from _ppqfort_bindings import make_ppqn_pdf_unnormalized
+from _Ppq_fort_bindings import make_Ppq_unnormalized_NR
 
 # ---------------------------------------------------------------------------
 # Physics parameters (all explicit — the Fortran wrapper takes no defaults)
@@ -75,7 +75,7 @@ N_THROWS        = int(sys.argv[1]) if len(sys.argv) > 1 else 100_000
 N_BINS          = int(sys.argv[2]) if len(sys.argv) > 2 else 64   # equibin target bins
 CELLS_PER_SIGMA = 6.0       # sampling-grid cells per local band width
 N_WORKERS       = os.cpu_count()
-PPQN_GRID_CACHE = REPO_ROOT / "ppqn_vertex_grid.npz"
+PPQ_NR_GRID_CACHE = REPO_ROOT / "ppq_nr_vertex_grid.npz"
 
 # ---------------------------------------------------------------------------
 # Detector resolutions (from the python reference implementation), used
@@ -97,9 +97,9 @@ ridge_breakpoints = make_ridge_breakpoints(
 # ---------------------------------------------------------------------------
 # Build (or load) the sampling grid
 # ---------------------------------------------------------------------------
-print("Building Fortran PpqN pdf wrapper "
+print("Building Fortran Ppq_NR pdf wrapper "
       f"({N_WORKERS} workers)...")
-pdf_fort = make_ppqn_pdf_unnormalized(**PARAMS, n_workers=N_WORKERS)
+pdf_fort = make_Ppq_unnormalized_NR(**PARAMS, n_workers=N_WORKERS)
 
 ep_edges = spdf.make_feature_scaled_edges(sigp, *EP_RANGE, CELLS_PER_SIGMA)
 eq_edges = spdf.make_feature_scaled_edges(sigq, *EQ_RANGE, CELLS_PER_SIGMA)
@@ -111,21 +111,21 @@ with open(REPO_ROOT / "lib" / "libphonon_charge_pdf.so", "rb") as f:
     lib_hash = hashlib.sha256(f.read()).hexdigest()
 
 vertex_values = None
-if os.path.exists(PPQN_GRID_CACHE):
-    cache = np.load(PPQN_GRID_CACHE)
+if os.path.exists(PPQ_NR_GRID_CACHE):
+    cache = np.load(PPQ_NR_GRID_CACHE)
     if (np.array_equal(cache["ep_edges"], ep_edges)
             and np.array_equal(cache["eq_edges"], eq_edges)
             and np.array_equal(cache["params"],
                                np.array(list(PARAMS.values())))
             and str(cache["lib_hash"]) == lib_hash):
         vertex_values = cache["values"]
-        print(f"Loaded cached vertex grid from {PPQN_GRID_CACHE}")
+        print(f"Loaded cached vertex grid from {PPQ_NR_GRID_CACHE}")
     else:
         print("Cache exists but edges/params/library differ — re-evaluating.")
 
 if vertex_values is None:
-    print(f"Evaluating PpqN at {ep_edges.size * eq_edges.size:,} vertices "
-          f"(cached afterwards in {PPQN_GRID_CACHE})...")
+    print(f"Evaluating Ppq_NR at {ep_edges.size * eq_edges.size:,} vertices "
+          f"(cached afterwards in {PPQ_NR_GRID_CACHE})...")
     t0 = time.time()
     Ep_g, Eq_g = np.meshgrid(ep_edges, eq_edges, indexing="ij")
     ep_flat, eq_flat = Ep_g.ravel(), Eq_g.ravel()
@@ -143,12 +143,12 @@ if vertex_values is None:
               flush=True)
     vertex_values = vertex_values.reshape(ep_edges.size, eq_edges.size)
     np.savez_compressed(
-        PPQN_GRID_CACHE,
+        PPQ_NR_GRID_CACHE,
         ep_edges=ep_edges, eq_edges=eq_edges, values=vertex_values,
         params=np.array(list(PARAMS.values())), lib_hash=lib_hash,
     )
     print(f"Grid evaluated in {(time.time()-t0)/60:.1f} min, "
-          f"saved to {PPQN_GRID_CACHE}")
+          f"saved to {PPQ_NR_GRID_CACHE}")
 
 pdf_lookup = spdf.make_vertex_lookup_pdf(ep_edges, eq_edges, vertex_values)
 sampler = spdf.build_sampler_from_edges(pdf_lookup, ep_edges, eq_edges)
@@ -171,7 +171,7 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
 # Summary
 # ---------------------------------------------------------------------------
 print(f"\n{'='*55}")
-print(f"Chi-square test: Fortran PpqN  (dof = {dof})")
+print(f"Chi-square test: Fortran Ppq_NR  (dof = {dof})")
 print(f"{'='*55}")
 print(f"  n_events per throw : {N_EVENTS:,}")
 print(f"  n_throws           : {N_THROWS:,}")
@@ -203,7 +203,7 @@ ax.hist(chi2_vals, bins=80, density=True, alpha=0.6, color="C0",
 
 ax.set_xlabel(r"$\chi^2$")
 ax.set_ylabel("Probability density")
-ax.set_title("Chi-square distribution: Fortran PpqN")
+ax.set_title("Chi-square distribution: Fortran Ppq_NR")
 
 stats_text = (
     f"mean = {chi2_vals.mean():.2f}  (expect {dof})\n"

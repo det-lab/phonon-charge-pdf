@@ -1,10 +1,10 @@
 """
-Chi-square distribution test: electron-recoil physics simulator vs Fortran PpqG.
+Chi-square distribution test: electron-recoil physics simulator vs Fortran Ppq_ER.
 
 Generates (Ep, Eq) pairs from the physics model
-(Er ~ PErG, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal, with Y = 1)
-and checks that chi-square values against the Fortran PpqG PDF follow
-chi2(dof).  This validates that PpqG correctly describes the physics.
+(Er ~ PEr_ER, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal, with Y = 1)
+and checks that chi-square values against the Fortran Ppq_ER PDF follow
+chi2(dof).  This validates that Ppq_ER correctly describes the physics.
 
 Observable range
 ----------------
@@ -52,8 +52,8 @@ from band_breakpoints import make_ridge_breakpoints
 from event_generator import generate_ER_events
 # Unnormalized is fine: this test only compares the PDF's *shape* against
 # simulated events (chi-square binning), not absolute probability.  For a
-# fit or MCMC, use pqPDF (python/pq_pdf.py) instead.
-from _ppqfort_bindings import make_ppqg_pdf_unnormalized
+# fit or MCMC, use Ppq (python/Ppq_fort.py) instead.
+from _Ppq_fort_bindings import make_Ppq_unnormalized_ER
 from chisquare_harness import run_chisquare_test
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ N_WORKERS = os.cpu_count()
 # ---------------------------------------------------------------------------
 # Sampler: generate exactly n in-range ER events from the physics simulator.
 #
-# The gamma spectrum PErG has scale_fast ~ 0.17 keV, so the majority of generated
+# The gamma spectrum PEr_ER has scale_fast ~ 0.17 keV, so the majority of generated
 # events sit at very low Er and fall below the Ep threshold; oversample and
 # keep the first n that pass the range cut.  A while loop handles the cases
 # where additional passes are needed.
@@ -122,8 +122,8 @@ def er_sampler(n, seed=None):
 # ---------------------------------------------------------------------------
 # Build the Fortran PDF wrapper
 # ---------------------------------------------------------------------------
-print(f"Loading Fortran PpqG PDF ({N_WORKERS} workers)...")
-pdf_fort = make_ppqg_pdf_unnormalized(**PARAMS, n_workers=N_WORKERS)
+print(f"Loading Fortran Ppq_ER PDF ({N_WORKERS} workers)...")
+pdf_fort = make_Ppq_unnormalized_ER(**PARAMS, n_workers=N_WORKERS)
 
 # Quick sanity check on the sampler
 print("Spot-checking sampler output range...")
@@ -161,7 +161,7 @@ elapsed = time.time() - t_start
 ks_stat, ks_p = kstest(chi2_vals, chi2_dist(dof).cdf)
 
 print(f"\n{'='*60}")
-print(f"Chi-square test: ER simulator vs Fortran PpqG  (dof = {dof})")
+print(f"Chi-square test: ER simulator vs Fortran Ppq_ER  (dof = {dof})")
 print(f"{'='*60}")
 print(f"  n_events per throw : {N_EVENTS:,}")
 print(f"  n_throws           : {N_THROWS:,}")
@@ -191,7 +191,7 @@ ax.hist(chi2_vals, bins=80, density=True, alpha=0.6, color="C0",
         label=f"{N_THROWS:,} throws")
 ax.set_xlabel(r"$\chi^2$")
 ax.set_ylabel("Probability density")
-ax.set_title("Chi-square: ER simulator vs Fortran PpqG")
+ax.set_title("Chi-square: ER simulator vs Fortran Ppq_ER")
 stats_text = (
     f"mean = {chi2_vals.mean():.2f}  (expect {dof})\n"
     f"var  = {chi2_vals.var():.1f}  (expect {2*dof:.0f})\n"

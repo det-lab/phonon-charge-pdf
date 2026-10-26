@@ -1,37 +1,37 @@
-module PpqFort_m
+module Ppq_fort_m
   !! TODO: Add comment for FORD describing the module's purpose
   use iso_c_binding, only : c_double, c_int
   implicit none
 
   interface
 
-    pure module subroutine PpqN_vector(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="PpqN_vector")
+    pure module subroutine Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_NR")
       !! TODO: Add comment for FORD describing the function's purpose
       integer(c_int), value :: n
       real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
       real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
       real(c_double), intent(out) :: res_arr(n)
-    end subroutine PpqN_vector
+    end subroutine Ppq_vector_NR
 
-    pure module subroutine PpqG_vector(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="PpqG_vector")
+    pure module subroutine Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_ER")
       !! TODO: Add comment for FORD describing the function's purpose
       integer(c_int), value :: n
       real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
       real(c_double), value :: F0, eps, V, p0, p10, q0, q10
       real(c_double), intent(out) :: res_arr(n)
-    end subroutine PpqG_vector
+    end subroutine Ppq_vector_ER
 
-    pure module function PpqN(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="PpqN")
+    pure module function Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_NR")
       !! TODO: Add comment for FORD describing the function's purpose
       real(c_double), value :: Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
       real(c_double) :: res
-    end function PpqN
+    end function Ppq_NR
 
-    pure module function PpqG(Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="PpqG")
+    pure module function Ppq_ER(Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_ER")
       !! TODO: Add comment for FORD describing the function's purpose
       real(c_double), value :: Ep, Eq, F0, eps, V, p0, p10, q0, q10
       real(c_double) :: res
-    end function PpqG
+    end function Ppq_ER
 
    pure module function Y(Er, k, Z) result(res) bind(c, name="Y")
        !! the ionization yield, using the Lindhard model
@@ -59,30 +59,30 @@ module PpqFort_m
       real(c_double) :: res
    end function sigq
 
-  pure module function PErN(Er) result(res) bind(c, name="PErN")
+  pure module function PEr_NR(Er) result(res) bind(c, name="PEr_NR")
     !! the Er (energy) distribution of neutrons
     real(c_double), value :: Er
     real(c_double) :: res
-  end function PErN
+  end function PEr_NR
 
-  pure module function PErG(Er) result(res) bind(c, name="PErG")
+  pure module function PEr_ER(Er) result(res) bind(c, name="PEr_ER")
     !! the Er (energy) distribution of gamma events/electron recoils
     real(c_double), value :: Er
     real(c_double) :: res
-  end function PErG
+  end function PEr_ER
 
-  pure module function PpqFullN(Er, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="PpqFullN")
+  pure module function pq_given_Er_NR(Er, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Er_NR")
     ! Input arguments
     real(c_double), value :: Er, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
-  end function PpqFullN
+  end function pq_given_Er_NR
 
-  pure module function PpqN_region(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="PpqN_region")
-    !! Integral of PpqN over the rectangle [ep_min,ep_max] x [eq_min,eq_max],
+  pure module function Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+      k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_region_NR")
+    !! Integral of Ppq_NR over the rectangle [ep_min,ep_max] x [eq_min,eq_max],
     !! e.g. for normalizing a likelihood to its fit region.  Computed with
     !! a doubling-verified nested Gauss-Legendre quadrature: the ridge
-    !! location/width machinery (ridge_eq_and_width in PpqFort_s.f90)
+    !! location/width machinery (ridge_eq_and_width in Ppq_fort_s.f90)
     !! already tells this exactly where the band is, so it needs far
     !! fewer points than a naive fixed grid for the same accuracy.
     !! epsrel/epsabs set how tightly two successive doubled quadrature
@@ -97,15 +97,15 @@ module PpqFort_m
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
-  end function PpqN_region
+  end function Ppq_region_NR
 
-  pure module function PpqG_region(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="PpqG_region")
-    !! Same as PpqN_region but for PpqG (electron-recoil band, Y=1).
+  pure module function Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+      F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_region_ER")
+    !! Same as Ppq_region_NR but for Ppq_ER (electron-recoil band, Y=1).
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
-  end function PpqG_region
+  end function Ppq_region_ER
 
   pure module subroutine PpqFort_version(major, minor, patch) bind(c, name="PpqFort_version")
     !! Report the package version: fpm.toml's version field, verbatim --
@@ -127,4 +127,4 @@ module PpqFort_m
   ! reporting 1.1.0).
   include "version.f90.inc"
 
-end module PpqFort_m
+end module Ppq_fort_m

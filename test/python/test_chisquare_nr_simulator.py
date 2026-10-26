@@ -1,10 +1,10 @@
 """
-Chi-square distribution test: nuclear-recoil physics simulator vs Fortran PpqN.
+Chi-square distribution test: nuclear-recoil physics simulator vs Fortran Ppq_NR.
 
 Generates (Ep, Eq) pairs from the physics model
-(Er ~ PErN, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal) and checks
-that chi-square values against the Fortran PpqN PDF follow chi2(dof).  This
-validates that PpqN correctly describes the physics — unlike
+(Er ~ PEr_NR, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal) and checks
+that chi-square values against the Fortran Ppq_NR PDF follow chi2(dof).  This
+validates that Ppq_NR correctly describes the physics — unlike
 test_chisquare_ppqn.py, which only checks internal self-consistency.
 
 Observable range
@@ -52,8 +52,8 @@ from band_breakpoints import make_ridge_breakpoints
 from event_generator import generate_NR_events
 # Unnormalized is fine: this test only compares the PDF's *shape* against
 # simulated events (chi-square binning), not absolute probability.  For a
-# fit or MCMC, use pqPDF (python/pq_pdf.py) instead.
-from _ppqfort_bindings import make_ppqn_pdf_unnormalized
+# fit or MCMC, use Ppq (python/Ppq_fort.py) instead.
+from _Ppq_fort_bindings import make_Ppq_unnormalized_NR
 from chisquare_harness import run_chisquare_test
 
 # ---------------------------------------------------------------------------
@@ -123,8 +123,8 @@ def nr_sampler(n, seed=None):
 # ---------------------------------------------------------------------------
 # Build the Fortran PDF wrapper
 # ---------------------------------------------------------------------------
-print(f"Loading Fortran PpqN PDF ({N_WORKERS} workers)...")
-pdf_fort = make_ppqn_pdf_unnormalized(**PARAMS, n_workers=N_WORKERS)
+print(f"Loading Fortran Ppq_NR PDF ({N_WORKERS} workers)...")
+pdf_fort = make_Ppq_unnormalized_NR(**PARAMS, n_workers=N_WORKERS)
 
 # Quick sanity check on the sampler
 print("Spot-checking sampler output range...")
@@ -162,7 +162,7 @@ elapsed = time.time() - t_start
 ks_stat, ks_p = kstest(chi2_vals, chi2_dist(dof).cdf)
 
 print(f"\n{'='*60}")
-print(f"Chi-square test: NR simulator vs Fortran PpqN  (dof = {dof})")
+print(f"Chi-square test: NR simulator vs Fortran Ppq_NR  (dof = {dof})")
 print(f"{'='*60}")
 print(f"  n_events per throw : {N_EVENTS:,}")
 print(f"  n_throws           : {N_THROWS:,}")
@@ -192,7 +192,7 @@ ax.hist(chi2_vals, bins=80, density=True, alpha=0.6, color="C0",
         label=f"{N_THROWS:,} throws")
 ax.set_xlabel(r"$\chi^2$")
 ax.set_ylabel("Probability density")
-ax.set_title("Chi-square: NR simulator vs Fortran PpqN")
+ax.set_title("Chi-square: NR simulator vs Fortran Ppq_NR")
 stats_text = (
     f"mean = {chi2_vals.mean():.2f}  (expect {dof})\n"
     f"var  = {chi2_vals.var():.1f}  (expect {2*dof:.0f})\n"

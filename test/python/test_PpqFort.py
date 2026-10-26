@@ -5,13 +5,13 @@ import os
 
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Path to the directory containing pq_dist.py
+# Path to the directory containing Ppq.py
 module_dir = os.path.join(repo_root, 'python')
 sys.path.append(module_dir)
 
-# pq_dist contains the Python implementation with the numerical N integral
-# (21-point Simpson's rule, sigp/sigq at noiseless energies), matching Fortran PpqN.
-import pq_dist as ppq
+# Ppq contains the Python implementation with the numerical N integral
+# (21-point Simpson's rule, sigp/sigq at noiseless energies), matching Fortran Ppq_NR.
+import Ppq as ppq
 
 folderpath = repo_root
 if sys.platform == 'darwin':
@@ -94,78 +94,78 @@ print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
 check("sigq", result_fort, result_py)
 
-# Define argument and return types for the function PErN
-api.PErN.argtypes = [ctypes.c_double]
-api.PErN.restype = ctypes.c_double
+# Define argument and return types for the function PEr_NR
+api.PEr_NR.argtypes = [ctypes.c_double]
+api.PEr_NR.restype = ctypes.c_double
 
-result_fort = api.PErN(ctypes.c_double(Er))
-result_py = ppq.PErN(Er)
-print('back in python after running function PErN')
+result_fort = api.PEr_NR(ctypes.c_double(Er))
+result_py = ppq.PEr_NR(Er)
+print('back in python after running function PEr_NR')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
-check("PErN", result_fort, result_py)
+check("PEr_NR", result_fort, result_py)
 
-# Define argument and return types for the function PErG
-api.PErG.argtypes = [ctypes.c_double]
-api.PErG.restype = ctypes.c_double
+# Define argument and return types for the function PEr_ER
+api.PEr_ER.argtypes = [ctypes.c_double]
+api.PEr_ER.restype = ctypes.c_double
 
-result_fort = api.PErG(ctypes.c_double(Er))
-result_py = ppq.PErG(Er)
-print('back in python after running function PErG')
+result_fort = api.PEr_ER(ctypes.c_double(Er))
+result_py = ppq.PEr_ER(Er)
+print('back in python after running function PEr_ER')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
-check("PErG", result_fort, result_py)
+check("PEr_ER", result_fort, result_py)
 
-# Define argument and return types for the function PpqFullN
-api.PpqFullN.argtypes = [ctypes.c_double] * 12
-api.PpqFullN.restype = ctypes.c_double
+# Define argument and return types for the function pq_given_Er_NR
+api.pq_given_Er_NR.argtypes = [ctypes.c_double] * 12
+api.pq_given_Er_NR.restype = ctypes.c_double
 
-result_fort = api.PpqFullN(ctypes.c_double(Er), ctypes.c_double(Ep), ctypes.c_double(Eq),
+result_fort = api.pq_given_Er_NR(ctypes.c_double(Er), ctypes.c_double(Ep), ctypes.c_double(Eq),
                            ctypes.c_double(k), ctypes.c_double(Z),
                            ctypes.c_double(F0), ctypes.c_double(eps),
                            ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                            ctypes.c_double(q0), ctypes.c_double(q10))
-result_py = ppq.PpqFullN(Er, Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-print('back in python after running function PpqFullN')
+result_py = ppq.pq_given_Er_NR(Er, Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+print('back in python after running function pq_given_Er_NR')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
-check("PpqFullN", result_fort, result_py, rtol=1e-6, atol=1e-12)
+check("pq_given_Er_NR", result_fort, result_py, rtol=1e-6, atol=1e-12)
 
-# Define argument and return types for the function PpqN
-api.PpqN.argtypes = [ctypes.c_double] * 11
-api.PpqN.restype = ctypes.c_double
+# Define argument and return types for the function Ppq_NR
+api.Ppq_NR.argtypes = [ctypes.c_double] * 11
+api.Ppq_NR.restype = ctypes.c_double
 
-result_fort = api.PpqN(ctypes.c_double(Ep), ctypes.c_double(Eq),
+result_fort = api.Ppq_NR(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(k), ctypes.c_double(Z),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                        ctypes.c_double(q0), ctypes.c_double(q10))
-(result_py, _), _, _ = ppq.PpqN_inspect(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.1)
-print('back in python after running function PpqN')
+(result_py, _), _, _ = ppq.Ppq_inspect_NR(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.1)
+print('back in python after running function Ppq_NR')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
-# Looser tolerance: the Fortran side and PpqN_inspect's scipy.integrate.quad
-# both integrate PpqFullN over Er, but with different quadrature schemes --
-# "machine precision" only applies to PpqFullN itself (checked above), not
+# Looser tolerance: the Fortran side and Ppq_inspect_NR's scipy.integrate.quad
+# both integrate pq_given_Er_NR over Er, but with different quadrature schemes --
+# "machine precision" only applies to pq_given_Er_NR itself (checked above), not
 # to two independently-converged numerical integrals of it.
-check("PpqN", result_fort, result_py, rtol=1e-4, atol=1e-12)
+check("Ppq_NR", result_fort, result_py, rtol=1e-4, atol=1e-12)
 
-# Define argument and return types for the function PpqG
-api.PpqG.argtypes = [ctypes.c_double] * 9
-api.PpqG.restype = ctypes.c_double
+# Define argument and return types for the function Ppq_ER
+api.Ppq_ER.argtypes = [ctypes.c_double] * 9
+api.Ppq_ER.restype = ctypes.c_double
 
-result_fort = api.PpqG(ctypes.c_double(Ep), ctypes.c_double(Eq),
+result_fort = api.Ppq_ER(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                        ctypes.c_double(q0), ctypes.c_double(q10))
-(result_py, _), _, _ = ppq.PpqG_inspect(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.01)
-print('back in python after running function PpqG')
+(result_py, _), _, _ = ppq.Ppq_inspect_ER(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.01)
+print('back in python after running function Ppq_ER')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
-check("PpqG", result_fort, result_py, rtol=1e-4, atol=1e-12)
+check("Ppq_ER", result_fort, result_py, rtol=1e-4, atol=1e-12)
 
-# Set argtypes and restype for the function PpqN_vector
-api.PpqN_vector.argtypes = [
+# Set argtypes and restype for the function Ppq_vector_NR
+api.Ppq_vector_NR.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),  # Ep_arr
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),  # Eq_arr
     ctypes.c_int,              # n
@@ -174,7 +174,7 @@ api.PpqN_vector.argtypes = [
     ctypes.c_double, ctypes.c_double,  # scalar params
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")   # res_arr (output)
 ]
-api.PpqN_vector.restype = None
+api.Ppq_vector_NR.restype = None
 
 # Inputs
 Eq_arr = np.array([100.0, 100.0, 100.0], dtype=np.float64)
@@ -185,10 +185,10 @@ n = Ep_arr.size
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.PpqN_vector(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr)
 
-# Set argtypes and restype for the function PpqG_vector
-api.PpqG_vector.argtypes = [
+# Set argtypes and restype for the function Ppq_vector_ER
+api.Ppq_vector_ER.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),      # Ep_arr
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),      # Eq_arr
     ctypes.c_int,                                                        # n
@@ -196,7 +196,7 @@ api.PpqG_vector.argtypes = [
     ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # scalar params
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")       # res_arr (output)
 ]
-api.PpqG_vector.restype = None
+api.Ppq_vector_ER.restype = None
 
 # Inputs
 Eq_arr = np.array([100.0, 100.0, 100.0], dtype=np.float64)
@@ -207,7 +207,7 @@ n = Ep_arr.size
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.PpqG_vector(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr)
 
 print("Vectorized result:", res_arr)
 

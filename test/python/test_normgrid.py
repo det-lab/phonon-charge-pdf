@@ -108,18 +108,18 @@ check("NR table requires k", raises(ValueError, lambda: table(**{k: v for k, v i
 check("mismatched Z rejected", raises(ValueError, lambda: table(**mid, Z=40.0)))
 check("matching Z/eps accepted", np.isfinite(table(**mid, Z=32.0, eps=3.0e-3)))
 
-# ---- pqPDF uses a table when given one ----
-from pq_pdf import pqPDF
+# ---- Ppq uses a table when given one ----
+from Ppq_fort import Ppq
 reg = ng.DEFAULT_REGION
 ep_d, eq_d = np.array([50.0, 60.0]), np.array([20.0, 25.0])
-fit = pqPDF(*reg, ep_d, eq_d, ppqn_table=table)
+fit = Ppq(*reg, ep_d, eq_d, Ppq_table_NR=table)
 mid_full = dict(mid, Z=32.0, eps=3.0e-3)
-check("pqPDF.ppqn_integral interpolates the table", fit.ppqn_integral(**mid_full) == table(**mid, Z=32.0, eps=3.0e-3))
-check("pqPDF without table or tolerances refuses to guess",
-      raises(ValueError, lambda: pqPDF(*reg, ep_d, eq_d).ppqn_integral(**mid_full)))
-check("pqPDF rejects a table built for a different region",
-      raises(ValueError, lambda: pqPDF(2.0, 100.0, 4.0, 100.0, ep_d, eq_d, ppqn_table=table)))
-check("pqPDF rejects a table for the wrong band", raises(ValueError, lambda: pqPDF(*reg, ep_d, eq_d, ppqg_table=table)))
+check("Ppq.Ppq_integral_NR interpolates the table", fit.Ppq_integral_NR(**mid_full) == table(**mid, Z=32.0, eps=3.0e-3))
+check("Ppq without table or tolerances refuses to guess",
+      raises(ValueError, lambda: Ppq(*reg, ep_d, eq_d).Ppq_integral_NR(**mid_full)))
+check("Ppq rejects a table built for a different region",
+      raises(ValueError, lambda: Ppq(2.0, 100.0, 4.0, 100.0, ep_d, eq_d, Ppq_table_NR=table)))
+check("Ppq rejects a table for the wrong band", raises(ValueError, lambda: Ppq(*reg, ep_d, eq_d, Ppq_table_ER=table)))
 
 # ---- worker: crash tolerance, resume, retry (fake evaluator) ----
 os.environ["NORMGRID_FAKE"] = "1"
