@@ -5,13 +5,13 @@ import os
 
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Path to the directory containing Ppq.py
+# Path to the directory containing Ppq_py.py
 module_dir = os.path.join(repo_root, 'python')
 sys.path.append(module_dir)
 
 # Ppq contains the Python implementation with the numerical N integral
 # (21-point Simpson's rule, sigp/sigq at noiseless energies), matching Fortran Ppq_NR.
-import Ppq as ppq
+import Ppq_py as ppq
 
 folderpath = repo_root
 if sys.platform == 'darwin':

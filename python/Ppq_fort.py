@@ -18,7 +18,7 @@ full walkthrough, including precomputed tables for MCMC.  If you instead
 want to generate simulated (Ep, Eq) events -- e.g. to validate a fit
 pipeline or feed a downstream analysis -- see event_generator.py
 (python/event_generator.py), a second, independent entrypoint with no
-Fortran dependency.  Ppq.py (python/Ppq.py) is a third, public
+Fortran dependency.  Ppq_py.py (python/Ppq_py.py) is a third, public
 entrypoint: the pure-Python reference implementation event_generator.py
 and this module are themselves checked against -- see its own module
 docstring.  Everything else under python/ -- python/internal/

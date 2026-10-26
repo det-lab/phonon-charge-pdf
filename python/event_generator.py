@@ -6,7 +6,7 @@ matters). If you want normalized PDF values or a likelihood instead, use
 Ppq (python/Ppq_fort.py).
 
 Unlike Ppq, this module has no Fortran dependency at all -- it is pure
-Python/numpy built on python/Ppq.py's Y/Nbar/sigp/sigq (itself a
+Python/numpy built on python/Ppq_py.py's Y/Nbar/sigp/sigq (itself a
 public entrypoint; see its module docstring), so it works in any
 environment that can `pip install` this package, compiled library or not.
 
@@ -25,7 +25,7 @@ Quickstart
 
 All physics parameters are required keyword arguments -- there are no
 defaults, matching the rest of this library (Ppq, _Ppq_fort_bindings.py,
-Ppq.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
+Ppq_py.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
 and anything in between generates a mix.
 
 Physical picture
@@ -75,7 +75,7 @@ import sys
 
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PYTHON_DIR)
-import Ppq as ppq
+import Ppq_py as ppq
 
 
 def _sample_biexponential(n, rng, *, mix_frac, scale_fast, scale_slow):
@@ -159,7 +159,7 @@ def generate_NR_events(n_events, *,
     cropping, no species mixing; see generate_events() for that.
 
     mix_frac, scale_fast, scale_slow are PEr_NR's biexponential
-    true-recoil-energy spectrum parameters (see Ppq.py's PEr_NR).
+    true-recoil-energy spectrum parameters (see Ppq_py.py's PEr_NR).
 
     Returns
     -------
@@ -186,7 +186,7 @@ def generate_ER_events(n_events, *,
 
     Gamma / electron-recoil events have ionization yield Y = 1. mix_frac,
     scale_fast, scale_slow are PEr_ER's biexponential true-recoil-energy
-    spectrum parameters (see Ppq.py's PEr_ER).
+    spectrum parameters (see Ppq_py.py's PEr_ER).
 
     Returns
     -------
@@ -301,7 +301,7 @@ def generate_events(target_size, ER_frac, seed, *,
         have different Fano factors even at the same operating point.
     eps, V, p0, p10, q0, q10 : float
         Shared detector parameters (energy per e/h pair, bias voltage,
-        phonon/charge resolution parameters) -- see Ppq.py's
+        phonon/charge resolution parameters) -- see Ppq_py.py's
         sigp/sigq.
     mix_frac_NR, scale_fast_NR, scale_slow_NR : float
         NR true-recoil-energy (PEr_NR) biexponential spectrum parameters.

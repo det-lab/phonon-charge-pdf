@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _Ppq_fort_bindings
 sys.path.insert(0, str(REPO_ROOT / "python"))  # Ppq
-import Ppq as ppq
+import Ppq_py as ppq
 import sample_from_pdf as spdf
 from band_breakpoints import make_ridge_breakpoints
 from chisquare_harness import run_chisquare_test

@@ -1,4 +1,4 @@
-"""phonon_charge_pdf.Ppq: pure-Python reference implementation of the
+"""phonon_charge_pdf.Ppq_py: pure-Python reference implementation of the
 NR/ER (Ep, Eq) probability model.
 
 Promoted from internal/ to a public, stable module alongside Ppq
