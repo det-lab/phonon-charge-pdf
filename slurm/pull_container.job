@@ -94,19 +94,12 @@ time singularity build --force "$DEST" "$IMAGE"
 echo
 ls -lh "$DEST"
 
-# Smoke test: the library must load and report its version, and normgrid must
-# be importable inside the image.  A pull that "succeeds" into an image built
-# from the wrong branch fails here rather than 4,500 array tasks later.
-singularity exec "$DEST" /opt/anaconda/envs/pdf/bin/python -c "
-import sys
-sys.path.insert(0, '/app/python/internal')
-sys.path.insert(0, '/app/python/cli')
-import _ppqfort_bindings, normgrid
-print('library version', '.'.join(map(str, _ppqfort_bindings.version())))
-print('region entry points',
-      hasattr(_ppqfort_bindings, 'ppqn_region'), hasattr(_ppqfort_bindings, 'ppqg_region'))
-print('normgrid axes', normgrid.AXES)
-"
+# Smoke test: a real region-integral evaluation for both bands, through
+# normgrid's own interface (see container_smoke_test.py) -- a pull that
+# "succeeds" into an image built from the wrong branch fails here rather
+# than 4,500 array tasks later.  Piped in via stdin, not copied into the
+# image, so it's always the host's current version being run.
+singularity exec "$DEST" /opt/anaconda/envs/pdf/bin/python - < "$(dirname "$0")/container_smoke_test.py"
 
 echo
 echo "done.  use it with:  PDF_SIF=$DEST ./slurm/submit_alderaan.sh"
