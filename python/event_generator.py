@@ -6,7 +6,7 @@ matters). If you want normalized PDF values or a likelihood instead, use
 pqPDF (python/pq_pdf.py).
 
 Unlike pqPDF, this module has no Fortran dependency at all -- it is pure
-Python/numpy built on python/ppq_dist.py's Y/Nbar/sigp/sigq (itself a
+Python/numpy built on python/pq_dist.py's Y/Nbar/sigp/sigq (itself a
 public entrypoint; see its module docstring), so it works in any
 environment that can `pip install` this package, compiled library or not.
 
@@ -14,18 +14,18 @@ Quickstart
 ----------
     from event_generator import generate_events
     events = generate_events(
-        target_size=20_000, ER_frac=0.6, seed_value=8,
+        target_size=20_000, ER_frac=0.6, seed=8,
         ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
         k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
         p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
-        PNa=0.53693208, PNb=6.41515782, PNd=23.71789286,
-        PGa=0.573211975, PGb=0.169520023, PGd=279.552394,
+        mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
+        mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
     )
     Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 All physics parameters are required keyword arguments -- there are no
 defaults, matching the rest of this library (pqPDF, _ppqfort_bindings.py,
-ppq_dist.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
+pq_dist.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
 and anything in between generates a mix.
 
 Physical picture
@@ -48,7 +48,7 @@ is a real physics check, not a tautology: this module never touches PpqN/PpqG.
 
 Returned DataFrame
 -------------------
-generate_events() returns columns EP, EQ, N0, is_ER, seed_value, is_bkg
+generate_events() returns columns EP, EQ, N0, is_ER, seed, is_bkg
 (is_bkg is always False here -- it exists only so these rows line up with
 a separate zero-charge/surface-background generator, e.g. the KDE-based
 one in nrFanoII_paper2022's ba_bknd_lines.py, which can be concatenated
@@ -57,11 +57,11 @@ directly as long as it produces the same columns).
 Reproducibility
 ----------------
 Every retry batch (see _species_in_roi below) needs its own independent
-random stream, but "independent" from a single seed_value has to be done
+random stream, but "independent" from a single seed has to be done
 carefully. np.random.SeedSequence.spawn() deterministically derives any
 number of child streams from one seed via a proper hash-based mix,
 guaranteeing (for practical purposes) no correlation between them or with
-streams spawned from a different seed_value.
+streams spawned from a different seed.
 """
 
 import warnings
@@ -75,7 +75,7 @@ import sys
 
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PYTHON_DIR)
-import ppq_dist as ppq
+import pq_dist as ppq
 
 
 def _sample_biexponential(n, rng, *, mix_frac, scale_fast, scale_slow):
@@ -152,11 +152,14 @@ def generate_NR_events(n_events, *,
                         eps, V,
                         p0, p10,
                         q0, q10,
-                        PNa, PNb, PNd,
+                        mix_frac, scale_fast, scale_slow,
                         seed):
     """
     Generate (Ep, Eq) pairs distributed according to PpqN -- no ROI
     cropping, no species mixing; see generate_events() for that.
+
+    mix_frac, scale_fast, scale_slow are PErN's biexponential
+    true-recoil-energy spectrum parameters (see pq_dist.py's PErN).
 
     Returns
     -------
@@ -167,7 +170,7 @@ def generate_NR_events(n_events, *,
     return _generate_species_events(
         n_events, Nbar_func=lambda Er: ppq.Y(Er, k=k, Z=Z) * Er / eps,
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-        mix_frac=PNa, scale_fast=PNb, scale_slow=PNd, seed=seed)
+        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 
 
 def generate_ER_events(n_events, *,
@@ -175,13 +178,15 @@ def generate_ER_events(n_events, *,
                         eps, V,
                         p0, p10,
                         q0, q10,
-                        PGa, PGb, PGd,
+                        mix_frac, scale_fast, scale_slow,
                         seed):
     """
     Generate (Ep, Eq) pairs distributed according to PpqG -- no ROI
     cropping, no species mixing; see generate_events() for that.
 
-    Gamma / electron-recoil events have ionization yield Y = 1.
+    Gamma / electron-recoil events have ionization yield Y = 1. mix_frac,
+    scale_fast, scale_slow are PErG's biexponential true-recoil-energy
+    spectrum parameters (see pq_dist.py's PErG).
 
     Returns
     -------
@@ -192,7 +197,7 @@ def generate_ER_events(n_events, *,
     return _generate_species_events(
         n_events, Nbar_func=lambda Er: Er / eps,
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-        mix_frac=PGa, scale_fast=PGb, scale_slow=PGd, seed=seed)
+        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 
 
 # Initial guess for each species' ROI acceptance rate, refined from batch 1
@@ -255,10 +260,11 @@ def _species_in_roi(n_target, species, seed_sequence, *,
             np.concatenate(er_parts), np.concatenate(n_parts))
 
 
-def generate_events(target_size, ER_frac, seed_value, *,
+def generate_events(target_size, ER_frac, seed, *,
                      ep_min, ep_max, eq_min, eq_max,
                      k, Z, F0_ER, F0_NR, eps, V, p0, p10, q0, q10,
-                     PNa, PNb, PNd, PGa, PGb, PGd,
+                     mix_frac_NR, scale_fast_NR, scale_slow_NR,
+                     mix_frac_ER, scale_fast_ER, scale_slow_ER,
                      max_retries=40):
     """
     Generate target_size (Ep, Eq) events, ER_frac of them (in expectation)
@@ -279,10 +285,10 @@ def generate_events(target_size, ER_frac, seed_value, *,
         target_size / 0, every seed) -- no separate ER_only/NR_only flag
         is needed to get a pure sample with zero chance of a stray event
         from the other species.
-    seed_value : int
-        Seed for the whole call. Reproducible: the same seed_value always
-        produces the same events, independent of what other seed_values
-        are used elsewhere in the same run.
+    seed : int
+        Seed for the whole call. Reproducible: the same seed always
+        produces the same events, independent of what other seeds are
+        used elsewhere in the same run.
     ep_min, ep_max, eq_min, eq_max : float
         ROI bounds, keV -- required, no default: this must be your real
         analysis region, not an arbitrary wide range.
@@ -295,25 +301,25 @@ def generate_events(target_size, ER_frac, seed_value, *,
         have different Fano factors even at the same operating point.
     eps, V, p0, p10, q0, q10 : float
         Shared detector parameters (energy per e/h pair, bias voltage,
-        phonon/charge resolution parameters) -- see ppq_dist.py's
+        phonon/charge resolution parameters) -- see pq_dist.py's
         sigp/sigq.
-    PNa, PNb, PNd : float
+    mix_frac_NR, scale_fast_NR, scale_slow_NR : float
         NR true-recoil-energy (PErN) biexponential spectrum parameters.
-    PGa, PGb, PGd : float
+    mix_frac_ER, scale_fast_ER, scale_slow_ER : float
         ER true-recoil-energy (PErG) biexponential spectrum parameters.
     max_retries : int
         Cap on retry batches per species before giving up with a warning.
 
     Returns
     -------
-    pandas.DataFrame with columns EP, EQ, N0, is_ER, seed_value, is_bkg --
+    pandas.DataFrame with columns EP, EQ, N0, is_ER, seed, is_bkg --
     shuffled, so downstream code doesn't need to worry about ER/NR
     ordering. is_bkg is always False; see the module docstring.
     """
     if not 0.0 <= ER_frac <= 1.0:
         raise ValueError(f"ER_frac must be in [0, 1], got {ER_frac}")
 
-    ss = np.random.SeedSequence(seed_value)
+    ss = np.random.SeedSequence(seed)
     split_seed, er_seed, nr_seed, shuffle_seed = ss.spawn(4)
 
     # deterministic (no fluctuation) at ER_frac=0.0/1.0 -- see docstring
@@ -326,12 +332,12 @@ def generate_events(target_size, ER_frac, seed_value, *,
         n_ER, "ER", er_seed, max_retries=max_retries, **roi,
         sampler=generate_ER_events,
         sampler_kwargs=dict(F0=F0_ER, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-                            PGa=PGa, PGb=PGb, PGd=PGd))
+                            mix_frac=mix_frac_ER, scale_fast=scale_fast_ER, scale_slow=scale_slow_ER))
     Ep_nr, Eq_nr, _, N_nr = _species_in_roi(
         n_NR, "NR", nr_seed, max_retries=max_retries, **roi,
         sampler=generate_NR_events,
         sampler_kwargs=dict(k=k, Z=Z, F0=F0_NR, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-                            PNa=PNa, PNb=PNb, PNd=PNd))
+                            mix_frac=mix_frac_NR, scale_fast=scale_fast_NR, scale_slow=scale_slow_NR))
 
     Ep = np.concatenate([Ep_er, Ep_nr])
     Eq = np.concatenate([Eq_er, Eq_nr])
@@ -342,7 +348,7 @@ def generate_events(target_size, ER_frac, seed_value, *,
     df = pd.DataFrame({
         "EP": Ep[order], "EQ": Eq[order], "N0": N0[order], "is_ER": is_ER[order],
     })
-    df["seed_value"] = seed_value
+    df["seed"] = seed
     df["is_bkg"] = False
 
     n_ok = len(df)

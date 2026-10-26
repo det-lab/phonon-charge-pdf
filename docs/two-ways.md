@@ -8,7 +8,7 @@ dependencies:
 `pip install phonon-charge-pdf` is enough. This covers:
 
 - **Generating simulated events** — [`generate_events`/`generate_NR_events`/`generate_ER_events`](python-events.md), built on `event_generator.py`.
-- **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](ppq-dist.md), built on `ppq_dist.py`, the pure-Python reference implementation.
+- **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](pq-dist.md), built on `pq_dist.py`, the pure-Python reference implementation.
 
 Use this bucket to generate or describe simulated data, or to get resolution/yield model
 values directly. It works in any environment the package installs into — no container,
@@ -35,7 +35,7 @@ an exact uncommitted state.
 
 ```text
 Do you need normalized PDF values or a likelihood (a fit, an MCMC)?
-├── No  → pure Python is enough: event_generator.py / ppq_dist.py
+├── No  → pure Python is enough: event_generator.py / pq_dist.py
 └── Yes → you need pqPDF, so you need the compiled library:
           ├── pip install phonon-charge-pdf   (simplest)
           ├── a published container           (HPC / Jupyter)

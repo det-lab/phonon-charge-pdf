@@ -5,13 +5,13 @@ import os
 
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Path to the directory containing ppq_dist.py
+# Path to the directory containing pq_dist.py
 module_dir = os.path.join(repo_root, 'python')
 sys.path.append(module_dir)
 
-# ppq_dist contains the Python implementation with the numerical N integral
+# pq_dist contains the Python implementation with the numerical N integral
 # (21-point Simpson's rule, sigp/sigq at noiseless energies), matching Fortran PpqN.
-import ppq_dist as ppq
+import pq_dist as ppq
 
 folderpath = repo_root
 if sys.platform == 'darwin':
@@ -140,11 +140,11 @@ result_fort = api.PpqN(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                        ctypes.c_double(q0), ctypes.c_double(q10))
-(result_py, _), _, _ = ppq.PpqN_safe_inspect(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, res=0.1)
+(result_py, _), _, _ = ppq.PpqN_inspect(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.1)
 print('back in python after running function PpqN')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
-# Looser tolerance: the Fortran side and PpqN_safe_inspect's scipy.integrate.quad
+# Looser tolerance: the Fortran side and PpqN_inspect's scipy.integrate.quad
 # both integrate PpqFullN over Er, but with different quadrature schemes --
 # "machine precision" only applies to PpqFullN itself (checked above), not
 # to two independently-converged numerical integrals of it.
@@ -158,7 +158,7 @@ result_fort = api.PpqG(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                        ctypes.c_double(q0), ctypes.c_double(q10))
-(result_py, _), _, _ = ppq.PpqG_safe_inspect(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, res=0.01)
+(result_py, _), _, _ = ppq.PpqG_inspect(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.01)
 print('back in python after running function PpqG')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)

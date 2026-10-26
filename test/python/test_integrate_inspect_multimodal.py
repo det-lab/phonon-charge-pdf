@@ -1,7 +1,7 @@
 """
-Regression test for integrate_g_safe_inspect with multimodal integrands.
+Regression test for integrate_inspect with multimodal integrands.
 
-The safe integrator scans the integrand on a grid, groups the non-zero
+integrate_inspect scans the integrand on a grid, groups the non-zero
 samples into peaks, pads each group's range, and integrates each range
 with adaptive quadrature.  When two padded ranges overlap they must be
 *merged* -- integrating both would double-count the overlap, and
@@ -14,7 +14,7 @@ zeros between the peaks (the exponential underflows), which is what
 splits the scan into multiple groups.
 
 Run from the repository root:
-  python test/python/test_safe_integrator_multimodal.py
+  python test/python/test_integrate_inspect_multimodal.py
 """
 
 import sys
@@ -24,7 +24,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python"))
-from ppq_dist import integrate_g_safe_inspect
+from pq_dist import integrate_inspect
 
 
 def make_gaussian_sum(centers, sigma):
@@ -40,8 +40,8 @@ def make_gaussian_sum(centers, sigma):
     return g
 
 
-# (name, centers, sigma, res) -- Ep = Eq = 5 puts the scan range at
-# [~0, 10]; the scan step is res / 2.
+# (name, centers, sigma, er_step) -- Ep = Eq = 5 puts the scan range at
+# [~0, 10]; the scan step is er_step / 2.
 CASES = [
     # two sharp peaks whose padded ranges overlap: the historical
     # pop-the-first-range bug returned ~1 here instead of 2
@@ -56,9 +56,9 @@ CASES = [
 ]
 
 failures = 0
-for name, centers, sigma, res in CASES:
+for name, centers, sigma, er_step in CASES:
     g = make_gaussian_sum(centers, sigma)
-    (integral, err), _, peaks = integrate_g_safe_inspect(g, 5.0, 5.0, centers[0], res)
+    (integral, err), _, peaks = integrate_inspect(g, 5.0, 5.0, centers[0], er_step)
     expected = float(len(centers))
     ok = abs(integral - expected) < 1e-6
     status = "PASS" if ok else "FAIL"

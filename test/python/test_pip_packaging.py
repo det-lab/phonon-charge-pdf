@@ -33,19 +33,19 @@ check("generate_events is exported", hasattr(bd, "generate_events"))
 check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
 check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
 
-# ppq_dist.py's public API (pure Python, no Fortran -- see its module
+# pq_dist.py's public API (pure Python, no Fortran -- see its module
 # docstring): every name in its own __all__ must also be re-exported here.
-from phonon_charge_pdf.ppq_dist import __all__ as _ppq_dist_all  # noqa: E402
+from phonon_charge_pdf.pq_dist import __all__ as _pq_dist_all  # noqa: E402
 
-check("every ppq_dist.__all__ name is re-exported on phonon_charge_pdf",
-      all(hasattr(bd, name) for name in _ppq_dist_all),
-      [name for name in _ppq_dist_all if not hasattr(bd, name)])
+check("every pq_dist.__all__ name is re-exported on phonon_charge_pdf",
+      all(hasattr(bd, name) for name in _pq_dist_all),
+      [name for name in _pq_dist_all if not hasattr(bd, name)])
 
 PARAMS = dict(
     k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
 )
-SPECTRUM = dict(PNa=0.53693208, PNb=6.41515782, PNd=23.71789286)
+SPECTRUM = dict(mix_frac=0.53693208, scale_fast=6.41515782, scale_slow=23.71789286)
 
 try:
     Ep, Eq, N0, seeds = bd.generate_NR_events(50, seed=1, **PARAMS, **SPECTRUM)
@@ -55,11 +55,11 @@ except Exception as e:
     check("generate_NR_events runs with no Fortran library", False, repr(e))
 
 try:
-    (val, err), _, peaks = bd.PpqN_safe_inspect(10.0, 5.0, **PARAMS, res=0.1)
-    check("PpqN_safe_inspect runs with no Fortran library",
+    (val, err), _, peaks = bd.PpqN_inspect(10.0, 5.0, **PARAMS, er_step=0.1)
+    check("PpqN_inspect runs with no Fortran library",
           val > 0 and len(peaks) >= 1, (val, len(peaks)))
 except Exception as e:
-    check("PpqN_safe_inspect runs with no Fortran library", False, repr(e))
+    check("PpqN_inspect runs with no Fortran library", False, repr(e))
 
 try:
     bd.pqPDF(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)

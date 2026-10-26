@@ -5,9 +5,9 @@ that *computes* the PDFs lives in `python/` at the repository root.  If
 you're looking for how to *use* the library (a fit or MCMC), that's
 `pqPDF` in `python/pq_pdf.py`; if you want simulated events instead, that's
 `event_generator.py` in `python/event_generator.py`; if you want the pure-
-Python reference implementation directly, that's `python/ppq_dist.py` —
-these tests validate `pqPDF`/`event_generator.py` against `ppq_dist.py`,
-and `ppq_dist.py` against the raw, unnormalized Fortran PDF
+Python reference implementation directly, that's `python/pq_dist.py` —
+these tests validate `pqPDF`/`event_generator.py` against `pq_dist.py`,
+and `pq_dist.py` against the raw, unnormalized Fortran PDF
 (`python/internal/_ppqfort_bindings.py`, private); each test that needs the
 raw PDF says why in a comment at its import.  Run all scripts from the
 repository root; see the main README for expected timings and for how to

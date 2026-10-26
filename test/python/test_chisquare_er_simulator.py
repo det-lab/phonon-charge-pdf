@@ -71,9 +71,9 @@ PARAMS = dict(
 )
 
 SPECTRUM_PARAMS = dict(
-    PGa = 0.573211975,
-    PGb = 0.169520023,
-    PGd = 279.552394,
+    mix_frac   = 0.573211975,
+    scale_fast = 0.169520023,
+    scale_slow = 279.552394,
 )
 
 EP_RANGE = (3.0,   250.0)   # keV — phonon channel
@@ -90,7 +90,7 @@ N_WORKERS = os.cpu_count()
 # ---------------------------------------------------------------------------
 # Sampler: generate exactly n in-range ER events from the physics simulator.
 #
-# The gamma spectrum PErG has PGb ~ 0.17 keV, so the majority of generated
+# The gamma spectrum PErG has scale_fast ~ 0.17 keV, so the majority of generated
 # events sit at very low Er and fall below the Ep threshold; oversample and
 # keep the first n that pass the range cut.  A while loop handles the cases
 # where additional passes are needed.

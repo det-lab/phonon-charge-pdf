@@ -72,9 +72,9 @@ PARAMS = dict(
 )
 
 SPECTRUM_PARAMS = dict(
-    PNa = 0.53693208,
-    PNb = 6.41515782,
-    PNd = 23.71789286,
+    mix_frac   = 0.53693208,
+    scale_fast = 6.41515782,
+    scale_slow = 23.71789286,
 )
 
 EP_RANGE = (3.0,   250.0)   # keV — phonon channel

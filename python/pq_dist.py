@@ -1,4 +1,4 @@
-"""phonon_charge_pdf.ppq_dist: pure-Python reference implementation of the
+"""phonon_charge_pdf.pq_dist: pure-Python reference implementation of the
 NR/ER (Ep, Eq) probability model.
 
 Promoted from internal/ to a public, stable module alongside pqPDF
@@ -6,11 +6,11 @@ Promoted from internal/ to a public, stable module alongside pqPDF
 dependency at all (pure numpy/scipy), so it works anywhere this package
 is installed, compiler or not.
 
-This is deliberately the *slow*, brute-force path: PpqN_safe_inspect and
-PpqG_safe_inspect scan a uniform Er grid (resolution set by `res`) rather
-than using the Fortran side's analytic peak location and windowed
-quadrature, specifically so they can serve as an independent cross-check
-of pqPDF/_ppqfort_bindings (see test/python/test_chisquare_ppqn.py and
+This is deliberately the *slow*, brute-force path: PpqN_inspect and
+PpqG_inspect scan a uniform Er grid (step set by `er_step`) rather than
+using the Fortran side's analytic peak location and windowed quadrature,
+specifically so they can serve as an independent cross-check of
+pqPDF/_ppqfort_bindings (see test/python/test_chisquare_ppqn.py and
 test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use pqPDF
 for that.
 
@@ -22,18 +22,21 @@ Public functions:
   coefficients, and the exponent itself.
 * PpqFullN, PpqFullG -- the unnormalized (Ep, Eq) density at one Er,
   integrated over N by a fixed 21-point Simpson rule.
-* PpqN_safe_inspect(_vec), PpqG_safe_inspect(_vec) -- the full PpqN/PpqG
-  value at (Ep, Eq), found by scanning for peak(s) in Er and integrating
-  each with scipy.integrate.quad. The non-"_vec" form additionally
-  returns the scan grid and per-peak diagnostics (width, location) for
-  inspection; "_vec" loops over paired (Ep, Eq) arrays and returns just
-  the values.
-* integrate_g_safe_inspect -- the peak-finding/integration engine
-  PpqN_safe_inspect/PpqG_safe_inspect are built on; also useful directly
-  against a custom integrand (see test_safe_integrator_multimodal.py).
-* consecutive, gaussian -- small helpers (grouping consecutive indices;
-  evaluating a Gaussian) used by integrate_g_safe_inspect's peak-width
-  fit.
+* PpqN_inspect(_vec), PpqG_inspect(_vec) -- the full PpqN/PpqG value at
+  (Ep, Eq), found by scanning for peak(s) in Er and integrating each
+  with scipy.integrate.quad. The non-"_vec" form additionally returns
+  the scan grid and per-peak diagnostics (width, location) for
+  inspection -- the point of reaching for this over the Fortran side;
+  "_vec" loops over paired (Ep, Eq) arrays and returns just the values.
+* integrate_inspect -- the peak-finding/integration engine PpqN_inspect/
+  PpqG_inspect are built on; also useful directly against a custom
+  integrand (see test_integrate_inspect_multimodal.py). Its "g" argument
+  is a generic placeholder for "the function being integrated" (called
+  with PpqFullN for NR, PpqFullG for ER) -- not a reference to gamma/ER.
+* consecutive_groups, gaussian_profile -- small helpers (grouping
+  consecutive indices; evaluating a Gaussian) used by integrate_inspect's
+  peak-width fit. Not part of the public API (not in __all__) -- purely
+  implementation details of integrate_inspect.
 """
 
 import warnings
@@ -45,9 +48,9 @@ from scipy.optimize import curve_fit
 __all__ = [
     "Y", "Nbar", "sigp", "sigq", "PErN", "PErG",
     "aN", "bN", "cN", "PpqExp", "PpqFullN", "PpqFullG",
-    "PpqN_safe_inspect", "PpqN_safe_inspect_vec",
-    "PpqG_safe_inspect", "PpqG_safe_inspect_vec",
-    "integrate_g_safe_inspect", "consecutive", "gaussian",
+    "PpqN_inspect", "PpqN_inspect_vec",
+    "PpqG_inspect", "PpqG_inspect_vec",
+    "integrate_inspect",
 ]
 
 # No module-level __version__ here anymore: the package version lives in
@@ -256,7 +259,7 @@ def PpqFullN(Er, Ep, Eq,
     return float((h_N / 3.0) * np.dot(simps_w, integrand) * PErN(Er))
 
 
-def PpqN_safe_inspect_vec(Ep, Eq,
+def PpqN_inspect_vec(Ep, Eq,
               *,
               k, Z,
               F0,
@@ -264,18 +267,18 @@ def PpqN_safe_inspect_vec(Ep, Eq,
               V,
               p0, p10,
               q0, q10,
-              res):
-    """Vectorized PpqN_safe_inspect: PpqN at each paired (Ep[i], Eq[i]),
+              er_step):
+    """Vectorized PpqN_inspect: PpqN at each paired (Ep[i], Eq[i]),
     returned as a plain list of values (no scan grid/diagnostics -- use
-    PpqN_safe_inspect directly if you need those)."""
+    PpqN_inspect directly if you need those)."""
     ppqNArr = []
     for this_Ep, this_Eq in zip(Ep, Eq):
-        PpqNval, _, _ = PpqN_safe_inspect(this_Ep, this_Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, res=res)
+        PpqNval, _, _ = PpqN_inspect(this_Ep, this_Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
         ppqNArr.append(PpqNval[0])
     return ppqNArr
 
 
-def PpqN_safe_inspect(Ep, Eq,
+def PpqN_inspect(Ep, Eq,
               *,
               k, Z,
               F0,
@@ -283,12 +286,12 @@ def PpqN_safe_inspect(Ep, Eq,
               V,
               p0, p10,
               q0, q10,
-              res):
+              er_step):
     """The full NR PDF value PpqN(Ep, Eq), found by scanning a uniform Er
-    grid (step `res`, in keV) for the Gaussian-in-N exponent's peak and
-    integrating PpqFullN around it with scipy.integrate.quad -- the slow,
-    brute-force reference this package's event_generator.py and the
-    compiled Fortran PpqN are cross-checked against (see
+    grid (step `er_step`, in keV) for the Gaussian-in-N exponent's peak
+    and integrating PpqFullN around it with scipy.integrate.quad -- the
+    slow, brute-force reference this package's event_generator.py and
+    the compiled Fortran PpqN are cross-checked against (see
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
     in a fit/MCMC inner loop; use pqPDF for that.
 
@@ -297,7 +300,7 @@ def PpqN_safe_inspect(Ep, Eq,
     "minx"/"maxx" (the integration window), "integral"/"error" (that
     peak's own quad result), and "width"/"Ermx"/"integrand_max" from a
     Gaussian fit (nan if the fit didn't converge). Usage to just get the
-    value: (PpqN, _), _, _ = PpqN_safe_inspect(...).
+    value: (PpqN, _), _, _ = PpqN_inspect(...).
 
     WARNING: the peak search only works if your peaks have a width
     greater than ~0.1 keV, which holds for all reasonable CDMS
@@ -311,7 +314,7 @@ def PpqN_safe_inspect(Ep, Eq,
     f = lambda er,ep,eq: -1*PpqExp(er,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
 
     maxx = max(Ep, Eq) + 5
-    er_arr = np.arange(5e-21, maxx, res)
+    er_arr = np.arange(5e-21, maxx, er_step)
     f_arr = np.zeros(len(er_arr), dtype=np.float64)
     for idx, er in enumerate(er_arr):
         try:
@@ -334,7 +337,7 @@ def PpqN_safe_inspect(Ep, Eq,
 
     g = lambda er, ep, eq: PpqFullN(er, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    return integrate_g_safe_inspect(g, Ep, Eq, Ermx, res)
+    return integrate_inspect(g, Ep, Eq, Ermx, er_step)
 
 
 def PpqFullG(Er, Ep, Eq,
@@ -391,32 +394,38 @@ def PpqFullG(Er, Ep, Eq,
     return float((h_N / 3.0) * np.dot(simps_w, integrand) * PErG(Er))
 
 
-def consecutive(data, stepsize=1):
+def consecutive_groups(data, stepsize=1):
     """Split a sorted integer array into groups of consecutive values
     (each group's elements differ from the next by exactly `stepsize`).
-    Used by integrate_g_safe_inspect to group a peak-scan's nonzero
-    sample indices into one or more peaks."""
+    Used by integrate_inspect to group a peak-scan's nonzero sample
+    indices into one or more peaks. Not part of the public API (not in
+    __all__) -- an implementation detail of integrate_inspect."""
     return np.split(data, np.where(np.diff(data) != stepsize)[0]+1)
 
 
-def gaussian(x, A, mu, sigma):
-    """A*exp(-(x-mu)**2 / (2*sigma**2)) -- the model integrate_g_safe_inspect
-    fits to a located peak to estimate its width."""
+def gaussian_profile(x, A, mu, sigma):
+    """A*exp(-(x-mu)**2 / (2*sigma**2)) -- the model integrate_inspect fits
+    to a located peak to estimate its width. Not part of the public API
+    (not in __all__) -- an implementation detail of integrate_inspect."""
     return A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
 
 
-def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
+def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     """Integrate g(Er, Ep, Eq) over Er by locating its peak(s) on a
-    uniform scan grid (step `resolution/2`, in keV, starting from an
+    uniform scan grid (step `er_step/2`, in keV, starting from an
     approximate peak location Ermx) and integrating each located peak
-    with scipy.integrate.quad. This is the engine PpqN_safe_inspect and
-    PpqG_safe_inspect are built on; it also works directly against any
-    custom integrand g (see test/python/test_safe_integrator_multimodal.py
-    for a multi-peak example).
+    with scipy.integrate.quad. This is the engine PpqN_inspect and
+    PpqG_inspect are built on; it also works directly against any custom
+    integrand g (see test/python/test_integrate_inspect_multimodal.py for
+    a multi-peak example). The "g" here is a generic placeholder for
+    "the function being integrated" (it's called with PpqFullN for NR,
+    PpqFullG for ER) -- not a reference to gamma/ER, which is why this
+    function's own name doesn't carry an N/G suffix the way PpqN_inspect/
+    PpqG_inspect do.
 
     Returns ((integral, quad_error), (er_scan_grid, er_scan_integrand),
-    peak_info_list) -- see PpqN_safe_inspect's docstring for the shape of
-    each peak_info_list entry.
+    peak_info_list) -- see PpqN_inspect's docstring for the shape of each
+    peak_info_list entry.
     """
     minx = 5e-21
     maxx = max(Ep, Eq) + 5
@@ -435,7 +444,7 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
     # consistent array.
     scan_min = minx
     while True:
-        er_arr = np.arange(scan_min, maxx, resolution / 2)
+        er_arr = np.arange(scan_min, maxx, er_step / 2)
         er_integrand_arr = np.zeros(np.size(er_arr))
         for idx, er in enumerate(er_arr):
             er_integrand_arr[idx] = g(er, Ep, Eq)
@@ -458,7 +467,7 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
     # We expect a structure of peaks surrounded by zeros: group the
     # consecutive non-zero samples and pad each group's range by 5 grid
     # points on both sides.
-    nonZero_idx_groups = consecutive(nonZero_idx)
+    nonZero_idx_groups = consecutive_groups(nonZero_idx)
 
     peak_info_array = []
     for peak_idx in nonZero_idx_groups:
@@ -521,7 +530,7 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
 
             if np.all(curvature == 0):
                 warnings.warn(
-                    f"integrate_g_safe_inspect: peak {jdx} at Ep={Ep}, Eq={Eq} "
+                    f"integrate_inspect: peak {jdx} at Ep={Ep}, Eq={Eq} "
                     "is a flat line over its scan window -- width/Ermx left as "
                     "the plain max, no Gaussian fit attempted.",
                     stacklevel=2,
@@ -542,7 +551,7 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
                 # Fit Gaussian to filtered data
                 # note that we fit the values filtered_values * 1/max_value
                 # this is so that when the values are small the fit still works!
-                popt, _ = curve_fit(gaussian, filtered_energies, filtered_values * 1/max_value, p0=[1, max_energy, width_estimate])
+                popt, _ = curve_fit(gaussian_profile, filtered_energies, filtered_values * 1/max_value, p0=[1, max_energy, width_estimate])
 
                 # Er_max is the value of Er for which g is maximum
                 peak_info_array[jdx]['integrand_max'] = popt[0] * max_value
@@ -553,7 +562,7 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
             # fail noisily rather than silently continuing with a wrong
             # peak location.
             warnings.warn(
-                f"integrate_g_safe_inspect: could not fit peak {jdx}'s width "
+                f"integrate_inspect: could not fit peak {jdx}'s width "
                 f"at Ep={Ep}, Eq={Eq} (max_value={max_value}, "
                 f"max_energy={max_energy}, width_estimate={width_estimate}): {e}",
                 stacklevel=2,
@@ -570,7 +579,7 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
     # find the overall minimum and maximum and evaluate er_integrand_arr over that range
     min_minx = min(d["minx"] for d in peak_info_array)
     max_maxx = max(d["maxx"] for d in peak_info_array)
-    er_arr = np.arange(min_minx, max_maxx, resolution / 2)
+    er_arr = np.arange(min_minx, max_maxx, er_step / 2)
     er_integrand_arr = np.zeros(np.size(er_arr))
     for idx, er in enumerate(er_arr):
         val = g(er, Ep, Eq)
@@ -580,40 +589,41 @@ def integrate_g_safe_inspect(g, Ep, Eq, Ermx, resolution):
     return (integral, error), (er_arr, er_integrand_arr), peak_info_array
 
 
-def PpqG_safe_inspect_vec(Ep, Eq,
+def PpqG_inspect_vec(Ep, Eq,
               *,
               F0,
               eps,
               V,
               p0, p10,
               q0, q10,
-              res):
-    """Vectorized PpqG_safe_inspect: PpqG at each paired (Ep[i], Eq[i]),
+              er_step):
+    """Vectorized PpqG_inspect: PpqG at each paired (Ep[i], Eq[i]),
     returned as a plain list of values (no scan grid/diagnostics -- use
-    PpqG_safe_inspect directly if you need those)."""
+    PpqG_inspect directly if you need those)."""
     ppqGArr = []
     for this_Ep, this_Eq in zip(Ep, Eq):
-        PpqGval, _, _ = PpqG_safe_inspect(this_Ep, this_Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, res=res)
+        PpqGval, _, _ = PpqG_inspect(this_Ep, this_Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
         ppqGArr.append(PpqGval[0])
     return ppqGArr
 
 
-def PpqG_safe_inspect(Ep, Eq,
+def PpqG_inspect(Ep, Eq,
               *,
               F0,
               eps,
               V,
               p0, p10,
               q0, q10,
-              res):
+              er_step):
     """The full ER PDF value PpqG(Ep, Eq) -- the ER counterpart of
-    PpqN_safe_inspect (see its docstring for the method, return shape,
-    and the "never use this in a fit/MCMC loop" caveat). `res` (keV)
+    PpqN_inspect (see its docstring for the method, return shape, and
+    the "never use this in a fit/MCMC loop" caveat). `er_step` (keV)
     should be scanned finer than the narrowest expected peak: ER peaks
     can be as narrow as the zero-energy ionization resolution q0 (~0.06
-    keV for typical CDMS parameters), so e.g. res=0.01 (a 0.005 keV scan
-    step) is finer than the 0.01 keV grid the Fortran PpqG integrates on.
-    Usage to just get the value: (PpqG, _), _, _ = PpqG_safe_inspect(...).
+    keV for typical CDMS parameters), so e.g. er_step=0.01 (a 0.005 keV
+    scan step) is finer than the 0.01 keV grid the Fortran PpqG
+    integrates on. Usage to just get the value:
+    (PpqG, _), _, _ = PpqG_inspect(...).
     """
     if F0 == 0:
         raise ValueError("Fano factor F(Er) = F0 is zero for all Er")
@@ -625,9 +635,9 @@ def PpqG_safe_inspect(Ep, Eq,
 
     # WARNING: this will only work if your peaks have a width greater
     # than 0.1 keV, which seems to be true for all reasonable CDMS
-    # parameters (see PpqN_safe_inspect's docstring).
+    # parameters (see PpqN_inspect's docstring).
     maxx = max(Ep, Eq) + 5
-    er_arr = np.arange(5e-21, maxx, res)
+    er_arr = np.arange(5e-21, maxx, er_step)
     f_arr = np.zeros(len(er_arr))
     for idx, er in enumerate(er_arr):
         f_arr[idx] = f(er, Ep, Eq)
@@ -641,4 +651,4 @@ def PpqG_safe_inspect(Ep, Eq,
         min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
         Ermx = er_arr[min_idx]
 
-    return integrate_g_safe_inspect(g, Ep, Eq, Ermx, res)
+    return integrate_inspect(g, Ep, Eq, Ermx, er_step)

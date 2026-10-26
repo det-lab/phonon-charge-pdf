@@ -3,19 +3,19 @@
 If you want simulated `(Ep, Eq)` detector events instead of PDF values — to validate a fit
 pipeline end to end, or to feed a downstream analysis — `event_generator.py` is the
 entrypoint, independent of `pqPDF`. Unlike `pqPDF`, it has **no Fortran dependency**: it's
-pure Python/numpy built on [`ppq_dist.py`](ppq-dist.md), so it works in any environment this
+pure Python/numpy built on [`pq_dist.py`](pq-dist.md), so it works in any environment this
 package is installed into, container or not.
 
 ```python
 import phonon_charge_pdf as pdf
 
 events = pdf.generate_events(
-    target_size=20_000, ER_frac=0.6, seed_value=8,
+    target_size=20_000, ER_frac=0.6, seed=8,
     ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
     k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
-    PNa=0.53693208, PNb=6.41515782, PNd=23.71789286,
-    PGa=0.573211975, PGb=0.169520023, PGd=279.552394,
+    mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
+    mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
 )
 Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
@@ -24,7 +24,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 real analysis ROI, the same box `pqPDF` would be normalized over); the ER/NR split is
 `Binomial(target_size, ER_frac)`, so `ER_frac=1.0`/`0.0` give deterministic pure-ER/pure-NR
 samples and anything in between carries the same sampling fluctuation a real dataset would.
-The returned `DataFrame` has columns `EP, EQ, N0, is_ER, seed_value, is_bkg` — `is_bkg` is
+The returned `DataFrame` has columns `EP, EQ, N0, is_ER, seed, is_bkg` — `is_bkg` is
 always `False` here; it exists only so these rows can be concatenated directly with a
 separate zero-charge/surface-background generator that produces the same columns (e.g. a
 KDE-based one kept in a downstream analysis repo, out of scope for this library).

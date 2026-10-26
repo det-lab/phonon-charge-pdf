@@ -232,7 +232,7 @@ jobs:
         echo "FFLAGS=$FFLAGS"
         fpm test                              ${FPM_FLAGS} --flag "$FFLAGS"
 
-    # Python validation of python/ppq_dist.py and python/event_generator.py
+    # Python validation of python/pq_dist.py and python/event_generator.py
     # against the compiled Fortran library. Skipped for:
     # - the phhargrove/llvm-flang containers, which are minimal
     #   (non-apt-based) images that can't reliably get a Python + pip
@@ -288,7 +288,7 @@ jobs:
         set -x
         fpm install --prefix=. ${FPM_FLAGS} --flag "$FFLAGS"
 
-    - name: Validate ppq_dist.py against the compiled library
+    - name: Validate pq_dist.py against the compiled library
       if: ${{ !contains(matrix.container, 'phhargrove') && matrix.compiler != 'ifx' }}
       run: |
         set -x
@@ -305,7 +305,7 @@ jobs:
         export DYLD_LIBRARY_PATH="lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
         "$pythonLocation/bin/python" test/python/test_PpqFort.py
         "$pythonLocation/bin/python" test/python/test_PpqFort_vectorFuncs.py
-        "$pythonLocation/bin/python" test/python/test_safe_integrator_multimodal.py
+        "$pythonLocation/bin/python" test/python/test_integrate_inspect_multimodal.py
 
     - name: Validate the event generator against the compiled PDFs (smoke test)
       if: ${{ !contains(matrix.container, 'phhargrove') && matrix.compiler != 'ifx' }}
