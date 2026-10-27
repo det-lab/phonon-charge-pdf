@@ -6,7 +6,7 @@ name: Docs
 # Builds the MkDocs site and deploys it to GitHub Pages. No Fortran build
 # needed: mkdocstrings only imports the pure-Python modules to pull their
 # docstrings, and importing phonon_charge_pdf never touches the compiled
-# library (see python/__init__.py) -- only constructing a pqPDF does.
+# library (see python/__init__.py) -- only constructing a Ppq_compiled does.
 
 on:
   push:
