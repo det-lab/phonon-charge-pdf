@@ -5,7 +5,7 @@ MCMC -- if you want normalized PDF values or a likelihood, start here:
     from Ppq_fort import Ppq_compiled
     likelihood = Ppq_compiled(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
                  norm_epsrel=1e-4, norm_epsabs=1e-10)
-    normalized = likelihood.Ppq_normalized_values_NR(k=k, Z=Z, F0=F0, eps=eps, V=V,
+    normalized = likelihood.Ppq_normalized_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V,
                                              p0=p0, p10=p10, q0=q0, q10=q10)
 
 Ppq_compiled always needs the compiled Fortran library (a table only replaces the
@@ -121,7 +121,7 @@ class Ppq_compiled:
                  Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
                  n_workers=None):
         # A table only ever replaces the normalization integral, never the
-        # per-event PDF evaluation (Ppq_values_NR/Ppq_values_ER always need
+        # per-event PDF evaluation (_Ppq_densities_NR/_Ppq_densities_ER always need
         # Ppq_vector_NR/Ppq_vector_ER) -- so every Ppq_compiled needs the compiled
         # library eventually. Load it now and raise here, with the clear
         # LD_LIBRARY_PATH message from _load_library(), rather than
@@ -203,15 +203,17 @@ class Ppq_compiled:
                             **self._quadrature_tolerances(),
                             k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    def Ppq_values_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
-        """Un-normalized Ppq_NR at the bound dataset."""
+    def _Ppq_densities_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
+        """Un-normalized Ppq_NR at the bound dataset. Private: nothing outside
+        Ppq_normalized_densities_NR needs this on its own -- a fit/MCMC always
+        divides by Ppq_integral_NR(...), never uses this alone."""
         pdf_func = make_Ppq_unnormalized_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
                                                q0=q0, q10=q10, n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
-    def Ppq_normalized_values_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
-        """Ppq_values_NR(...) / Ppq_integral_NR(...), elementwise."""
-        return (self.Ppq_values_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    def Ppq_normalized_densities_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
+        """_Ppq_densities_NR(...) / Ppq_integral_NR(...), elementwise."""
+        return (self._Ppq_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
                 / self.Ppq_integral_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10))
 
     # ---- ER (Ppq_ER) band ----
@@ -224,13 +226,15 @@ class Ppq_compiled:
                             **self._quadrature_tolerances(),
                             F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    def Ppq_values_ER(self, *, F0, eps, V, p0, p10, q0, q10):
-        """Un-normalized Ppq_ER at the bound dataset."""
+    def _Ppq_densities_ER(self, *, F0, eps, V, p0, p10, q0, q10):
+        """Un-normalized Ppq_ER at the bound dataset. Private: nothing outside
+        Ppq_normalized_densities_ER needs this on its own -- a fit/MCMC always
+        divides by Ppq_integral_ER(...), never uses this alone."""
         pdf_func = make_Ppq_unnormalized_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
                                                q0=q0, q10=q10, n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
-    def Ppq_normalized_values_ER(self, *, F0, eps, V, p0, p10, q0, q10):
-        """Ppq_values_ER(...) / Ppq_integral_ER(...), elementwise."""
-        return (self.Ppq_values_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    def Ppq_normalized_densities_ER(self, *, F0, eps, V, p0, p10, q0, q10):
+        """_Ppq_densities_ER(...) / Ppq_integral_ER(...), elementwise."""
+        return (self._Ppq_densities_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
                 / self.Ppq_integral_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10))
