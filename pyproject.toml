@@ -25,7 +25,12 @@ test = ["matplotlib", "equibin"]
 # release -- "TypeError: Highlight.__init__() missing 1 required positional
 # argument: 'md'" building any mkdocstrings page. 11.0.2 is confirmed
 # working; revisit this pin once mkdocstrings ships a fix.
-docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "pymdown-extensions<12"]
+
+# black: mkdocstrings' separate_signature option (see mkdocs.yml) formats
+# each rendered signature with Black if it's installed, falling back to an
+# unformatted one-liner otherwise -- installed here so signatures in the
+# published API reference are always nicely wrapped one-argument-per-line.
+docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "pymdown-extensions<12", "black"]
 
 [project.urls]
 Repository = "https://github.com/det-lab/phonon-charge-pdf"

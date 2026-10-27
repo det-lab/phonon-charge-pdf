@@ -30,14 +30,19 @@ nav:
   - Home: index.md
   - Two ways to use this: two-ways.md
   - Generating simulated events: python-events.md
-  - Resolution/yield model: ppq-py.md
-  - Fortran-backed PDF (Ppq_compiled): ppq-fort.md
-  - Precomputed normalization tables: normalization-tables.md
-  - Building from source: building-from-source.md
-  - Verification and validation: testing.md
-  - Profiling: PROFILING.md
-  - Miscellaneous notes: misc-notes.md
-  - API reference: api/index.md
+  - Fitting: fitting.md
+  - Using MCMC to get errors: mcmc.md
+  - Computing new normalization tables: normalization-tables.md
+  - Python API reference: api/index.md
+  - For the cautious:
+      - Verification and validation: testing.md
+  - For developers:
+      - Building from source: building-from-source.md
+      - Profiling: PROFILING.md
+  - To delete:
+      - Fortran-backed PDF (Ppq_compiled): ppq-fort.md
+      - Resolution/yield model: ppq-py.md
+      - Miscellaneous notes: misc-notes.md
 
 markdown_extensions:
   - admonition
@@ -58,5 +63,8 @@ plugins:
             show_source: true
             show_root_heading: true
             show_root_full_path: false
+            docstring_style: numpy
             docstring_section_style: list
             merge_init_into_class: true
+            separate_signature: true
+            line_length: 60

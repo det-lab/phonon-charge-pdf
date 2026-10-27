@@ -1,4 +1,4 @@
-# API reference
+# Python API reference
 
 Everything here is called the same way: `import phonon_charge_pdf as pdf`, then `pdf.<name>`.
 For a usage walkthrough rather than a bare signature list, see

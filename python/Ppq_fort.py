@@ -85,6 +85,8 @@ class Ppq_compiled:
     Requires the compiled Fortran library, usually by running inside a
     published container -- see the "Two ways to use this" page.
 
+    Parameters
+    ----------
     ep_min, ep_max, eq_min, eq_max : float
         The (Ep, Eq) region the PDF is normalized over.
     ep_data, eq_data : array_like

@@ -1,4 +1,4 @@
-# Precomputed normalization tables for MCMC: `python/cli/normgrid.py`
+# Computing new normalization tables: `python/cli/normgrid.py`
 
 Even at ~1-2 s, computing the normalization integral at every MCMC step is out of the
 question. But the region is fixed for a whole run and the integral is a very smooth

@@ -40,3 +40,8 @@ physics check since this module never touches `Ppq_NR`/`Ppq_ER` itself. See
 For single-species sampling without the ROI retry/mixing logic (e.g. for a custom
 pipeline), the lower-level `generate_NR_events`/`generate_ER_events` are also public — see
 their docstrings, or the [API reference](api/index.md#phonon_charge_pdf.generate_events).
+
+The resolution/yield model functions this is built on -- `Y`, `Nbar`, `sigp`, `sigq`,
+`PEr_NR`, `PEr_ER` -- are also public, for analyzers who want one of them directly rather
+than through `generate_events`; see the
+[API reference](api/index.md#phonon_charge_pdf.Y) for the full list.
