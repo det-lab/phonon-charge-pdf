@@ -11,8 +11,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 # that exact revision from GitHub, ignoring the local checkout.
 ARG GIT_REF=""
 
-# python3-numpy/python3-scipy provide the packages needed by the python
-# test scripts; python-is-python3 lets them be invoked as `python`
+# python3-numpy/python3-scipy/python3-pandas are this project's core
+# runtime dependencies (see pyproject.toml's `dependencies`) -- pandas in
+# particular is a hard import in event_generator.py, not just a test
+# dependency; python-is-python3 lets them be invoked as `python`
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -23,6 +25,7 @@ RUN apt-get update && apt-get install -y \
     python-is-python3 \
     python3-numpy \
     python3-scipy \
+    python3-pandas \
     python3-pip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

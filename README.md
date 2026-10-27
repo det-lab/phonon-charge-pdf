@@ -31,7 +31,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
-library and `Ppq` — see [Two ways to use this](#two-ways-to-use-this) below.
+library and `Ppq_compiled` — see [Two ways to use this](#two-ways-to-use-this) below.
 
 Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
 underscore, the usual PyPI convention). For local development instead of a pinned release,
@@ -53,7 +53,7 @@ and the resolution/yield model ([`sigp`, `sigq`, `Y`, `Nbar`, ...](docs/ppq-py.m
 
 **2. The Fortran-backed PDF — needs the compiled library.** If you want normalized PDF
 values or a likelihood — a fit, an MCMC, anything beyond generating or describing
-simulated events — you need [`Ppq`](docs/ppq-fort.md), and it always needs the
+simulated events — you need [`Ppq_compiled`](docs/ppq-fort.md), and it always needs the
 compiled library. Easiest first:
 
 | Option | Command |
@@ -84,8 +84,8 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](docs/python-events.md) |
-| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (Ppq_py)](docs/ppq-py.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq)](docs/ppq-fort.md) |
+| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model](docs/ppq-py.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq_compiled)](docs/ppq-fort.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](docs/normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](docs/testing.md) |

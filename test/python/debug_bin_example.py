@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from band_breakpoints import make_ridge_breakpoints
 # Unnormalized: debug_bin inspects the PDF's shape over one bin, not an
-# absolute probability.  For a fit or MCMC, use Ppq (python/Ppq_fort.py).
+# absolute probability.  For a fit or MCMC, use Ppq_compiled (python/Ppq_fort.py).
 from _Ppq_fort_bindings import make_Ppq_unnormalized_ER
 from chisquare_harness import debug_bin
 

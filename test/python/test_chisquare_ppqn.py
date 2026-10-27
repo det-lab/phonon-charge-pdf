@@ -9,7 +9,7 @@ docstring for the general workflow).  Specific to this test:
   (threaded chunked Ppq_vector_NR calls), unnormalized -- fine here since this
   test only checks the PDF's *shape* (sampled events vs. its own density),
   which a constant normalization factor doesn't affect.  For a fit or MCMC,
-  use Ppq (python/Ppq_fort.py) instead.
+  use Ppq_compiled (python/Ppq_fort.py) instead.
 - The lintsampler grid uses feature-scaled (non-uniform) edges: the band
   width tracks the detector resolutions sigp(Ep) and sigq(Eq), which grow
   roughly linearly with energy, so the edges are spaced proportionally to
@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _Ppq_fort_bindings
-sys.path.insert(0, str(REPO_ROOT / "python"))  # Ppq
+sys.path.insert(0, str(REPO_ROOT / "python"))  # Ppq_compiled
 import Ppq_py as ppq
 import sample_from_pdf as spdf
 from band_breakpoints import make_ridge_breakpoints

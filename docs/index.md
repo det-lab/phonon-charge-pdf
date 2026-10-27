@@ -26,7 +26,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
-library and `Ppq`; see [Two ways to use this](two-ways.md).
+library and `Ppq_compiled`; see [Two ways to use this](two-ways.md).
 
 Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
 underscore, the usual PyPI convention).
@@ -44,8 +44,8 @@ by name.
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](python-events.md) |
-| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (Ppq_py)](ppq-py.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq)](ppq-fort.md) |
+| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model](ppq-py.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq_compiled)](ppq-fort.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](testing.md) |

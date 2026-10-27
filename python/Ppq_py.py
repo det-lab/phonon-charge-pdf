@@ -1,7 +1,7 @@
 """phonon_charge_pdf.Ppq_py: pure-Python reference implementation of the
 NR/ER (Ep, Eq) probability model.
 
-Promoted from internal/ to a public, stable module alongside Ppq
+Promoted from internal/ to a public, stable module alongside Ppq_compiled
 (Ppq_fort.py) and event_generator.py -- it has no compiled-library
 dependency at all (pure numpy/scipy), so it works anywhere this package
 is installed, compiler or not.
@@ -10,33 +10,37 @@ This is deliberately the *slow*, brute-force path: Ppq_inspect_NR and
 Ppq_inspect_ER scan a uniform Er grid (step set by `er_step`) rather than
 using the Fortran side's analytic peak location and windowed quadrature,
 specifically so they can serve as an independent cross-check of
-Ppq/_Ppq_fort_bindings (see test/python/test_chisquare_ppqn.py and
-test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use Ppq
+Ppq_compiled/_Ppq_fort_bindings (see test/python/test_chisquare_ppqn.py and
+test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use Ppq_compiled
 for that.
 
 Public functions:
 * Y, Nbar, sigp, sigq -- the ionization-yield, mean pair-count, and
   phonon/ionization resolution models.
 * PEr_NR, PEr_ER -- the true-recoil-energy spectra (NR, ER).
-* aN, bN, cN, N_exponent -- the Gaussian-in-N exponent's quadratic
-  coefficients, and the exponent itself.
-* pq_given_Er_NR, pq_given_Er_ER -- the unnormalized (Ep, Eq) density at one Er,
-  integrated over N by a fixed 21-point Simpson rule.
-* Ppq_inspect_NR(_vec), Ppq_inspect_ER(_vec) -- the full Ppq_NR/Ppq_ER value at
-  (Ep, Eq), found by scanning for peak(s) in Er and integrating each
-  with scipy.integrate.quad. The non-"_vec" form additionally returns
-  the scan grid and per-peak diagnostics (width, location) for
-  inspection -- the point of reaching for this over the Fortran side;
-  "_vec" loops over paired (Ep, Eq) arrays and returns just the values.
+* Ppq_inspect_NR, Ppq_inspect_ER -- the full Ppq_NR/Ppq_ER value at (Ep, Eq),
+  found by scanning for peak(s) in Er and integrating each with
+  scipy.integrate.quad, and returning the scan grid and per-peak
+  diagnostics (width, location) alongside the value -- the point of
+  reaching for this over the Fortran side.
+
+Not part of the public API (not in __all__) -- no end user needs these directly:
+* aN, bN, cN -- the Gaussian-in-N exponent's quadratic coefficients, used only
+  to build N_exponent below.
+* N_exponent, pq_given_Er_NR, pq_given_Er_ER -- internal pieces Ppq_inspect_NR/ER
+  are built from; still importable from this module by name (and from
+  ctypes-level tests cross-checking the Fortran side) if you need them.
 * integrate_inspect -- the peak-finding/integration engine Ppq_inspect_NR/
-  Ppq_inspect_ER are built on; also useful directly against a custom
-  integrand (see test_integrate_inspect_multimodal.py). Its "g" argument
-  is a generic placeholder for "the function being integrated" (called
-  with pq_given_Er_NR for NR, pq_given_Er_ER for ER) -- not a reference to gamma/ER.
+  Ppq_inspect_ER are built on. Its "g" argument is a generic placeholder for
+  "the function being integrated" (called with pq_given_Er_NR for NR,
+  pq_given_Er_ER for ER) -- not a reference to gamma/ER. Exercised directly
+  against a custom multimodal integrand only by
+  test_integrate_inspect_multimodal.py, to prove it finds every peak rather
+  than just the one Ppq_inspect_NR/ER happen to feed it -- not something an
+  end user needs to call themselves.
 * consecutive_groups, gaussian_profile -- small helpers (grouping
   consecutive indices; evaluating a Gaussian) used by integrate_inspect's
-  peak-width fit. Not part of the public API (not in __all__) -- purely
-  implementation details of integrate_inspect.
+  peak-width fit.
 """
 
 import warnings
@@ -47,10 +51,7 @@ from scipy.optimize import curve_fit
 
 __all__ = [
     "Y", "Nbar", "sigp", "sigq", "PEr_NR", "PEr_ER",
-    "aN", "bN", "cN", "N_exponent", "pq_given_Er_NR", "pq_given_Er_ER",
-    "Ppq_inspect_NR", "Ppq_inspect_vec_NR",
-    "Ppq_inspect_ER", "Ppq_inspect_vec_ER",
-    "integrate_inspect",
+    "Ppq_inspect_NR", "Ppq_inspect_ER",
 ]
 
 # No module-level __version__ here anymore: the package version lives in
@@ -259,25 +260,6 @@ def pq_given_Er_NR(Er, Ep, Eq,
     return float((h_N / 3.0) * np.dot(simps_w, integrand) * PEr_NR(Er))
 
 
-def Ppq_inspect_vec_NR(Ep, Eq,
-              *,
-              k, Z,
-              F0,
-              eps,
-              V,
-              p0, p10,
-              q0, q10,
-              er_step):
-    """Vectorized Ppq_inspect_NR: Ppq_NR at each paired (Ep[i], Eq[i]),
-    returned as a plain list of values (no scan grid/diagnostics -- use
-    Ppq_inspect_NR directly if you need those)."""
-    valuesArr = []
-    for this_Ep, this_Eq in zip(Ep, Eq):
-        thisVal, _, _ = Ppq_inspect_NR(this_Ep, this_Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
-        valuesArr.append(thisVal[0])
-    return valuesArr
-
-
 def Ppq_inspect_NR(Ep, Eq,
               *,
               k, Z,
@@ -293,7 +275,7 @@ def Ppq_inspect_NR(Ep, Eq,
     slow, brute-force reference this package's event_generator.py and
     the compiled Fortran Ppq_NR are cross-checked against (see
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
-    in a fit/MCMC inner loop; use Ppq for that.
+    in a fit/MCMC inner loop; use Ppq_compiled for that.
 
     Returns ((value, quad_error), (er_scan_grid, er_scan_integrand),
     peak_info_list): peak_info_list is one dict per located peak, with
@@ -415,9 +397,11 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     uniform scan grid (step `er_step/2`, in keV, starting from an
     approximate peak location Ermx) and integrating each located peak
     with scipy.integrate.quad. This is the engine Ppq_inspect_NR and
-    Ppq_inspect_ER are built on; it also works directly against any custom
-    integrand g (see test/python/test_integrate_inspect_multimodal.py for
-    a multi-peak example). The "g" here is a generic placeholder for
+    Ppq_inspect_ER are built on. Not part of the public API (not in
+    __all__); test/python/test_integrate_inspect_multimodal.py exercises it
+    directly against a synthetic multi-peak integrand to prove the
+    peak-finding itself is correct, independent of either band's physics.
+    The "g" here is a generic placeholder for
     "the function being integrated" (it's called with pq_given_Er_NR for NR,
     pq_given_Er_ER for ER) -- not a reference to gamma/ER, which is why this
     function's own name doesn't carry an N/G suffix the way Ppq_inspect_NR/
@@ -587,24 +571,6 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
 
     # now we're ready to return everything to the user
     return (integral, error), (er_arr, er_integrand_arr), peak_info_array
-
-
-def Ppq_inspect_vec_ER(Ep, Eq,
-              *,
-              F0,
-              eps,
-              V,
-              p0, p10,
-              q0, q10,
-              er_step):
-    """Vectorized Ppq_inspect_ER: Ppq_ER at each paired (Ep[i], Eq[i]),
-    returned as a plain list of values (no scan grid/diagnostics -- use
-    Ppq_inspect_ER directly if you need those)."""
-    valuesArr = []
-    for this_Ep, this_Eq in zip(Ep, Eq):
-        thisVal, _, _ = Ppq_inspect_ER(this_Ep, this_Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=er_step)
-        valuesArr.append(thisVal[0])
-    return valuesArr
 
 
 def Ppq_inspect_ER(Ep, Eq,

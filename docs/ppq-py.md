@@ -1,15 +1,13 @@
-# Resolution/yield model: `Ppq_py.py`
+# Resolution/yield model
 
-`Ppq_py.py` is the pure-Python reference implementation that [`event_generator.py`](python-events.md)
-and the compiled Fortran (`Ppq_NR`/`Ppq_ER`) are both cross-checked against
-(`test/python/test_chisquare_{nr,er}_simulator.py`, `test_chisquare_ppqn.py`,
-`test_PpqFort.py`). It has **no Fortran dependency** — only numpy/scipy — so it works
-anywhere this package is installed.
+The resolution/yield model functions (`sigp`, `sigq`, `Y`, `Nbar`, and friends below) are
+implemented in `Ppq_py.py`, the pure-Python reference implementation that
+[`event_generator.py`](python-events.md) and the compiled Fortran (`Ppq_NR`/`Ppq_ER`) are
+both cross-checked against (`test/python/test_chisquare_{nr,er}_simulator.py`,
+`test_chisquare_ppqn.py`, `test_PpqFort.py`). It has **no Fortran dependency** — only
+numpy/scipy — so it works anywhere this package is installed.
 
 ## The resolution/yield model functions (most common case)
-
-The commonly-used pieces are re-exported directly on the top-level package, with a
-stable public API — no need to import the `Ppq_py` submodule yourself:
 
 ```python
 import phonon_charge_pdf as pdf
@@ -25,19 +23,16 @@ y    = pdf.Y(Er, k=k, Z=Z)
 nbar = pdf.Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
 ```
 
-The true-recoil-energy spectra (`PEr_NR`/`PEr_ER`) and the per-Er unnormalized
-densities (`pq_given_Er_NR`/`pq_given_Er_ER` — not normalized PDFs themselves, see
-their own docstrings) are public the same way — see the
-[API reference](api/ppq_py.md) for the full list, including the Gaussian-in-N
-exponent pieces (`aN`, `bN`, `cN`, `N_exponent` — the `N` here is the e/h pair count,
-not a species, same as in `Nbar`).
+The true-recoil-energy spectra (`PEr_NR`/`PEr_ER`) are public the same way — see the
+[API reference](api/ppq_py.md) for the full list.
 
 ## The brute-force PDF scan (diagnostic only)
 
-`Ppq_inspect_NR`/`Ppq_inspect_ER` are a slower, independent way to get `Ppq_NR`/`Ppq_ER`
-values directly, by scanning a uniform grid to locate the Er integrand's peak(s) and
-integrating each with `scipy.integrate.quad`, instead of the Fortran side's analytic peak
-location:
+`Ppq_inspect_NR`/`Ppq_inspect_ER` are a slower, Python-only way to get `Ppq_NR`/`Ppq_ER`
+values directly: instead of the Fortran side's analytic peak location and windowed
+quadrature, they scan the *whole* plausible Er range on a uniform grid, locate the
+integrand's peak(s) on that scan, and integrate each with `scipy.integrate.quad` — more
+exhaustive, and much slower:
 
 ```python
 import phonon_charge_pdf as pdf
@@ -51,10 +46,10 @@ import phonon_charge_pdf as pdf
 ```
 
 !!! warning "Deliberately the slow path"
-    Never use this in a fit/MCMC inner loop. Use [`Ppq`](ppq-fort.md) for a
-    fit/MCMC; use this to independently verify `Ppq`/`event_generator.py` agree with
+    Never use this in a fit/MCMC inner loop. Use [`Ppq_compiled`](ppq-fort.md) for a
+    fit/MCMC; use this to independently verify `Ppq_compiled`/`event_generator.py` agree with
     the underlying physics, or when you want the scan grid and per-peak width/location
-    diagnostics (`peaks` above — one dict per located peak) that `Ppq` doesn't expose.
+    diagnostics (`peaks` above — one dict per located peak) that `Ppq_compiled` doesn't expose.
 
 ### Choosing `er_step`
 
@@ -62,7 +57,3 @@ import phonon_charge_pdf as pdf
 peaks can be as narrow as the zero-energy ionization resolution `q0` (~0.06 keV for typical
 CDMS parameters), so e.g. `er_step=0.01` for `Ppq_inspect_ER` is finer than the 0.01 keV
 grid the Fortran `Ppq_ER` itself integrates on.
-
-Vectorized forms (`Ppq_inspect_vec_NR`/`Ppq_inspect_vec_ER`) evaluate paired
-`(Ep, Eq)` arrays and return just the values, dropping the scan grid and per-peak
-diagnostics.

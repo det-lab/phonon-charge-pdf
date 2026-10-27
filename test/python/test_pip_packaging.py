@@ -1,7 +1,7 @@
 """
 Validates the pip-installable package's graceful-degradation promise:
 pure-Python functionality (event_generator.py) works with no compiled
-Fortran library anywhere on the system, while Ppq -- which always
+Fortran library anywhere on the system, while Ppq_compiled -- which always
 needs it, even with a precomputed normalization table -- fails clearly
 and immediately at construction rather than deep into a fit.
 
@@ -28,7 +28,7 @@ def check(name, condition, detail=""):
 import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of what's tested
 
 check("import phonon_charge_pdf with no compiled library present", True)
-check("Ppq is exported", hasattr(bd, "Ppq"))
+check("Ppq_compiled is exported", hasattr(bd, "Ppq_compiled"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
 check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
 check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
@@ -37,7 +37,7 @@ check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
 # docstring): every name in its own __all__ must also be re-exported here.
 from phonon_charge_pdf.Ppq_py import __all__ as _Ppq_py_all  # noqa: E402
 
-check("every Ppq.__all__ name is re-exported on phonon_charge_pdf",
+check("every Ppq_py.__all__ name is re-exported on phonon_charge_pdf",
       all(hasattr(bd, name) for name in _Ppq_py_all),
       [name for name in _Ppq_py_all if not hasattr(bd, name)])
 
@@ -62,13 +62,13 @@ except Exception as e:
     check("Ppq_inspect_NR runs with no Fortran library", False, repr(e))
 
 try:
-    bd.Ppq(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
-    check("Ppq() raises at construction without the Fortran library", False,
+    bd.Ppq_compiled(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
+    check("Ppq_compiled() raises at construction without the Fortran library", False,
           "construction succeeded -- it should have failed fast instead")
 except RuntimeError as e:
-    check("Ppq() raises at construction without the Fortran library", True, str(e)[:80])
+    check("Ppq_compiled() raises at construction without the Fortran library", True, str(e)[:80])
 except Exception as e:
-    check("Ppq() raises at construction without the Fortran library", False,
+    check("Ppq_compiled() raises at construction without the Fortran library", False,
           f"wrong exception type: {e!r}")
 
 print()

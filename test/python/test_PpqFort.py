@@ -9,7 +9,7 @@ repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 module_dir = os.path.join(repo_root, 'python')
 sys.path.append(module_dir)
 
-# Ppq contains the Python implementation with the numerical N integral
+# Ppq_compiled contains the Python implementation with the numerical N integral
 # (21-point Simpson's rule, sigp/sigq at noiseless energies), matching Fortran Ppq_NR.
 import Ppq_py as ppq
 

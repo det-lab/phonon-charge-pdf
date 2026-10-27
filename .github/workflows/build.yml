@@ -278,7 +278,7 @@ jobs:
         # Deliberately before "Install compiled library to lib/": the
         # point is to prove the package imports and its pure-Python half
         # (event_generator.py) works with no Fortran library anywhere on
-        # the system, while Ppq fails clearly at construction instead
+        # the system, while Ppq_compiled fails clearly at construction instead
         # of silently succeeding.
         "$pythonLocation/bin/python" test/python/test_pip_packaging.py
 

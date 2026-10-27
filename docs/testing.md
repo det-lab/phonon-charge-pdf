@@ -27,7 +27,7 @@ in their environment.)
 `test/python/test_pip_packaging.py` is the one test here that's meant to run *without* the
 compiled library: against a `pip install -e ".[test]"` of this repository and before the
 library is built, it checks that `import phonon_charge_pdf` and `event_generator.py`'s
-functions still work, and that `Ppq` fails clearly at construction instead of silently
+functions still work, and that `Ppq_compiled` fails clearly at construction instead of silently
 succeeding.
 
 See `test/python/README.md` for a map of the test scripts and their supporting modules,

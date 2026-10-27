@@ -30,8 +30,8 @@ nav:
   - Home: index.md
   - Two ways to use this: two-ways.md
   - Generating simulated events: python-events.md
-  - Resolution/yield model (Ppq_py): ppq-py.md
-  - Fortran-backed PDF (Ppq): ppq-fort.md
+  - Resolution/yield model: ppq-py.md
+  - Fortran-backed PDF (Ppq_compiled): ppq-fort.md
   - Precomputed normalization tables: normalization-tables.md
   - Building from source: building-from-source.md
   - Verification and validation: testing.md

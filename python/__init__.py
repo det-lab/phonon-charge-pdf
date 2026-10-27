@@ -3,34 +3,33 @@ event simulator for cryogenic detector nuclear-recoil (NR) and
 electron-recoil (ER) bands.
 
 Three public entrypoints -- see their own docstrings:
-* Ppq and generate_events/generate_NR_events/generate_ER_events
+* Ppq_compiled and generate_events/generate_NR_events/generate_ER_events
   (Ppq_fort.py, event_generator.py).
-* Ppq_py.py's functions (Y, Nbar, sigp, sigq, PEr_NR, PEr_ER, aN, bN, cN,
-  N_exponent, pq_given_Er_NR, pq_given_Er_ER, Ppq_inspect_NR(_vec),
-  Ppq_inspect_ER(_vec), integrate_inspect): the pure-Python reference
-  implementation the other two are cross-checked against -- also
-  re-exported here, but see Ppq_py.py's own docstring before using
-  these for anything beyond a cross-check: they're a slow, brute-force
-  grid scan, not meant for a fit/MCMC loop.
+* Ppq_py.py's functions (Y, Nbar, sigp, sigq, PEr_NR, PEr_ER,
+  Ppq_inspect_NR, Ppq_inspect_ER): the
+  pure-Python reference implementation the other two are cross-checked
+  against -- also re-exported here, but see Ppq_py.py's own docstring
+  before using these for anything beyond a cross-check: they're a slow,
+  brute-force grid scan, not meant for a fit/MCMC loop.
 
 Everything under internal/ and cli/ is either what the above are built
 from or infrastructure for maintaining this library, and carries no
 stability promise.
 
-Ppq has a hard, unconditional dependency on the compiled Fortran
+Ppq_compiled has a hard, unconditional dependency on the compiled Fortran
 library; event_generator.py and Ppq_py.py have none. Importing this
-package never touches the library -- Ppq only requires it be loadable
+package never touches the library -- Ppq_compiled only requires it be loadable
 (see LD_LIBRARY_PATH/DYLD_LIBRARY_PATH in internal/_Ppq_fort_bindings.py)
 once you construct one, and fails there, not on the first likelihood call
 deep into a fit.
 """
 
 from .event_generator import generate_ER_events, generate_events, generate_NR_events
-from .Ppq_fort import Ppq
+from .Ppq_fort import Ppq_compiled
 from .Ppq_py import __all__ as _Ppq_py_all
 from .Ppq_py import *  # noqa: F401,F403 -- Y, Nbar, sigp, sigq, PEr_NR, PEr_ER, ... ; see Ppq_py.__all__
 
-__all__ = ["Ppq", "generate_events", "generate_NR_events", "generate_ER_events"] + _Ppq_py_all
+__all__ = ["Ppq_compiled", "generate_events", "generate_NR_events", "generate_ER_events"] + _Ppq_py_all
 
 try:
     from importlib.metadata import PackageNotFoundError, version

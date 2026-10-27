@@ -52,7 +52,7 @@ from band_breakpoints import make_ridge_breakpoints
 from event_generator import generate_ER_events
 # Unnormalized is fine: this test only compares the PDF's *shape* against
 # simulated events (chi-square binning), not absolute probability.  For a
-# fit or MCMC, use Ppq (python/Ppq_fort.py) instead.
+# fit or MCMC, use Ppq_compiled (python/Ppq_fort.py) instead.
 from _Ppq_fort_bindings import make_Ppq_unnormalized_ER
 from chisquare_harness import run_chisquare_test
 

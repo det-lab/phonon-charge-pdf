@@ -4,12 +4,12 @@ phonon_charge_pdf library (lib/libphonon_charge_pdf.so).
 
 Leading underscore means what it usually does -- this is not a public API
 and carries no stability promise.  If you're using this library to do a fit
-or MCMC, use Ppq in python/Ppq_fort.py instead; that is the one intended
-entrypoint.  Ppq combines the pieces here (an UNNORMALIZED PDF and a
+or MCMC, use Ppq_compiled in python/Ppq_fort.py instead; that is the one intended
+entrypoint.  Ppq_compiled combines the pieces here (an UNNORMALIZED PDF and a
 separate region-normalization integral) correctly, raises instead of
 extrapolating when a precomputed table is used, and is what the rest of
 this file's docstrings assume you already have if you're reading them.
-This module exists for Ppq, python/cli/normgrid.py, and the test suite
+This module exists for Ppq_compiled, python/cli/normgrid.py, and the test suite
 (which legitimately need the raw, unnormalized evaluation -- see each
 test's own comment) to build on.
 
@@ -152,7 +152,7 @@ def make_Ppq_unnormalized_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=No
     Build pdf_func(Ep_flat, Eq_flat) -> values_flat backed by the Fortran
     Ppq_NR (nuclear recoil band PDF).  NOT a probability density on its own --
     divide by Ppq_region_NR's integral over your region first.  For a fit or
-    MCMC, use Ppq (python/Ppq_fort.py) instead, which does that for you.
+    MCMC, use Ppq_compiled (python/Ppq_fort.py) instead, which does that for you.
 
     All physics parameters are required:
       k, Z           : Lindhard ionization yield calibration constant and
