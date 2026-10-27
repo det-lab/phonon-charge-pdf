@@ -14,7 +14,9 @@ ARG GIT_REF=""
 # python3-numpy/python3-scipy/python3-pandas are this project's core
 # runtime dependencies (see pyproject.toml's `dependencies`) -- pandas in
 # particular is a hard import in event_generator.py, not just a test
-# dependency; python-is-python3 lets them be invoked as `python`
+# dependency; python-is-python3 lets them be invoked as `python`.
+# equibin is also core now (goodness_of_fit.py), installed below with
+# the pip-only packages since it has no apt package.
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -30,13 +32,13 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# matplotlib/equibin/lintsampler are needed by the chi-square validation
-# scripts under test/python/ (test_chisquare_*.py, chisquare_harness.py,
-# sample_from_pdf.py); not available via apt, unlike numpy/scipy above.
-# Matches the same three packages environment.yaml installs for the
-# ifx/flang containers.  h5py is for the precomputed normalization
-# tables (python/cli/normgrid.py), pooch for fetching the published ones
-# (python/cli/normtables.py).
+# equibin (core, goodness_of_fit.py) and matplotlib/lintsampler (needed
+# only by the chi-square validation scripts under test/python/:
+# test_chisquare_*.py, sample_from_pdf.py) aren't available via apt,
+# unlike numpy/scipy/pandas above. Matches the same packages
+# environment.yaml installs for the ifx/flang containers. h5py is for
+# the precomputed normalization tables (python/cli/normgrid.py), pooch
+# for fetching the published ones (python/cli/normtables.py).
 RUN pip install --break-system-packages --no-cache-dir \
     matplotlib equibin lintsampler h5py pooch
 

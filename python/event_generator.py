@@ -119,7 +119,7 @@ def _generate_species_events(n_events, *, Nbar_func,
     scale_slow spectrum and mean e/h pair count Nbar_func(Er), then
     simulates the rest of the detector chain. NR/ER differ only in
     Nbar_func and which spectrum parameters they pass (see
-    generate_NR_events/generate_ER_events).
+    generate_events_NR/generate_events_ER).
     """
     rng = np.random.default_rng(seed)
 
@@ -146,7 +146,7 @@ def _generate_species_events(n_events, *, Nbar_func,
     return Ep, Eq, Er, N
 
 
-def generate_NR_events(n_events, *,
+def generate_events_NR(n_events, *,
                         k, Z,
                         F0,
                         eps, V,
@@ -173,7 +173,7 @@ def generate_NR_events(n_events, *,
         mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 
 
-def generate_ER_events(n_events, *,
+def generate_events_ER(n_events, *,
                         F0,
                         eps, V,
                         p0, p10,
@@ -214,7 +214,7 @@ def _species_in_roi(n_target, species, seed_sequence, *,
     """
     Generate exactly n_target ROI-passing (Ep, Eq, Er, N) events of one
     species, by calling sampler(n, seed=..., **sampler_kwargs) in retry
-    batches (generate_NR_events or generate_ER_events).
+    batches (generate_events_NR or generate_events_ER).
 
     Each retry batch draws a fresh set of events (sized from a running
     estimate of the ROI acceptance rate) using its own independent seed
@@ -330,12 +330,12 @@ def generate_events(target_size, ER_frac, seed, *,
 
     Ep_er, Eq_er, _, N_er = _species_in_roi(
         n_ER, "ER", er_seed, max_retries=max_retries, **roi,
-        sampler=generate_ER_events,
+        sampler=generate_events_ER,
         sampler_kwargs=dict(F0=F0_ER, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
                             mix_frac=mix_frac_ER, scale_fast=scale_fast_ER, scale_slow=scale_slow_ER))
     Ep_nr, Eq_nr, _, N_nr = _species_in_roi(
         n_NR, "NR", nr_seed, max_retries=max_retries, **roi,
-        sampler=generate_NR_events,
+        sampler=generate_events_NR,
         sampler_kwargs=dict(k=k, Z=Z, F0=F0_NR, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
                             mix_frac=mix_frac_NR, scale_fast=scale_fast_NR, scale_slow=scale_slow_NR))
 

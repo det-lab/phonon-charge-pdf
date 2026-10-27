@@ -2,21 +2,28 @@
 Private: low-level ctypes bindings to the compiled Fortran
 phonon_charge_pdf library (lib/libphonon_charge_pdf.so).
 
-Leading underscore means what it usually does -- this is not a public API
-and carries no stability promise.  If you're using this library to do a fit
-or MCMC, use Ppq_compiled in python/Ppq_fort.py instead; that is the one intended
-entrypoint.  Ppq_compiled combines the pieces here (an UNNORMALIZED PDF and a
+Leading underscore means what it usually does for everything else in this
+module -- not a public API, no stability promise.  make_Ppq_densities_NR/
+make_Ppq_densities_ER are the one exception: they're re-exported as public
+API (phonon_charge_pdf.goodness_of_fit.make_Ppq_densities_NR/ER) for that
+module's own pdf_func and for anyone else who wants the raw band density at
+arbitrary points.  If you're doing a fit or MCMC instead, use Ppq_compiled in
+python/Ppq_fort.py; that is the one intended entrypoint there.  Ppq_compiled
+combines the pieces here (a density over the full physical plane and a
 separate region-normalization integral) correctly, raises instead of
 extrapolating when a precomputed table is used, and is what the rest of
 this file's docstrings assume you already have if you're reading them.
-This module exists for Ppq_compiled, python/cli/normgrid.py, and the test suite
-(which legitimately need the raw, unnormalized evaluation -- see each
-test's own comment) to build on.
+Everything else here (Ppq_region_NR/ER, the ctypes setup) exists for
+Ppq_compiled, python/cli/normgrid.py, python/goodness_of_fit.py, and the
+test suite to build on.
 
-make_Ppq_unnormalized_NR / make_Ppq_unnormalized_ER build vectorized
-pdf_func(Ep_flat, Eq_flat) -> values_flat callables.  The "_unnormalized"
-is not decorative: dividing by Ppq_region_NR/Ppq_region_ER's integral over your
-analysis region is required before these values are a probability density.
+make_Ppq_densities_NR / make_Ppq_densities_ER build vectorized
+pdf_func(Ep_flat, Eq_flat) -> values_flat callables.  These are genuine
+probability densities -- just over the full physical (Ep, Eq) plane, not
+yet renormalized to any one analysis region.  Dividing by
+Ppq_region_NR/Ppq_region_ER's integral over your region renormalizes
+(conditions) the density onto that region -- a much smaller box -- which
+is what a likelihood over data already cropped to it needs.
 
 All physics parameters are required keyword arguments — there are no
 defaults, so the caller must specify the model fully.
@@ -147,12 +154,15 @@ def version():
     return (major.value, minor.value, patch.value)
 
 
-def make_Ppq_unnormalized_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None):
     """
     Build pdf_func(Ep_flat, Eq_flat) -> values_flat backed by the Fortran
-    Ppq_NR (nuclear recoil band PDF).  NOT a probability density on its own --
-    divide by Ppq_region_NR's integral over your region first.  For a fit or
-    MCMC, use Ppq_compiled (python/Ppq_fort.py) instead, which does that for you.
+    Ppq_NR (nuclear recoil band PDF).  A genuine probability density, just
+    over the full physical (Ep, Eq) plane rather than your analysis region
+    -- a much bigger box.  Divide by Ppq_region_NR's integral over your
+    region to renormalize (condition) it onto that region, which is what a
+    likelihood over cropped data needs.  For a fit or MCMC, use Ppq_compiled
+    (python/Ppq_fort.py) instead, which does that for you.
 
     All physics parameters are required:
       k, Z           : Lindhard ionization yield calibration constant and
@@ -179,10 +189,11 @@ def make_Ppq_unnormalized_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=No
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
 
-def make_Ppq_unnormalized_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
-    """Same as make_Ppq_unnormalized_NR but for the Fortran Ppq_ER (gamma /
+def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+    """Same as make_Ppq_densities_NR but for the Fortran Ppq_ER (gamma /
     ER band).  The yield is fixed at Y = 1 internally, so k and Z are not
-    taken.  Also NOT normalized on its own -- see that function's docstring."""
+    taken.  Also a full-plane density, not yet renormalized to a region --
+    see that function's docstring."""
     api = _load_library()
     if n_workers is None:
         n_workers = os.cpu_count()

@@ -3,8 +3,8 @@ Validates the rectangular-region normalization integral
 (_Ppq_fort_bindings.Ppq_region_NR/Ppq_region_ER -> Fortran Ppq_region_NR/Ppq_region_ER,
 a doubling-verified nested Gauss-Legendre quadrature) against the
 existing, algorithmically independent nested-quad reference
-(chisquare_harness.debug_bin, treating the whole region as one "bin",
-via band_breakpoints.make_ridge_breakpoints for the required ridge
+(goodness_of_fit.debug_bin, treating the whole region as one "bin",
+via goodness_of_fit.make_ridge_breakpoints for the required ridge
 breakpoints) -- ground truth -- plus timing, across a few representative
 regions including the user's actual MCMC target region, for both the NR
 and ER bands.
@@ -26,12 +26,11 @@ from contextlib import redirect_stdout
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "internal"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 
-from _Ppq_fort_bindings import (make_Ppq_unnormalized_ER, make_Ppq_unnormalized_NR,
+from _Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
                                Ppq_region_ER, Ppq_region_NR)
-from band_breakpoints import make_ridge_breakpoints
-from chisquare_harness import debug_bin
+from goodness_of_fit import make_ridge_breakpoints, debug_bin
 
 PARAMS_NR = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
                   p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
@@ -55,17 +54,17 @@ REGIONS = [
 
 def quad_reference(band, ep_min, ep_max, eq_min, eq_max, params):
     """The user's original method: nested scipy.integrate.quad with ridge
-    breakpoints (chisquare_harness.debug_bin's "fixed" value -- the same
+    breakpoints (goodness_of_fit.debug_bin's "fixed" value -- the same
     computation expected_counts_from_pdf does, but unnormalized so it's
     the raw integral).  Also cross-checks against debug_bin's independent
     brute-force Simpson grid_ref."""
     if band == "NR":
-        pdf_func = make_Ppq_unnormalized_NR(**params, n_workers=os.cpu_count())
+        pdf_func = make_Ppq_densities_NR(**params, n_workers=os.cpu_count())
         ridge = make_ridge_breakpoints("NR", **{k: params[k] for k in
                                                  ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
                                         er_max=700.0, n_window_widths=10.0)
     else:
-        pdf_func = make_Ppq_unnormalized_ER(**params, n_workers=os.cpu_count())
+        pdf_func = make_Ppq_densities_ER(**params, n_workers=os.cpu_count())
         ridge = make_ridge_breakpoints("ER", k=None, Z=None,
                                         **{k: params[k] for k in
                                            ("eps", "V", "p0", "p10", "q0", "q10")},

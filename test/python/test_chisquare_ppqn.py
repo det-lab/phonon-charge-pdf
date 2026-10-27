@@ -1,7 +1,7 @@
 """
 Chi-square distribution test for the Fortran Ppq_NR (nuclear-recoil band) PDF.
 
-Uses chisquare_harness.run_chisquare_test (equibin bins, PDF-integrated
+Uses goodness_of_fit.run_chisquare_test (equibin bins, PDF-integrated
 expected counts, batched chi-square throws; see that module's
 docstring for the general workflow).  Specific to this test:
 
@@ -45,9 +45,8 @@ sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _Ppq_fort_bindings
 sys.path.insert(0, str(REPO_ROOT / "python"))  # Ppq_compiled
 import Ppq_py as ppq
 import sample_from_pdf as spdf
-from band_breakpoints import make_ridge_breakpoints
-from chisquare_harness import run_chisquare_test
-from _Ppq_fort_bindings import make_Ppq_unnormalized_NR
+from goodness_of_fit import make_ridge_breakpoints, run_chisquare_test
+from _Ppq_fort_bindings import make_Ppq_densities_NR
 
 # ---------------------------------------------------------------------------
 # Physics parameters (all explicit — the Fortran wrapper takes no defaults)
@@ -80,7 +79,7 @@ PPQ_NR_GRID_CACHE = REPO_ROOT / "ppq_nr_vertex_grid.npz"
 # ---------------------------------------------------------------------------
 # Detector resolutions (from the python reference implementation), used
 # for the feature-scaled grid edges; band-ridge breakpoints for the
-# per-bin quadrature come from band_breakpoints.py.
+# per-bin quadrature come from goodness_of_fit.make_ridge_breakpoints.
 # ---------------------------------------------------------------------------
 def sigp(ep):
     return ppq.sigp(ep, eps=PARAMS["eps"], V=PARAMS["V"],
@@ -99,7 +98,7 @@ ridge_breakpoints = make_ridge_breakpoints(
 # ---------------------------------------------------------------------------
 print("Building Fortran Ppq_NR pdf wrapper "
       f"({N_WORKERS} workers)...")
-pdf_fort = make_Ppq_unnormalized_NR(**PARAMS, n_workers=N_WORKERS)
+pdf_fort = make_Ppq_densities_NR(**PARAMS, n_workers=N_WORKERS)
 
 ep_edges = spdf.make_feature_scaled_edges(sigp, *EP_RANGE, CELLS_PER_SIGMA)
 eq_edges = spdf.make_feature_scaled_edges(sigq, *EQ_RANGE, CELLS_PER_SIGMA)

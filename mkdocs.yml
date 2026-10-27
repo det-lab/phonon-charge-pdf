@@ -32,10 +32,12 @@ nav:
   - Generating simulated events: python-events.md
   - Fitting: fitting.md
   - Using MCMC to get errors: mcmc.md
+  - Testing goodness of fit: goodness-of-fit.md
   - Computing new normalization tables: normalization-tables.md
   - Python API reference: api/index.md
   - For the cautious:
       - Verification and validation: testing.md
+      - Inspecting the integrand: inspecting-the-integrand.md
   - For developers:
       - Building from source: building-from-source.md
       - Profiling: PROFILING.md

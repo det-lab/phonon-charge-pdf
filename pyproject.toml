@@ -14,10 +14,11 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
+    "equibin",
 ]
 
 [project.optional-dependencies]
-test = ["matplotlib", "equibin"]
+test = ["matplotlib"]
 
 # pymdown-extensions pinned below 12: mkdocstrings 1.0.6 (latest as of this
 # writing) calls pymdownx.highlight.Highlight.__init__() without its `md`

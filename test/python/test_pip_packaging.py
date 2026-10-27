@@ -30,8 +30,16 @@ import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of wha
 check("import phonon_charge_pdf with no compiled library present", True)
 check("Ppq_compiled is exported", hasattr(bd, "Ppq_compiled"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
-check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
-check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
+check("generate_events_NR is exported", hasattr(bd, "generate_events_NR"))
+check("generate_events_ER is exported", hasattr(bd, "generate_events_ER"))
+
+# goodness_of_fit is a namespaced submodule (pdf.goodness_of_fit.<name>),
+# deliberately not flattened to the top level -- see its module docstring.
+check("goodness_of_fit is exported as a submodule", hasattr(bd, "goodness_of_fit"))
+check("run_chisquare_test is namespaced, not flattened",
+      hasattr(bd.goodness_of_fit, "run_chisquare_test") and not hasattr(bd, "run_chisquare_test"))
+check("make_Ppq_densities_NR is namespaced, not flattened",
+      hasattr(bd.goodness_of_fit, "make_Ppq_densities_NR") and not hasattr(bd, "make_Ppq_densities_NR"))
 
 # Ppq_py.py's public API (pure Python, no Fortran -- see its module
 # docstring): every name in its own __all__ must also be re-exported here.
@@ -48,11 +56,11 @@ PARAMS = dict(
 SPECTRUM = dict(mix_frac=0.53693208, scale_fast=6.41515782, scale_slow=23.71789286)
 
 try:
-    Ep, Eq, N0, seeds = bd.generate_NR_events(50, seed=1, **PARAMS, **SPECTRUM)
-    check("generate_NR_events runs with no Fortran library",
+    Ep, Eq, N0, seeds = bd.generate_events_NR(50, seed=1, **PARAMS, **SPECTRUM)
+    check("generate_events_NR runs with no Fortran library",
           Ep.shape == Eq.shape == N0.shape == seeds.shape == (50,))
 except Exception as e:
-    check("generate_NR_events runs with no Fortran library", False, repr(e))
+    check("generate_events_NR runs with no Fortran library", False, repr(e))
 
 try:
     (val, err), _, peaks = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, er_step=0.1)

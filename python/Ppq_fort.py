@@ -22,16 +22,21 @@ Fortran dependency.  Ppq_py.py (python/Ppq_py.py) is a third, public
 entrypoint: the pure-Python reference implementation event_generator.py
 and this module are themselves checked against -- see its own module
 docstring.  Everything else under python/ -- python/internal/
-_Ppq_fort_bindings.py (raw, unnormalized PDF evaluation) and python/cli/
+_Ppq_fort_bindings.py (raw PDF evaluation over the full physical (Ep, Eq)
+plane, not yet renormalized to any one analysis region) and python/cli/
 normgrid.py (table machinery) -- is either what Ppq_compiled/event_generator.py
 are built from or infrastructure for maintaining this library, not a
 fourth way to use it.
 
 Ppq_compiled: the fixed context for one fit/MCMC run -- an (Ep, Eq) region, the
 observed dataset, and the normalization-integral's convergence tolerance
--- exposing, per parameter point, the un-normalized PDF at the bound
-dataset, the region's normalization integral, and their ratio (normalized
-PDF values), for both the NR (Ppq_NR) and ER (Ppq_ER) bands.
+-- exposing, per parameter point, the density at the bound dataset (a
+genuine probability density, just over the full physical plane rather
+than your region -- a much bigger box), the region's normalization
+integral (the probability mass inside your region), and their ratio
+(the density renormalized to -- conditioned on -- your region, which is
+what a likelihood over cropped data needs), for both the NR (Ppq_NR)
+and ER (Ppq_ER) bands.
 
 All physics parameters (k, Z, F0, eps, V, p0, p10, q0, q10) are passed
 fresh to every method call rather than bound at construction: those are
@@ -41,7 +46,7 @@ tolerance don't change across a run.
 Built entirely on the already-validated primitives in _Ppq_fort_bindings.py --
 Ppq_region_NR/Ppq_region_ER (-> the Fortran symbols of the same name, a
 doubling-verified nested Gauss-Legendre quadrature) and
-make_Ppq_unnormalized_NR/make_Ppq_unnormalized_ER (-> Fortran
+make_Ppq_densities_NR/make_Ppq_densities_ER (-> Fortran
 Ppq_vector_NR/Ppq_vector_ER) -- no new Fortran code and no new numerics.
 
 For MCMC, pass precomputed normalization tables (python/cli/normgrid.py,
@@ -76,7 +81,7 @@ _INTERNAL_DIR = os.path.join(_PYTHON_DIR, "internal")
 _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 
 sys.path.insert(0, _INTERNAL_DIR)
-from _Ppq_fort_bindings import (make_Ppq_unnormalized_ER, make_Ppq_unnormalized_NR,
+from _Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
                                  Ppq_region_ER, Ppq_region_NR, version as _fort_version)
 
 
@@ -102,18 +107,19 @@ class Ppq_compiled:
         python/cli/table_registry.json.  If given, Ppq_integral_NR/Ppq_integral_ER
         interpolate it instead of running the quadrature.
     prior_bounds : dict or None
-        The MCMC prior's hard bounds, {param: (lo, hi)} for k (NR), F0, V,
-        p0, p10, q0, q10 (Z/eps may be given as their fixed values).  Keys
-        shared by both bands go at the top level; a band's own parameters
-        (e.g. its Fano factor) go under "NR"/"ER" and override them:
-            {"V": (2.7, 3.3), ..., "NR": {"k": (0.13, 0.22), "F0": (1e-5, 1)},
-                                   "ER": {"F0": (0.1, 0.35)}}
+        The MCMC prior's hard bounds, {param: (lo, hi)} for k (NR), V, p0,
+        p10, q0, q10 (Z/eps may be given as their fixed values), flat --
+        same convention as generate_events()'s F0_NR/F0_ER keyword
+        arguments, since F0 is the one parameter that genuinely differs
+        per band:
+            {"V": (2.7, 3.3), ..., "k": (0.13, 0.22),
+             "F0_NR": (1e-5, 1), "F0_ER": (0.1, 0.35)}
         Checked against every table given, assuming the prior also enforces
         p10 >= p0 and q10 >= q0; raises normgrid.PriorNotCoveredError if it
         reaches outside one.
     n_workers : int or None
         Threads used for large batched Ppq_vector_NR/Ppq_vector_ER calls;
-        see make_Ppq_unnormalized_NR.
+        see goodness_of_fit.make_Ppq_densities_NR.
     """
 
     def __init__(self, ep_min, ep_max, eq_min, eq_max, ep_data, eq_data, *,
@@ -148,9 +154,13 @@ class Ppq_compiled:
 
     @staticmethod
     def _band_view(d, band):
-        """The shared keys of d, overridden by d[band]; k only for NR."""
-        v = {p: x for p, x in d.items() if p not in ("NR", "ER")}
-        v.update(d.get(band, {}))
+        """d with F0_NR/F0_ER resolved to this band's bare F0 (whichever is
+        missing is simply dropped, same as the other band's F0); k dropped
+        for ER."""
+        v = {p: x for p, x in d.items() if p not in ("F0_NR", "F0_ER")}
+        f0_key = f"F0_{band}"
+        if f0_key in d:
+            v["F0"] = d[f0_key]
         if band == "ER":
             v.pop("k", None)
         return v
@@ -158,17 +168,36 @@ class Ppq_compiled:
     def check_points(self, points):
         """Raise normgrid.PriorNotCoveredError unless every point is inside
         every table: e.g. the starting walker positions, {param: array} laid
-        out like prior_bounds (band-specific arrays under "NR"/"ER")."""
+        out like prior_bounds (flat, F0_NR/F0_ER instead of a bare F0)."""
         for t in self._tables():
             t.check_points(self._band_view(points, t.band))
 
     def table_bounds(self):
-        """{band: {param: (lo, hi)}}: a prior box each given table covers,
-        for a prior that enforces p10 >= p0 and q10 >= q0.  A parameter the
-        bands share (V, p0, p10, q0, q10) must lie in both."""
-        if not self._tables():
+        """{param: (lo, hi)}: a single flat prior box every given table
+        covers, same shape as prior_bounds -- pass straight back in as
+        prior_bounds=table_bounds(), no reshaping needed. F0_NR/F0_ER are
+        each band's own box; a parameter the bands share (V, p0, p10, q0,
+        q10) is intersected across every table given (raises ValueError if
+        two tables' boxes for a shared parameter don't overlap at all)."""
+        tables = self._tables()
+        if not tables:
             raise ValueError("no table was given")
-        return {t.band: t.table_bounds() for t in self._tables()}
+        out = {}
+        for t in tables:
+            tb = t.table_bounds()                  # bare {param: (lo, hi)} for this band
+            out[f"F0_{t.band}"] = tb["F0"]
+            if t.band == "NR":
+                out["k"] = tb["k"]
+            for p in ("V", "p0", "p10", "q0", "q10"):
+                lo, hi = tb[p]
+                if p in out:
+                    prev_lo, prev_hi = out[p]
+                    lo, hi = max(lo, prev_lo), min(hi, prev_hi)
+                    if lo > hi:
+                        raise ValueError(f"{p}: NR/ER table boxes don't overlap "
+                                         f"({(prev_lo, prev_hi)} vs {tb[p]})")
+                out[p] = (lo, hi)
+        return out
 
     def _load_table(self, table, band):
         if table is None:
@@ -204,10 +233,12 @@ class Ppq_compiled:
                             k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
     def _Ppq_densities_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
-        """Un-normalized Ppq_NR at the bound dataset. Private: nothing outside
-        Ppq_normalized_densities_NR needs this on its own -- a fit/MCMC always
-        divides by Ppq_integral_NR(...), never uses this alone."""
-        pdf_func = make_Ppq_unnormalized_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
+        """The full-plane density (see goodness_of_fit.make_Ppq_densities_NR) at the bound
+        dataset, not yet renormalized to this region. Private: nothing
+        outside Ppq_normalized_densities_NR needs this on its own -- a
+        fit/MCMC always divides by Ppq_integral_NR(...), never uses this
+        alone."""
+        pdf_func = make_Ppq_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
                                                q0=q0, q10=q10, n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
@@ -227,10 +258,12 @@ class Ppq_compiled:
                             F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
     def _Ppq_densities_ER(self, *, F0, eps, V, p0, p10, q0, q10):
-        """Un-normalized Ppq_ER at the bound dataset. Private: nothing outside
-        Ppq_normalized_densities_ER needs this on its own -- a fit/MCMC always
-        divides by Ppq_integral_ER(...), never uses this alone."""
-        pdf_func = make_Ppq_unnormalized_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
+        """The full-plane density (see goodness_of_fit.make_Ppq_densities_ER) at the bound
+        dataset, not yet renormalized to this region. Private: nothing
+        outside Ppq_normalized_densities_ER needs this on its own -- a
+        fit/MCMC always divides by Ppq_integral_ER(...), never uses this
+        alone."""
+        pdf_func = make_Ppq_densities_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
                                                q0=q0, q10=q10, n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 

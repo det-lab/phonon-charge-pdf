@@ -1,6 +1,10 @@
 """
-Harness for testing whether chi-square values from a 2D PDF are
-distributed as expected under the null hypothesis.
+Goodness-of-fit testing for the NR/ER band PDFs: chi-square distribution
+testing against equibin-adaptive bins, plus the band-specific breakpoints
+that per-bin quadrature needs and a single-bin diagnostic.
+
+Call these as `phonon_charge_pdf.goodness_of_fit.<name>`, not flattened to
+the top level -- see docs/goodness-of-fit.md.
 
 Workflow
 --------
@@ -14,15 +18,20 @@ Workflow
        chi2 = sum( (observed - expected)^2 / expected )
 4. Return the array of chi-square values for downstream analysis.
 
-The harness is PDF-agnostic: supply any pdf_func(Ep_flat, Eq_flat) ->
-values_flat callable and a matching sampler(n_events, seed=None) ->
-(Ep, Eq) callable.
+run_chisquare_test/expected_counts_from_pdf are PDF-agnostic: supply
+any pdf_func(Ep_flat, Eq_flat) -> values_flat callable and a matching
+sampler(n_events, seed=None) -> (Ep, Eq) callable -- e.g.
+generate_events_NR/generate_events_ER at your fitted parameters.
+make_Ppq_densities_NR/make_Ppq_densities_ER (re-exported here from
+python/internal/_Ppq_fort_bindings.py -- see that module's docstring) build
+the one pdf_func this package actually ships, so they live here rather
+than at the top level: nothing else in this package needs arbitrary-point
+density evaluation.
 
 Step 2's per-bin quadrature also requires an inner_points_func giving
-the band-ridge breakpoints (see band_breakpoints.py); every PDF this
-harness is used with in this repo is a narrow ridge, for which plain
-adaptive quadrature over a wide bin can silently return ~0 (see
-quad_breakpoints_demo.py), so there is no "skip the breakpoints"
+the band-ridge breakpoints (make_ridge_breakpoints below); the NR/ER
+band PDFs are narrow ridges, for which plain adaptive quadrature over a
+wide bin can silently return ~0, so there is no "skip the breakpoints"
 option.
 """
 
@@ -31,6 +40,163 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import equibin
 from scipy.integrate import quad, simpson
+
+import os
+import sys
+
+_PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _PYTHON_DIR)
+import Ppq_py as ppq
+
+try:
+    # Relative import (not the sys.path trick above) so mkdocstrings/griffe
+    # can resolve these as real re-exports when this module is loaded as
+    # part of the phonon_charge_pdf package -- see the module docstring.
+    from .internal._Ppq_fort_bindings import make_Ppq_densities_ER, make_Ppq_densities_NR  # noqa: F401
+except ImportError:
+    # Imported standalone (e.g. test/python/*.py via sys.path, with no
+    # parent package) -- those callers get make_Ppq_densities_NR/ER
+    # directly from _Ppq_fort_bindings instead, so this re-export isn't
+    # needed here.
+    pass
+
+__all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin", "make_ridge_breakpoints",
+           "make_Ppq_densities_NR", "make_Ppq_densities_ER"]
+
+
+# ---------------------------------------------------------------------------
+# Band-specific breakpoints
+# ---------------------------------------------------------------------------
+
+def make_ridge_breakpoints(band, *, k, Z, eps, V,
+                           p0, p10,
+                           q0, q10,
+                           er_max, n_window_widths):
+    """
+    Build an inner_points_func for expected_counts_from_pdf.
+
+    The problem
+    -----------
+    The expected count in a bin is the integral of the PDF over the bin
+    rectangle, computed in expected_counts_from_pdf with nested adaptive
+    quadrature (scipy quad over Ep, inner quad over Eq). Adaptive
+    quadrature starts from a fixed set of sample points across the
+    integration interval: if the PDF is a narrow ridge inside a wide
+    bin, every one of those initial points can land in the ~zero region
+    on either side of the ridge, and quad confidently returns ~0 without
+    ever subdividing toward the peak.
+
+    The fix is quad's `points=` argument: telling the inner (Eq)
+    quadrature where the ridge is forces a subdivision there, so the
+    peak cannot be missed. This function computes those breakpoints
+    from the band physics.
+
+    The physics: where the ridge is
+    -------------------------------
+    A recoil of true energy Er produces (noiselessly)
+
+        N  = Y(Er) * Er / eps          e/h pairs, so
+        Eq = Y(Er) * Er                (ionization channel)
+        Ep = Er + (V/1000) * N
+           = Er * (1 + Y(Er) * V / (1000 * eps))   (phonon + Neganov-Luke)
+
+    with Y(Er) the Lindhard yield (k, Z) for nuclear recoils and Y = 1
+    for electron recoils. These are parametric equations for the band
+    centroid: each Er gives one point (Ep(Er), Eq(Er)) on the ridge. We
+    need the centroid in the form "most probable Eq at a given Ep" —
+    that direction because the harness's *inner* quadrature runs over
+    Eq at fixed Ep, so the breakpoints must be Eq values. Ep(Er) = ep
+    cannot be solved for Er algebraically (Y makes it transcendental),
+    but both Ep(Er) and Eq(Er) are monotone in Er, so the centroid is
+    tabulated on an Er grid once and np.interp(ep, ep_tab, eq_tab)
+    performs the inversion: find where the table's Ep equals ep, read
+    off the Eq at the same Er.
+
+    The geometry: how wide the ridge is
+    ------------------------------------
+    The breakpoints must bracket the peak, so we need the band's local
+    width in the Eq direction at fixed measured Ep. Picture the band as
+    a tilted ridge in the (Ep, Eq) plane and slice it vertically at ep.
+    Two independent noise sources spread events along that vertical
+    slice:
+
+    * Charge noise smears Eq directly: a vertical spread of sigq.
+    * Phonon noise smears the measured Ep, i.e. it displaces events
+      *horizontally*. An event that landed in the slice because its Ep
+      fluctuated by delta really belongs to a ridge point whose Eq
+      differs by (dEq_ridge/dEp) * delta — so horizontal noise, viewed
+      through the tilt of the band, appears as a vertical spread of
+      slope * sigp. A flat band gets no vertical smearing from phonon
+      noise; a steep band gets a lot.
+
+    The two contributions are independent Gaussians, so they add in
+    quadrature (np.hypot is sqrt(a^2 + b^2), written that way only for
+    numerical safety):
+
+        width(Ep) = sqrt( sigq(Eq_ridge)^2 + (dEq_ridge/dEp * sigp(Ep))^2 )
+
+    with the slope taken by central finite difference of the
+    interpolated ridge. This width ignores the Fano broadening (the
+    spread in N), which is harmless here: the breakpoints sit at ridge
+    +/- 10 widths, so even a substantially underestimated width still
+    brackets the whole peak, and the adaptive quadrature does the
+    accurate work inside the bracket.
+
+    The breakpoints handed to the harness are the ridge center and the
+    window of +/- 10 local widths around it; the harness clips them to
+    each bin.
+
+    Parameters
+    ----------
+    band : "NR" or "ER"
+        Nuclear recoils use the Lindhard yield model Y(Er, k, Z); electron
+        recoils use Y = 1 (the k and Z arguments are then ignored).
+    k, Z, eps, V, p0, p10, q0, q10 : float
+        Detector parameters, matching the PDF being integrated.
+    er_max : float
+        Upper end of the tabulated Er range (keV); must comfortably
+        exceed the largest Ep of interest.
+    n_window_widths : float
+        Half-width of the breakpoint window in units of the local band
+        width.
+
+    Returns
+    -------
+    inner_points_func : callable
+        inner_points_func(ep, ymin, ymax) -> [lo, ridge, hi], the Eq
+        breakpoints for the inner quadrature at phonon energy ep. The
+        harness drops any that fall outside the bin's (ymin, ymax).
+    """
+    if band == "NR":
+        y_tab_func = lambda er_tab: ppq.Y(er_tab, k=k, Z=Z)
+    elif band == "ER":
+        y_tab_func = lambda er_tab: np.ones_like(er_tab)
+    else:
+        raise ValueError(f"band must be 'NR' or 'ER', got {band!r}")
+
+    # Tabulate the noiseless band centroid Er -> (Ep, Eq) and invert by
+    # interpolation (both coordinates are monotone in Er).
+    er_tab = np.geomspace(1e-3, er_max, 4000)
+    y_tab = y_tab_func(er_tab)
+    ep_tab = er_tab * (1.0 + y_tab * V / (1000.0 * eps))
+    eq_tab = y_tab * er_tab
+
+    def eq_ridge(ep):
+        return np.interp(ep, ep_tab, eq_tab)
+
+    def inner_points_func(ep, ymin, ymax):
+        eqr = float(eq_ridge(ep))
+        # local band width in Eq: charge resolution plus the phonon
+        # resolution mapped through the ridge slope
+        dep = max(1e-3, 0.01 * ep)
+        slope = (float(eq_ridge(ep + dep)) - float(eq_ridge(ep - dep))) / (2 * dep)
+        sigp_val = float(ppq.sigp(ep, eps=eps, V=V, p0=p0, p10=p10))
+        sigq_val = float(ppq.sigq(eqr, q0=q0, q10=q10))
+        width = np.hypot(sigq_val, slope * sigp_val)
+        return [eqr - n_window_widths * width, eqr,
+                eqr + n_window_widths * width]
+
+    return inner_points_func
 
 
 # ---------------------------------------------------------------------------
@@ -53,20 +219,19 @@ def expected_counts_from_pdf(pdf_func, bins, n_events, inner_points_func, *,
         Events per throw; scales the returned expected counts.
     inner_points_func : callable
         inner_points_func(ep, ymin, ymax) -> sequence of Eq breakpoints.
-        The band PDFs in this repo are narrow ridges: plain adaptive
+        The NR/ER band PDFs are narrow ridges: plain adaptive
         quadrature starts from a fixed set of sample points, so a bin
         wider than the ridge can have every sample point land in the
         ~zero region on both sides and quad will confidently report a
-        ~zero integral without ever subdividing toward the peak (see
-        quad_breakpoints_demo.py).  Passing the ridge location as a
-        breakpoint forces a subdivision there, so this argument is
-        required rather than optional -- there is no PDF in this repo
-        for which skipping it is safe.  Breakpoints outside (ymin, ymax)
-        are dropped; an empty result for a bin is fine (scipy's
-        points-based quadrature handles zero real breakpoints exactly
-        like plain adaptive quadrature).
+        ~zero integral without ever subdividing toward the peak. Passing
+        the ridge location as a breakpoint (see make_ridge_breakpoints)
+        forces a subdivision there, so this argument is required rather
+        than optional. Breakpoints outside (ymin, ymax) are dropped; an
+        empty result for a bin is fine (scipy's points-based quadrature
+        handles zero real breakpoints exactly like plain adaptive
+        quadrature).
     n_workers : int
-        Threads used to integrate bins concurrently.  Only helps when
+        Threads used to integrate bins concurrently. Only helps when
         pdf_func releases the GIL (e.g. calls into a compiled library).
 
     Returns
@@ -115,14 +280,14 @@ def debug_bin(pdf_func, bin_rect, inner_points_func, *,
     Use this when expected_counts_from_pdf reports a ~0 integral for a
     bin and it's unclear whether that's *physically correct* (the PDF
     really is negligible there) or a quadrature failure (quad missed
-    the ridge).  It prints, and returns, three independent estimates:
+    the ridge). It prints, and returns, three independent estimates:
 
     - naive: nested quad with no breakpoints at all (what you'd get
       without inner_points_func -- reproduces the failure mode).
     - fixed: nested quad with inner_points_func, exactly as
       expected_counts_from_pdf computes it.
     - grid_ref: a brute-force fixed grid (Simpson's rule in both
-      directions).  This can't miss a feature the grid resolves,
+      directions). This can't miss a feature the grid resolves,
       independently of quad's adaptive logic entirely, so a disagreement
       between grid_ref and fixed is a red flag even when breakpoints are
       in play (e.g. the breakpoint window is too narrow, or the ridge
@@ -142,7 +307,7 @@ def debug_bin(pdf_func, bin_rect, inner_points_func, *,
     bin_rect : (xmin, xmax, ymin, ymax)
         The single bin to integrate.
     inner_points_func : callable or None
-        Same as expected_counts_from_pdf's inner_points_func.  Pass
+        Same as expected_counts_from_pdf's inner_points_func. Pass
         None to see only the naive and grid_ref estimates.
     n_ep_probe : int
         Number of Ep values, evenly spaced across the bin, to print
@@ -229,26 +394,28 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
     pdf_func : callable
         pdf_func(Ep_flat, Eq_flat) -> values_flat
     sampler_func : callable
-        sampler_func(n, seed=None) -> (Ep, Eq)  — from build_sampler()
+        sampler_func(n, seed=None) -> (Ep, Eq) -- e.g. generate_events_NR/
+        generate_events_ER at your fitted parameters.
     ep_range, eq_range : (float, float)
         Bounds of the sampling region, passed to equibin as hard limits.
     n_events : int
-        Events per chi-square throw.  All bins should have
+        Events per chi-square throw. All bins should have
         expected count >> 1; aim for n_events / n_bins >= 10.
     n_throws : int
         Total number of chi-square values to compute (e.g. 100_000).
     n_bins : int
         Target number of equibin bins.
     inner_points_func : callable
-        Passed to expected_counts_from_pdf; see its docstring for why
-        this is required rather than optional.
+        Passed to expected_counts_from_pdf; see its docstring (and
+        make_ridge_breakpoints) for why this is required rather than
+        optional.
     n_ref : int or None
         Reference dataset size for computing bin boundaries.
         Defaults to max(50 * n_bins, 5 * n_events).
     n_workers : int
         Threads for the expected-count integration.
     batch_size : int
-        Throws per batch.  Each batch generates batch_size * n_events
+        Throws per batch. Each batch generates batch_size * n_events
         events at once; tune to fit available memory.
     seed : int
         Base random seed.

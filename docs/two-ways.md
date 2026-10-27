@@ -9,7 +9,7 @@ them.
 
 `pip install phonon-charge-pdf` is enough. This covers:
 
-- **Generating simulated events** — [`generate_events`/`generate_NR_events`/`generate_ER_events`](python-events.md), built on `event_generator.py`.
+- **Generating simulated events** — [`generate_events`/`generate_events_NR`/`generate_events_ER`](python-events.md), built on `event_generator.py`.
 - **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](ppq-py.md), built on `Ppq_py.py`, the pure-Python reference implementation.
 
 Use the pure-Python library to generate or describe simulated data, or to get

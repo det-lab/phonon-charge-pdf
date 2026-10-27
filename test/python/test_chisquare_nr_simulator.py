@@ -48,13 +48,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python"))
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))
 
-from band_breakpoints import make_ridge_breakpoints
-from event_generator import generate_NR_events
+from event_generator import generate_events_NR
 # Unnormalized is fine: this test only compares the PDF's *shape* against
 # simulated events (chi-square binning), not absolute probability.  For a
 # fit or MCMC, use Ppq_compiled (python/Ppq_fort.py) instead.
-from _Ppq_fort_bindings import make_Ppq_unnormalized_NR
-from chisquare_harness import run_chisquare_test
+from _Ppq_fort_bindings import make_Ppq_densities_NR
+from goodness_of_fit import make_ridge_breakpoints, run_chisquare_test
 
 # ---------------------------------------------------------------------------
 # Physics parameters (from nrFanoII_paper2022/python/detector_params.txt)
@@ -104,7 +103,7 @@ def nr_sampler(n, seed=None):
 
     while n_acc < n:
         n_gen = max((n - n_acc) * 2, 1000)
-        Ep, Eq, _, _ = generate_NR_events(
+        Ep, Eq, _, _ = generate_events_NR(
             n_gen, seed=attempt_seed, **PARAMS, **SPECTRUM_PARAMS
         )
         mask = (
@@ -124,7 +123,7 @@ def nr_sampler(n, seed=None):
 # Build the Fortran PDF wrapper
 # ---------------------------------------------------------------------------
 print(f"Loading Fortran Ppq_NR PDF ({N_WORKERS} workers)...")
-pdf_fort = make_Ppq_unnormalized_NR(**PARAMS, n_workers=N_WORKERS)
+pdf_fort = make_Ppq_densities_NR(**PARAMS, n_workers=N_WORKERS)
 
 # Quick sanity check on the sampler
 print("Spot-checking sampler output range...")
@@ -144,7 +143,7 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
     n_throws   = N_THROWS,
     n_bins     = N_BINS,
     # band-ridge breakpoints keep the per-bin quadrature from missing
-    # the narrow band inside wide (tail) bins; see band_breakpoints.py
+    # the narrow band inside wide (tail) bins; see goodness_of_fit.py
     inner_points_func = make_ridge_breakpoints(
         "NR", k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
         V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],

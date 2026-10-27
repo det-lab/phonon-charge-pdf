@@ -34,9 +34,9 @@ outside the fit loop; call its methods once per step, inside.
 
 ## Why a batched Fortran call instead of `scipy.integrate.quad`
 
-A likelihood fit needs the *un-normalized* PDF at each data point and the PDF's integral
-over the fit region (to normalize it) — both re-evaluated at every step as the fit/MCMC
-explores parameter space. Computing that normalization with `scipy.integrate.quad` is
+A likelihood fit needs the density at each data point (over the full physical plane, not
+yet renormalized to the fit region) and the PDF's integral over that region (to renormalize
+onto it) — both re-evaluated at every step as the fit/MCMC explores parameter space. Computing that normalization with `scipy.integrate.quad` is
 several seconds per call (it evaluates the PDF one point at a time, at the ~3-25 ms/point
 *scalar* cost). `Ppq_compiled` instead uses a doubling-verified nested Gauss-Legendre quadrature
 evaluated in one batched, thread-parallel call (`Ppq_region_NR`/`Ppq_region_ER` in Fortran —

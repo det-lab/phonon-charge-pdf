@@ -30,9 +30,9 @@ This script demonstrates the failure and the fix in two steps:
   2. A 2D case shaped like a real "integrate a PDF over a histogram
      bin" problem: a narrow ridge in y whose center y0(x) drifts with
      x, integrated with a nested quad(quad(...)) over an (x, y) box.
-     This is the same technique used in this repo's
-     chisquare_harness.py in this directory (see `inner_points_func`),
-     with the band-specific breakpoints built in band_breakpoints.py.
+     This is the same technique used in this package's
+     goodness_of_fit.py (see `inner_points_func`), with the
+     band-specific breakpoints built in `make_ridge_breakpoints`.
 
 No threads, no external dependencies beyond numpy/scipy.
 """

@@ -1,11 +1,9 @@
 # Generating simulated events
 
-If you want simulated `(Ep, Eq)` detector events instead of PDF values — to validate a fit
-pipeline end to end, or to feed a downstream analysis — `generate_events` (and the
-lower-level `generate_NR_events`/`generate_ER_events`, implemented in `event_generator.py`)
-is the entrypoint, independent of `Ppq_compiled`. Unlike `Ppq_compiled`, it has **no Fortran dependency**:
-it's pure Python/numpy built on [`Ppq_py.py`](ppq-py.md), so it works in any environment
-this package is installed into, container or not.
+If you want simulated `(Ep, Eq)` detector events — to validate a fit
+pipeline end to end, or to feed a downstream analysis — use `generate_events` (or possibly the
+lower-level `generate_events_NR`/`generate_events_ER`). These functions have **no Fortran dependency**:
+it's pure Python/numpy, so it works in any environment this package is installed into, container or not.
 
 ```python
 import phonon_charge_pdf as pdf
@@ -38,7 +36,7 @@ physics check since this module never touches `Ppq_NR`/`Ppq_ER` itself. See
 [Verification and validation](testing.md).
 
 For single-species sampling without the ROI retry/mixing logic (e.g. for a custom
-pipeline), the lower-level `generate_NR_events`/`generate_ER_events` are also public — see
+pipeline), the lower-level `generate_events_NR`/`generate_events_ER` are also public — see
 their docstrings, or the [API reference](api/index.md#phonon_charge_pdf.generate_events).
 
 The resolution/yield model functions this is built on -- `Y`, `Nbar`, `sigp`, `sigq`,

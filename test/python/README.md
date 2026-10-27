@@ -5,12 +5,15 @@ that *computes* the PDFs lives in `python/` at the repository root.  If
 you're looking for how to *use* the library (a fit or MCMC), that's
 `Ppq_compiled` in `python/Ppq_fort.py`; if you want simulated events instead, that's
 `event_generator.py` in `python/event_generator.py`; if you want the pure-
-Python reference implementation directly, that's `python/Ppq_py.py` —
+Python reference implementation directly, that's `python/Ppq_py.py`; if you
+want to check the goodness of fit of your own result, that's
+`python/goodness_of_fit.py` (see the "Testing goodness of fit" docs page) --
 these tests validate `Ppq_compiled`/`event_generator.py` against `Ppq_py.py`,
 and `Ppq_py.py` against the raw, unnormalized Fortran PDF
-(`python/internal/_Ppq_fort_bindings.py`, private); each test that needs the
-raw PDF says why in a comment at its import.  Run all scripts from the
-repository root; see the main README for expected timings and for how to
+(`python/internal/_Ppq_fort_bindings.py`, private), using
+`goodness_of_fit.py`'s own chi-square machinery to do it; each test that
+needs the raw PDF says why in a comment at its import.  Run all scripts from
+the repository root; see the main README for expected timings and for how to
 build `lib/libphonon_charge_pdf.so` first.
 
 ## Test scripts
@@ -40,13 +43,20 @@ describe the physics.
 
 ## Supporting modules
 
+`chisquare_harness.py`/`band_breakpoints.py` used to live here, but the
+machinery they held (equibin binning, expected counts by per-bin quadrature,
+batched chi-square throws, `debug_bin`, and the band-specific breakpoints
+that per-bin quadrature requires) is genuinely useful to anyone checking the
+goodness of fit of their own result, not just this repo's own tests -- it's
+now the public `python/goodness_of_fit.py` (see "Testing goodness of fit" in
+the docs). These tests import it from there, the same way they import
+`Ppq_fort`/`Ppq_py`.
+
 | Module | Role |
 |--------|------|
-| `chisquare_harness.py` | PDF-agnostic machinery: equibin binning, expected counts by per-bin quadrature, batched chi-square throws, and a `debug_bin` helper for inspecting one bin's integration in isolation.  Every band PDF here is a narrow ridge, so the per-bin quadrature requires an `inner_points_func` (breakpoints). |
-| `band_breakpoints.py` | Band physics for the per-bin quadrature: where the band ridge is and how wide it is, packaged as breakpoints for the harness. |
 | `sample_from_pdf.py` | Grid-based sampling from an arbitrary PDF (lintsampler), used by the self-consistency tests. |
 | `quad_breakpoints_demo.py` | Self-contained demonstration (no repo dependencies) of why adaptive quadrature silently misses narrow peaks and how `points=` fixes it. |
-| `debug_bin_example.py` | Example driver for `chisquare_harness.debug_bin`: point it at one (Ep, Eq) bin and a parameter set to see why that bin's expected count looks the way it does. |
+| `debug_bin_example.py` | Example driver for `goodness_of_fit.debug_bin`: point it at one (Ep, Eq) bin and a parameter set to see why that bin's expected count looks the way it does. |
 
 ## Integrating the PDF over bins
 
@@ -60,20 +70,20 @@ Suggested reading order:
 
 1. `quad_breakpoints_demo.py` — run it and watch plain `quad` return ~0 for
    a narrow peak, then fix it with the `points=` argument.
-2. `band_breakpoints.py` — where the ridge is physically: the noiseless
-   band centroid Er → (Ep, Eq) from the yield model and Neganov-Luke
-   amplification, inverted to give the most probable Eq at each Ep, plus
-   the local band width setting the breakpoint window.
-3. `chisquare_harness.py`, `expected_counts_from_pdf` — the nested
-   quadrature that requires those breakpoints (`inner_points_func`) and
-   normalizes the per-bin integrals into expected counts.
+2. `goodness_of_fit.make_ridge_breakpoints` — where the ridge is physically:
+   the noiseless band centroid Er → (Ep, Eq) from the yield model and
+   Neganov-Luke amplification, inverted to give the most probable Eq at
+   each Ep, plus the local band width setting the breakpoint window.
+3. `goodness_of_fit.expected_counts_from_pdf` — the nested quadrature that
+   requires those breakpoints (`inner_points_func`) and normalizes the
+   per-bin integrals into expected counts.
 
 ## Debugging a single bin
 
 When a bin's expected count comes out at 0 or suspiciously small, it isn't
 automatically a quadrature bug: a wide tail bin can genuinely sit mostly (or
 entirely) off the band, in which case a tiny expected count is the correct
-answer. `chisquare_harness.debug_bin(pdf_func, bin_rect, inner_points_func)`
+answer. `goodness_of_fit.debug_bin(pdf_func, bin_rect, inner_points_func)`
 tells the two cases apart by computing the same bin three independent ways:
 
 - **naive** — nested quad with no breakpoints (what you'd get without
