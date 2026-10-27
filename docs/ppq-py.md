@@ -24,7 +24,7 @@ nbar = pdf.Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
 ```
 
 The true-recoil-energy spectra (`PEr_NR`/`PEr_ER`) are public the same way — see the
-[API reference](api/ppq_py.md) for the full list.
+[API reference](api/index.md#phonon_charge_pdf.Y) for the full list.
 
 ## The brute-force PDF scan (diagnostic only)
 

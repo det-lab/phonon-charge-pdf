@@ -39,4 +39,4 @@ physics check since this module never touches `Ppq_NR`/`Ppq_ER` itself. See
 
 For single-species sampling without the ROI retry/mixing logic (e.g. for a custom
 pipeline), the lower-level `generate_NR_events`/`generate_ER_events` are also public — see
-their docstrings, or the [API reference](api/event_generator.md).
+their docstrings, or the [API reference](api/index.md#phonon_charge_pdf.generate_events).

@@ -4,6 +4,7 @@
 generating or describing simulated events — `Ppq_compiled` is the one entrypoint.** It always
 needs the compiled Fortran library; see [Two ways to use this](two-ways.md) for how to get
 it (pip install, a published container, or [building from source](building-from-source.md)).
+See the [API reference](api/index.md#phonon_charge_pdf.Ppq_compiled) for the full method list.
 
 ```python
 import phonon_charge_pdf as pdf

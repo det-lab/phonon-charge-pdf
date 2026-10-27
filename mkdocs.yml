@@ -36,16 +36,15 @@ nav:
   - Building from source: building-from-source.md
   - Verification and validation: testing.md
   - Profiling: PROFILING.md
-  - API reference:
-      - event_generator: api/event_generator.md
-      - Ppq_py: api/ppq_py.md
-      - Ppq_fort: api/ppq_fort.md
+  - Miscellaneous notes: misc-notes.md
+  - API reference: api/index.md
 
 markdown_extensions:
   - admonition
   - tables
   - toc:
       permalink: true
+      toc_depth: 4
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.superfences
@@ -58,5 +57,6 @@ plugins:
           options:
             show_source: true
             show_root_heading: true
+            show_root_full_path: false
             docstring_section_style: list
             merge_init_into_class: true

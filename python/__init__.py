@@ -1,27 +1,9 @@
-"""phonon_charge_pdf: Neganov-Luke phonon / ionization-charge band PDF and
-event simulator for cryogenic detector nuclear-recoil (NR) and
-electron-recoil (ER) bands.
+"""Neganov-Luke phonon / ionization-charge band PDF and event simulator for
+cryogenic detector nuclear-recoil (NR) and electron-recoil (ER) bands.
 
-Three public entrypoints -- see their own docstrings:
-* Ppq_compiled and generate_events/generate_NR_events/generate_ER_events
-  (Ppq_fort.py, event_generator.py).
-* Ppq_py.py's functions (Y, Nbar, sigp, sigq, PEr_NR, PEr_ER,
-  Ppq_inspect_NR, Ppq_inspect_ER): the
-  pure-Python reference implementation the other two are cross-checked
-  against -- also re-exported here, but see Ppq_py.py's own docstring
-  before using these for anything beyond a cross-check: they're a slow,
-  brute-force grid scan, not meant for a fit/MCMC loop.
-
-Everything under internal/ and cli/ is either what the above are built
-from or infrastructure for maintaining this library, and carries no
-stability promise.
-
-Ppq_compiled has a hard, unconditional dependency on the compiled Fortran
-library; event_generator.py and Ppq_py.py have none. Importing this
-package never touches the library -- Ppq_compiled only requires it be loadable
-(see LD_LIBRARY_PATH/DYLD_LIBRARY_PATH in internal/_Ppq_fort_bindings.py)
-once you construct one, and fails there, not on the first likelihood call
-deep into a fit.
+See the "Two ways to use this" page for which functions need the compiled
+Fortran library (usually via a published container) and which are pure
+Python.
 """
 
 from .event_generator import generate_ER_events, generate_events, generate_NR_events

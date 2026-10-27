@@ -90,4 +90,4 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](docs/testing.md) |
 | Profile the Fortran library itself (maintainer workflow) | [Profiling with TAU](docs/PROFILING.md) |
-| Browse the auto-generated API reference | <https://det-lab.github.io/phonon-charge-pdf/api/event_generator/> (and `Ppq_py`, `Ppq_fort`) |
+| Browse the auto-generated API reference, grouped by what you'd call, not by file | <https://det-lab.github.io/phonon-charge-pdf/api/> |
