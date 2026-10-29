@@ -36,9 +36,14 @@ n_bins = 64
 result = equibin.bin_2d(Ep_obs, Eq_obs, n_bins=n_bins,
                          xmin=ep_min, xmax=ep_max, ymin=eq_min, ymax=eq_max)
 
-# the density at your fit, and where its ridge is (see "Why inner_points_func
-# is required" below) -- both at FIT, not re-derived per bin
+# the density at your fit -- make_Ppq_densities_NR takes exactly FIT's keys,
+# so **FIT spreads cleanly here
 pdf_func = pdf.goodness_of_fit.make_Ppq_densities_NR(**FIT, n_workers=8)
+
+# ...and where its ridge is (see "Why inner_points_func is required" below),
+# both at FIT, not re-derived per bin. Listed individually, not **FIT: this
+# one doesn't take F0 at all (its width model ignores Fano broadening -- see
+# its own docstring), and it needs "NR" as a positional arg FIT doesn't have.
 ridge_breakpoints = pdf.goodness_of_fit.make_ridge_breakpoints(
     "NR", k=FIT["k"], Z=FIT["Z"], eps=FIT["eps"], V=FIT["V"],
     p0=FIT["p0"], p10=FIT["p10"], q0=FIT["q0"], q10=FIT["q10"],

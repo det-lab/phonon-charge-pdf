@@ -124,6 +124,16 @@ caches them (`$PDF_TABLES_DIR`, else `~/.cache/phonon_charge_pdf`; the container
 with every registered table in `/app/tables`). `python python/cli/normtables.py list` shows
 what is available.
 
+**Building your own table for your own region/box?** Just pass its file path to
+`Ppq_table_NR=`/`Ppq_table_ER=`, as above — `fetch()` (the registry/Zenodo/Pooch machinery)
+only runs when the argument *isn't* an existing file, so a local `.h5` never touches it.
+The registry is specifically for *this project's* own published, standard-region tables;
+getting a table listed there (`normtables.py register`) means a PR against this repo's
+`table_registry.json`, and `--doi` uploads to det-lab's own Zenodo record specifically
+(`--url-base` works for any other host, but the registry entry itself still has to land in
+this repo). There's no self-service way to register a table without that — if you're not
+on this project, your own table stays a local (or self-hosted) file path, not a name.
+
 ## Fits and MCMC with the tables
 
 A table covers a fixed box of parameters and never extrapolates, so the rule for a fit or
