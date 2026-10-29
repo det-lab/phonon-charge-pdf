@@ -60,7 +60,7 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! build_ridge_table) so no generic subdivision is needed to find it;
   ! what actually made the old fixed grid slow was trapezoid's O(h^2)
   ! convergence, not "not knowing where to look". Gauss-Legendre converges
-  ! spectrally for the smooth integrand integrate_band is once inside the
+  ! spectrally for the smooth integrand integrate_Ppq is once inside the
   ! ridge window, so a modest order reaches the same accuracy as the fixed
   ! grid's ~97,000 points in ~2,500-8,000 -- confirmed empirically in
   ! Python before writing this (see gl_experiment.py in session history).
@@ -134,7 +134,7 @@ contains
       if (F0 == 0.0d0) &
           error stop "Fano factor F(Er) = F0 is zero for all Er"
       pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
-      res = integrate_band(Ep, Eq, pars, .false.)
+      res = integrate_Ppq(Ep, Eq, pars, .false.)
   end procedure Ppq_NR
 
   module procedure Ppq_ER
@@ -145,7 +145,7 @@ contains
       ! k, Z are unused when is_gamma is .true. (electron-recoil yield is
       ! always 1); the placeholders below are never read.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
-      res = integrate_band(Ep, Eq, pars, .true.)
+      res = integrate_Ppq(Ep, Eq, pars, .true.)
   end procedure Ppq_ER
 
   module procedure Y
@@ -212,7 +212,7 @@ contains
   end function PErG_impl
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
-  ! per Ppq_NR/Ppq_ER call (by integrate_band) instead of recomputing the Z
+  ! per Ppq_NR/Ppq_ER call (by integrate_Ppq) instead of recomputing the Z
   ! power at every one of the thousands of Er samples in the mode scan and
   ! window integration.  Matches the public Y module procedure's formula.
   elemental function lindhard_yield_zfac(Er, k, Zfac) result(res)
@@ -348,7 +348,7 @@ contains
   ! The full integrand P(Ep,Eq|Er)*P(Er) with the spectrum and yield
   ! selected by is_gamma (electron recoils: Y=1, PEr_ER; nuclear recoils:
   ! Lindhard(k,Zfac), PEr_NR).
-  pure function band_integrand(Er, Ep, Eq, pars, is_gamma) result(res)
+  pure function Ppq_integrand(Er, Ep, Eq, pars, is_gamma) result(res)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_gamma
@@ -360,7 +360,7 @@ contains
       else
           res = res * PEr_NR(Er)
       end if
-  end function band_integrand
+  end function Ppq_integrand
 
   ! Closed-form approximation to log of the Er integrand WITHOUT the
   ! recoil spectrum: complete the square in N analytically, with
@@ -373,7 +373,7 @@ contains
   ! Branch-free on purpose: the validity guards are computed with
   ! clamped-safe values and applied with merge (a blend, not a branch)
   ! so the mode scan's array evaluation vectorizes cleanly.
-  elemental function log_band_exponent(Er, Ep, Eq, pars, sp2, sq2, is_gamma) result(H)
+  elemental function log_N_exponent(Er, Ep, Eq, pars, sp2, sq2, is_gamma) result(H)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
       real(c_double), intent(in) :: sp2, sq2
@@ -397,9 +397,9 @@ contains
       cN = -(Ep - Er_s)**2 / (2.0d0 * sp2) - Eq**2 / (2.0d0 * sq2) &
          - Nbar_s / (2.0d0 * F_s)
       H = merge(cN + aN**2 / (4.0d0 * bN), -1.0d30, valid)
-  end function log_band_exponent
+  end function log_N_exponent
 
-  ! Scalar convenience for the Newton refinement: band exponent plus the
+  ! Scalar convenience for the Newton refinement: N exponent plus the
   ! log recoil spectrum.
   pure function log_integrand_approx(Er, Ep, Eq, pars, sp2, sq2, is_gamma) result(H)
       real(c_double), intent(in) :: Er, Ep, Eq
@@ -408,7 +408,7 @@ contains
       logical, intent(in) :: is_gamma
       real(c_double) :: H
 
-      H = log_band_exponent(Er, Ep, Eq, pars, sp2, sq2, is_gamma)
+      H = log_N_exponent(Er, Ep, Eq, pars, sp2, sq2, is_gamma)
       if (is_gamma) then
           H = H + log(PErG_impl(Er))
       else
@@ -469,10 +469,10 @@ contains
       do ik = 1, n_scan
           xs(ik) = exp(log(x_scan_min) + (ik - 1) * dlx)
       end do
-      ! Branch-free band exponent over the whole grid, then the log
+      ! Branch-free N exponent over the whole grid, then the log
       ! spectrum as a second array pass with the band choice hoisted out
       ! of the loop: everything the scan does is vectorizable.
-      Hs = log_band_exponent(xs, Ep, Eq, pars, sp2, sq2, is_gamma)
+      Hs = log_N_exponent(xs, Ep, Eq, pars, sp2, sq2, is_gamma)
       if (is_gamma) then
           Hs = Hs + log(PErG_impl(xs))
       else
@@ -621,7 +621,7 @@ contains
       do concurrent(i = 1:npts) default(none) reduce(+: total) &
           shared(lo, h, npts, Ep, Eq, pars, is_gamma) &
           local(f_i, w_i)
-          f_i = band_integrand(lo + (i - 1) * h, Ep, Eq, pars, is_gamma)
+          f_i = Ppq_integrand(lo + (i - 1) * h, Ep, Eq, pars, is_gamma)
           w_i = merge(0.5d0, 1.0d0, i == 1 .or. i == npts)
           total = total + w_i * f_i
       end do
@@ -669,7 +669,7 @@ contains
   ! Shared driver for Ppq_NR / Ppq_ER: locate every integrand mode, place an
   ! integration window around each, merge overlapping windows, and guard
   ! the window edges.
-  pure function integrate_band(Ep, Eq, pars, is_gamma) result(res)
+  pure function integrate_Ppq(Ep, Eq, pars, is_gamma) result(res)
       real(c_double), intent(in) :: Ep, Eq
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_gamma
@@ -750,7 +750,7 @@ contains
       ! Edge-guard threshold: the tallest mode sets the scale
       f_star = 0.0d0
       do m = 1, n_modes
-          f_star = max(f_star, band_integrand(er_m(m), Ep, Eq, pars, is_gamma))
+          f_star = max(f_star, Ppq_integrand(er_m(m), Ep, Eq, pars, is_gamma))
       end do
 
       res = 0.0d0
@@ -768,8 +768,8 @@ contains
               tmp = integrate_piecewise(w_lo(m), w_hi(m), w_ht(m), Ep, Eq, pars, is_gamma)
               ! Edge guard: expand if the integrand has not died off at the
               ! window edges (protects against an underestimated sigma)
-              f_lo = band_integrand(w_lo(m), Ep, Eq, pars, is_gamma)
-              f_hi = band_integrand(w_hi(m), Ep, Eq, pars, is_gamma)
+              f_lo = Ppq_integrand(w_lo(m), Ep, Eq, pars, is_gamma)
+              f_hi = Ppq_integrand(w_hi(m), Ep, Eq, pars, is_gamma)
               need_lo = f_lo > 1.0d-10 * f_star .and. w_lo(m) > lo_limit
               need_hi = f_hi > 1.0d-10 * f_star .and. w_hi(m) < hi_limit
               if (.not. (need_lo .or. need_hi)) exit
@@ -778,7 +778,7 @@ contains
           end do
           res = res + tmp
       end do
-  end function integrate_band
+  end function integrate_Ppq
 
   ! Linear interpolation of ytab(xtab) at x, matching numpy.interp:
   ! clamps to the table's end values outside its range.  xtab must be
@@ -924,7 +924,7 @@ contains
               do j = 1, n_ord_eq
                   eq_i   = eq_mid + eq_half * nodes_eq(j)
                   eq_w_i = eq_half * weights_eq(j)
-                  inner  = inner + eq_w_i * integrate_band(ep_i, eq_i, pars, is_gamma)
+                  inner  = inner + eq_w_i * integrate_Ppq(ep_i, eq_i, pars, is_gamma)
               end do
           end if
 
