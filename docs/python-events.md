@@ -23,7 +23,7 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 real analysis ROI, the same box `Ppq_compiled` would be normalized over); the ER/NR split is
 `Binomial(target_size, ER_frac)`, so `ER_frac=1.0`/`0.0` give deterministic pure-ER/pure-NR
 samples and anything in between carries the same sampling fluctuation a real dataset would.
-The returned `DataFrame` has columns `EP, EQ, N0, is_ER, seed, is_bkg` — `is_bkg` is
+The returned `DataFrame` has columns `EP, EQ, N, is_ER, seed, is_bkg` — `is_bkg` is
 always `False` here; it exists only so these rows can be concatenated directly with a
 separate zero-charge/surface-background generator that produces the same columns (e.g. a
 KDE-based one kept in a downstream analysis repo, out of scope for this library).

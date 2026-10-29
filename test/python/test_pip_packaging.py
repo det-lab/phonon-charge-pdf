@@ -56,9 +56,9 @@ PARAMS = dict(
 SPECTRUM = dict(mix_frac=0.53693208, scale_fast=6.41515782, scale_slow=23.71789286)
 
 try:
-    Ep, Eq, N0, seeds = bd.generate_events_NR(50, seed=1, **PARAMS, **SPECTRUM)
+    Ep, Eq, Er, N = bd.generate_events_NR(50, seed=1, **PARAMS, **SPECTRUM)
     check("generate_events_NR runs with no Fortran library",
-          Ep.shape == Eq.shape == N0.shape == seeds.shape == (50,))
+          Ep.shape == Eq.shape == Er.shape == N.shape == (50,))
 except Exception as e:
     check("generate_events_NR runs with no Fortran library", False, repr(e))
 

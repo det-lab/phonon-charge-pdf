@@ -48,11 +48,14 @@ is a real physics check, not a tautology: this module never touches Ppq_NR/Ppq_E
 
 Returned DataFrame
 -------------------
-generate_events() returns columns EP, EQ, N0, is_ER, seed, is_bkg
+generate_events() returns columns EP, EQ, N, is_ER, seed, is_bkg
 (is_bkg is always False here -- it exists only so these rows line up with
 a separate zero-charge/surface-background generator, e.g. the KDE-based
 one in nrFanoII_paper2022's ba_bknd_lines.py, which can be concatenated
-directly as long as it produces the same columns).
+directly as long as it produces the same columns -- note that column was
+previously named N0, misleadingly, since it's the same Fano-fluctuated N
+generate_events_NR/generate_events_ER return, not a distinct quantity;
+anything consuming the old N0 name needs updating).
 
 Reproducibility
 ----------------
@@ -314,7 +317,7 @@ def generate_events(target_size, ER_frac, seed, *,
 
     Returns
     -------
-    pandas.DataFrame with columns EP, EQ, N0, is_ER, seed, is_bkg --
+    pandas.DataFrame with columns EP, EQ, N, is_ER, seed, is_bkg --
     shuffled, so downstream code doesn't need to worry about ER/NR
     ordering. is_bkg is always False; see the module docstring.
     """
@@ -343,12 +346,12 @@ def generate_events(target_size, ER_frac, seed, *,
 
     Ep = np.concatenate([Ep_er, Ep_nr])
     Eq = np.concatenate([Eq_er, Eq_nr])
-    N0 = np.concatenate([N_er, N_nr])
+    N = np.concatenate([N_er, N_nr])
     is_ER = np.concatenate([np.ones(len(Ep_er), dtype=bool), np.zeros(len(Ep_nr), dtype=bool)])
 
     order = np.random.default_rng(shuffle_seed).permutation(len(Ep))
     df = pd.DataFrame({
-        "EP": Ep[order], "EQ": Eq[order], "N0": N0[order], "is_ER": is_ER[order],
+        "EP": Ep[order], "EQ": Eq[order], "N": N[order], "is_ER": is_ER[order],
     })
     df["seed"] = seed
     df["is_bkg"] = False
