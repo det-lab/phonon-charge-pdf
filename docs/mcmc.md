@@ -16,41 +16,86 @@ it's the same `BOUNDS`/table setup either way.
 
 ## Walkthrough
 
-See [Fitting](fitting.md#the-parameter-box-step-2) for what the parameter box, `BOUNDS`,
+This uses [emcee](https://emcee.readthedocs.io/) (`pip install emcee` -- not a
+`phonon_charge_pdf` dependency; any ensemble sampler works the same way). See
+[Fitting](fitting.md#the-parameter-box-step-2) for what the parameter box, `BOUNDS`,
 `prior_bounds`, `check_points()`, and `OutOfBoxError`/`PriorNotCoveredError` mean — the
 rules are identical for MCMC, just enforced through `log_prior` below instead of inline in
-the objective.
+the objective (as [Fitting](fitting.md) does for a point estimate).
 
 ```python
-BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
-          "q0": (0.0475, 0.4), "q10": (0.2, 0.4),
-          "k": (0.13, 0.22), "F0_NR": (1e-5, 1.0), "F0_ER": (0.1, 0.35)}
+import numpy as np
+import emcee
+from scipy.stats import norm
+import phonon_charge_pdf as pdf
 
-# define the data region: must match the named tables below exactly
+# define the data region: must match the named table below exactly
 ep_min, ep_max = 2.5, 350.0
 eq_min, eq_max = 0.75, 200.0
 
-fit_pdf = pdf.Ppq_compiled(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
-                      Ppq_table_NR="NR_ep2.5-350_eq0.75-200", Ppq_table_ER="ER_ep2.5-350_eq0.75-200",
+BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
+          "q0": (0.0475, 0.4), "q10": (0.2, 0.4),
+          "k": (0.13, 0.22), "F0_NR": (1e-5, 1.0)}
+
+fit_pdf = pdf.Ppq_compiled(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
+                      Ppq_table_NR="NR_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # 1. fails now, not hours into the run
+
+Z, EPS = 32.0, 3.0e-3                       # fixed detector/material constants, not fit parameters
+P0_MEAN, P0_SIGMA = 0.0642, 0.01            # Gaussian prior on p0/q0 -- replace with YOUR own
+Q0_MEAN, Q0_SIGMA = 0.2372, 0.02            # prior, not these specific numbers
+PARAM_NAMES = ("k", "F0_NR", "V", "p0", "p10", "q0", "q10")  # theta's one and only ordering
+
+def unpack(theta):
+    p = dict(zip(PARAM_NAMES, theta))
+    p["Z"], p["eps"] = Z, EPS
+    return p
 
 def log_prior(theta):                             # 2. -inf outside the hard bounds and the ordering
     p = unpack(theta)
-    if not within(p, BOUNDS) or p["p10"] < p["p0"] or p["q10"] < p["q0"]:
+    inside_box = all(BOUNDS[name][0] <= p[name] <= BOUNDS[name][1] for name in PARAM_NAMES)
+    if not inside_box or p["p10"] < p["p0"] or p["q10"] < p["q0"]:
         return -np.inf
-    return soft_terms(p)                          # e.g. Gaussians on p0, q0 -- truncated by BOUNDS
+    return (norm.logpdf(p["p0"], loc=P0_MEAN, scale=P0_SIGMA)             # soft terms,
+            + norm.logpdf(p["q0"], loc=Q0_MEAN, scale=Q0_SIGMA))          # truncated by BOUNDS above
+
+def log_likelihood(theta):
+    p = unpack(theta)
+    normalized = fit_pdf.Ppq_normalized_densities_NR(
+        k=p["k"], Z=p["Z"], F0=p["F0_NR"], eps=p["eps"], V=p["V"],
+        p0=p["p0"], p10=p["p10"], q0=p["q0"], q10=p["q10"])
+    return np.sum(np.log(normalized))
 
 def log_prob(theta):                              # 3. the prior first: fit_pdf never sees
     lp = log_prior(theta)                         #    a point outside it
     if not np.isfinite(lp):
         return -np.inf
-    return lp + log_likelihood(theta, fit_pdf)
+    return lp + log_likelihood(theta)
 
-fit_pdf.check_points(as_params(start))               # 4. starting walkers inside, before sampling
-                                                  #    ({param: array}, laid out like BOUNDS)
+# 4. Starting walkers: a small ball around a best-fit point, inside the box
+# (a real best-fit point -- see Fitting -- not literally theta0 below).
+theta0 = np.array([0.18, 0.122, 3.0, 0.06421907, 0.48998486, 0.23718488, 0.27093151])
+n_walkers, n_dim = 32, len(PARAM_NAMES)
+rng = np.random.default_rng(0)
+start = theta0 + 1e-4 * rng.standard_normal((n_walkers, n_dim))
+
+fit_pdf.check_points({name: start[:, i] for i, name in enumerate(PARAM_NAMES)})
+
+sampler = emcee.EnsembleSampler(n_walkers, n_dim, log_prob)
+sampler.run_mcmc(start, 5000, progress=True)
+
+# burn-in/thinning below are illustrative -- tune both from
+# sampler.get_autocorr_time() on your own run, not these numbers
+chain = sampler.get_chain(discard=1000, thin=15, flat=True)
 ```
 
 A Gaussian prior (on `p0` or `q0`, say) must be truncated by the hard bounds:
 `prior_bounds` rejects a parameter without finite bounds, since no table can cover it.
 Walkers started in a small ball around a best fit can still land outside near an edge,
-which is what step 4 catches.
+which is what step 4's `check_points` catches.
+
+For a joint fit across both bands, sum their log-likelihoods in `log_likelihood` the same
+way [Fitting](fitting.md) does: `log_likelihood_NR(theta) + log_likelihood_ER(theta)`, each
+from its own `fit_pdf.Ppq_normalized_densities_NR`/`_ER` call. A mixture model (one
+dataset, per-event fractional band membership) needs more than this — that's specific to
+your own analysis.
