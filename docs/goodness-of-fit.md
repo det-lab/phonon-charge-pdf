@@ -26,26 +26,23 @@ FIT = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
 # sampler_NR stands in for YOUR real measured events below, and is also
 # what "Validating the procedure itself" passes as run_chisquare_test's
 # sampler_func, further down -- it has to return events already inside
-# (ep_min, ep_max) x (eq_min, eq_max): generate_events_NR has no ROI
-# cropping of its own (see "Generating simulated events"), so this
-# oversamples and keeps only the in-range events. This isn't optional
-# bookkeeping -- real measured data is already cut to your ROI, but this
-# stand-in isn't, and skipping the crop silently breaks every chi-square
-# computation below (fewer observed events land in a bin than expected
-# assumes, inflating chi2 no matter how good the fit actually is).
+# (ep_min, ep_max) x (eq_min, eq_max). generate_events_NR has no ROI
+# cropping of its own (see "Generating simulated events"), so this uses
+# the top-level generate_events(ER_frac=0.0) instead, which already
+# crops to ep_range/eq_range and is deterministically pure-NR
+# (Var(Binomial(n, p)) is exactly zero at p=0 -- see that function's
+# docstring). F0_ER/mix_frac_ER/scale_fast_ER/scale_slow_ER are still
+# required (generate_events() always needs both bands' parameters) but
+# never actually used here, since zero ER events are ever generated.
 def sampler_NR(n, seed=None):
-    rng = np.random.default_rng(seed)
-    ep_parts, eq_parts, n_have = [], [], 0
-    attempt_seed = int(rng.integers(0, 2**31))
-    while n_have < n:
-        Ep, Eq, _, _ = pdf.generate_events_NR(
-            max((n - n_have) * 2, 1000), **FIT, mix_frac=0.53693208,
-            scale_fast=6.41515782, scale_slow=23.71789286, seed=attempt_seed)
-        mask = (Ep >= ep_min) & (Ep <= ep_max) & (Eq >= eq_min) & (Eq <= eq_max)
-        ep_parts.append(Ep[mask]); eq_parts.append(Eq[mask])
-        n_have += int(mask.sum())
-        attempt_seed += 1
-    return np.concatenate(ep_parts)[:n], np.concatenate(eq_parts)[:n]
+    events = pdf.generate_events(
+        n, ER_frac=0.0, seed=seed, ep_range=(ep_min, ep_max), eq_range=(eq_min, eq_max),
+        k=FIT["k"], Z=FIT["Z"], F0_NR=FIT["F0"], F0_ER=0.2,
+        eps=FIT["eps"], V=FIT["V"], p0=FIT["p0"], p10=FIT["p10"], q0=FIT["q0"], q10=FIT["q10"],
+        mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
+        mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
+    )
+    return events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 Ep_obs, Eq_obs = sampler_NR(20_000, seed=0)
 

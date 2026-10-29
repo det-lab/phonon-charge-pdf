@@ -405,8 +405,11 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
         silently vanish from the observed counts while the expected counts
         below still assume the full n_events -- chi2 comes out inflated no
         matter how good the fit actually is, with no error to flag it.
-        Wrap the generator to oversample and keep only the in-range events
-        (see docs/goodness-of-fit.md's sampler_NR for a worked example).
+        generate_events(ER_frac=0.0 or 1.0, ep_range=..., eq_range=...)
+        already crops to the region and is deterministically pure-NR/ER
+        at those boundary values -- see docs/goodness-of-fit.md's
+        sampler_NR for a worked example (it just unpacks the returned
+        DataFrame's EP/EQ columns to the (Ep, Eq) tuple this needs).
     ep_range, eq_range : (float, float)
         Bounds of the sampling region, passed to equibin as hard limits.
         sampler_func's events must already be cropped to this box (see
