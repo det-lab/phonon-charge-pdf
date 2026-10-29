@@ -277,12 +277,14 @@ def Ppq_inspect_NR(Ep, Eq,
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
     in a fit/MCMC inner loop; use Ppq_compiled for that.
 
-    Returns ((value, quad_error), (er_scan_grid, er_scan_integrand),
-    peak_info_list): peak_info_list is one dict per located peak, with
-    "minx"/"maxx" (the integration window), "integral"/"error" (that
-    peak's own quad result), and "width"/"Ermx"/"integrand_max" from a
-    Gaussian fit (nan if the fit didn't converge). Usage to just get the
-    value: (value, _), _, _ = Ppq_inspect_NR(...).
+    Returns a dict:
+      value, value_err : the PDF value and its quadrature error.
+      er_scan_grid, er_scan_integrand : the Er scan arrays.
+      peaks : one dict per located peak, with "minx"/"maxx" (the
+        integration window), "integral"/"integral_err" (that peak's own
+        quad result), and "width"/"Ermx"/"integrand_max" from a Gaussian
+        fit (nan if the fit didn't converge).
+    Usage to just get the value: Ppq_inspect_NR(...)["value"].
 
     WARNING: the peak search only works if your peaks have a width
     greater than ~0.1 keV, which holds for all reasonable CDMS
@@ -310,9 +312,11 @@ def Ppq_inspect_NR(Ep, Eq,
     real_val_idx = np.where(f_arr > 0)[0]
     if len(real_val_idx) == 0:
         if np.all(f_arr == 0):
-            return (0, 0), (er_arr, f_arr), []
+            return {"value": 0, "value_err": 0, "er_scan_grid": er_arr,
+                    "er_scan_integrand": f_arr, "peaks": []}
         elif np.all(np.isnan(f_arr)):
-            return (np.nan, np.nan), (er_arr, f_arr), []
+            return {"value": np.nan, "value_err": np.nan, "er_scan_grid": er_arr,
+                    "er_scan_integrand": f_arr, "peaks": []}
     else:
         min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
         Ermx = er_arr[min_idx]
@@ -407,9 +411,9 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     function's own name doesn't carry an N/G suffix the way Ppq_inspect_NR/
     Ppq_inspect_ER do.
 
-    Returns ((integral, quad_error), (er_scan_grid, er_scan_integrand),
-    peak_info_list) -- see Ppq_inspect_NR's docstring for the shape of each
-    peak_info_list entry.
+    Returns a dict: value, value_err (the integral and its quadrature
+    error), er_scan_grid, er_scan_integrand, and peaks -- see
+    Ppq_inspect_NR's docstring for the shape of each peaks entry.
     """
     minx = 5e-21
     maxx = max(Ep, Eq) + 5
@@ -420,7 +424,8 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     # dead, but flagged here since it predates this module's public-API
     # promotion.
     if g(Ermx, Ep, Eq) == 0 or np.isnan(g(Ermx, Ep, Eq)):
-        return (0, 0), (None, None), []
+        return {"value": 0, "value_err": 0, "er_scan_grid": None,
+                "er_scan_integrand": None, "peaks": []}
 
     # Scan the integrand on a uniform grid.  If it is still non-zero
     # near the end of the scan range, extend the range and re-scan the
@@ -444,9 +449,10 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
                                   points=[Ermx], epsabs=0, epsrel=1e-12,
                                   limit=200)
         peak_info = {"minx": er_arr[0], "maxx": er_arr[-1],
-                     "integral": val, "error": err,
+                     "integral": val, "integral_err": err,
                      "width": np.nan, "Ermx": Ermx, "integrand_max": np.nan}
-        return (val, err), (er_arr, er_integrand_arr), [peak_info]
+        return {"value": val, "value_err": err, "er_scan_grid": er_arr,
+                "er_scan_integrand": er_integrand_arr, "peaks": [peak_info]}
 
     # We expect a structure of peaks surrounded by zeros: group the
     # consecutive non-zero samples and pad each group's range by 5 grid
@@ -485,7 +491,7 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
         # Fortran integration it validates, rather than only typically so
         ans = integrate.quad(g, minx, maxx, args = (Ep,Eq,), epsabs=0, epsrel=1e-12, limit=200)
         peak_info_array[jdx]["integral"] = ans[0]
-        peak_info_array[jdx]["error"] = ans[1]
+        peak_info_array[jdx]["integral_err"] = ans[1]
 
         # this array is for the fitting
         er_arr = np.linspace(minx, maxx, 2000)
@@ -558,7 +564,7 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     error = 0
     for peak_info in peak_info_array:
         integral += peak_info["integral"]
-        error += peak_info["error"]
+        error += peak_info["integral_err"]
 
     # find the overall minimum and maximum and evaluate er_integrand_arr over that range
     min_minx = min(d["minx"] for d in peak_info_array)
@@ -570,7 +576,8 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
         er_integrand_arr[idx] = val
 
     # now we're ready to return everything to the user
-    return (integral, error), (er_arr, er_integrand_arr), peak_info_array
+    return {"value": integral, "value_err": error, "er_scan_grid": er_arr,
+            "er_scan_integrand": er_integrand_arr, "peaks": peak_info_array}
 
 
 def Ppq_inspect_ER(Ep, Eq,
@@ -589,7 +596,7 @@ def Ppq_inspect_ER(Ep, Eq,
     keV for typical CDMS parameters), so e.g. er_step=0.01 (a 0.005 keV
     scan step) is finer than the 0.01 keV grid the Fortran Ppq_ER
     integrates on. Usage to just get the value:
-    (value, _), _, _ = Ppq_inspect_ER(...).
+    Ppq_inspect_ER(...)["value"].
     """
     if F0 == 0:
         raise ValueError("Fano factor F(Er) = F0 is zero for all Er")

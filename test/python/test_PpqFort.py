@@ -140,7 +140,7 @@ result_fort = api.Ppq_NR(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                        ctypes.c_double(q0), ctypes.c_double(q10))
-(result_py, _), _, _ = ppq.Ppq_inspect_NR(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.1)
+result_py = ppq.Ppq_inspect_NR(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.1)["value"]
 print('back in python after running function Ppq_NR')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
@@ -158,7 +158,7 @@ result_fort = api.Ppq_ER(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                        ctypes.c_double(q0), ctypes.c_double(q10))
-(result_py, _), _, _ = ppq.Ppq_inspect_ER(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.01)
+result_py = ppq.Ppq_inspect_ER(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, er_step=0.01)["value"]
 print('back in python after running function Ppq_ER')
 print('The fortran result is ', result_fort)
 print('The python result is ', result_py)

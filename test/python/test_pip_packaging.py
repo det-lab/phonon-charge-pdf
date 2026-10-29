@@ -63,9 +63,10 @@ except Exception as e:
     check("generate_events_NR runs with no Fortran library", False, repr(e))
 
 try:
-    (val, err), _, peaks = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, er_step=0.1)
+    result = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, er_step=0.1)
     check("Ppq_inspect_NR runs with no Fortran library",
-          val > 0 and len(peaks) >= 1, (val, len(peaks)))
+          result["value"] > 0 and len(result["peaks"]) >= 1,
+          (result["value"], len(result["peaks"])))
 except Exception as e:
     check("Ppq_inspect_NR runs with no Fortran library", False, repr(e))
 

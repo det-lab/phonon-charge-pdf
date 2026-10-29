@@ -9,12 +9,15 @@ exhaustive, and much slower:
 ```python
 import phonon_charge_pdf as pdf
 
-(Ppq_NR, quad_error), (er_scan, integrand_scan), peaks = pdf.Ppq_inspect_NR(
+result = pdf.Ppq_inspect_NR(
     Ep=10.0, Eq=5.0,
     k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
     er_step=0.1,   # Er scan step, keV -- see "choosing er_step" below
 )
+Ppq_NR, quad_error = result["value"], result["value_err"]
+er_scan, integrand_scan = result["er_scan_grid"], result["er_scan_integrand"]
+peaks = result["peaks"]
 ```
 
 !!! warning "Deliberately the slow path"

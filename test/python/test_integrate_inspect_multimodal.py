@@ -58,7 +58,8 @@ CASES = [
 failures = 0
 for name, centers, sigma, er_step in CASES:
     g = make_gaussian_sum(centers, sigma)
-    (integral, err), _, peaks = integrate_inspect(g, 5.0, 5.0, centers[0], er_step)
+    result = integrate_inspect(g, 5.0, 5.0, centers[0], er_step)
+    integral, peaks = result["value"], result["peaks"]
     expected = float(len(centers))
     ok = abs(integral - expected) < 1e-6
     status = "PASS" if ok else "FAIL"
