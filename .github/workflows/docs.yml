@@ -3,10 +3,13 @@
 
 name: Docs
 
-# Builds the MkDocs site and deploys it to GitHub Pages. No Fortran build
-# needed: mkdocstrings only imports the pure-Python modules to pull their
-# docstrings, and importing phonon_charge_pdf never touches the compiled
-# library (see python/__init__.py) -- only constructing a Ppq_compiled does.
+# Builds the MkDocs site (Python API) and the FORD site (Fortran API,
+# ford.md) and deploys both to GitHub Pages. No compiled Fortran *library*
+# build needed: mkdocstrings only imports the pure-Python modules to pull
+# their docstrings, and importing phonon_charge_pdf never touches the
+# compiled library (see python/__init__.py) -- only constructing a
+# Ppq_compiled does. gfortran is still needed, just as FORD's preprocessor
+# for src/*.f90 (ford.md's preprocessor: gfortran -E), not to build/link.
 
 on:
   push:
@@ -37,8 +40,27 @@ jobs:
       - name: Install package and docs dependencies
         run: python -m pip install -e ".[docs]"
 
-      - name: Build site
+      - name: Build Python API site (MkDocs)
         run: mkdocs build --strict --site-dir site
+
+      - name: Install FORD and its system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran graphviz
+          # Installed separately from [docs] above: FORD pins an older
+          # Markdown than mkdocstrings/pymdown-extensions want, and the two
+          # tools have nothing else in common -- keeping them as separate
+          # pip installs avoids feeding both into one dependency resolve.
+          python -m pip install ford
+
+      - name: Generate version include (needed by src/Ppq_fort_m.f90)
+        run: python scripts/generate_version_include.py
+
+      - name: Build Fortran API site (FORD)
+        run: ford ford.md
+
+      - name: Merge Fortran API site into the Pages artifact
+        run: cp -r doc/html site/fortran-api
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

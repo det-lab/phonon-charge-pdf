@@ -35,6 +35,7 @@ nav:
   - Testing goodness of fit: goodness-of-fit.md
   - Computing new normalization tables: normalization-tables.md
   - Python API reference: api/index.md
+  - Fortran API reference: https://det-lab.github.io/phonon-charge-pdf/fortran-api/
   - For the cautious:
       - Verification and validation: testing.md
       - Inspecting the integrand: inspecting-the-integrand.md
