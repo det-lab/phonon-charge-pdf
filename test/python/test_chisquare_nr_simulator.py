@@ -48,7 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python"))
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))
 
-from event_generator import generate_events_NR
+from event_generator import generate_events
 # Unnormalized is fine: this test only compares the PDF's *shape* against
 # simulated events (chi-square binning), not absolute probability.  For a
 # fit or MCMC, use Ppq_compiled (python/Ppq_fort.py) instead.
@@ -90,34 +90,27 @@ N_WORKERS = os.cpu_count()
 # ---------------------------------------------------------------------------
 # Sampler: generate exactly n in-range NR events from the physics simulator.
 #
-# Events with Ep < EP_RANGE[0] (roughly Er < 2.5 keV) or Eq < EQ_RANGE[0]
-# fall outside the observable region; oversample and keep the first n that
-# pass the range cut.  The oversampling factor of 2 is conservative; a while
-# loop handles the rare cases where a second pass is needed.
-# ---------------------------------------------------------------------------
+# generate_events_NR has no ROI cropping of its own (events with
+# Ep < EP_RANGE[0], roughly Er < 2.5 keV, or Eq < EQ_RANGE[0] fall outside
+# the observable region), so this uses the top-level generate_events
+# instead: ER_frac=0.0 is deterministically pure-NR (Var(Binomial(n, p))
+# is exactly zero at p=0 -- see that function's docstring), and it already
+# crops to ep_range/eq_range. F0_ER/mix_frac_ER/scale_fast_ER/
+# scale_slow_ER are still required (generate_events() always needs both
+# bands' parameters) but never actually used here, since zero ER events
+# are ever generated.
 def nr_sampler(n, seed=None):
-    rng = np.random.default_rng(seed)
-    ep_acc, eq_acc = [], []
-    n_acc = 0
-    attempt_seed = int(rng.integers(0, 2**31))
-
-    while n_acc < n:
-        n_gen = max((n - n_acc) * 2, 1000)
-        Ep, Eq, _, _ = generate_events_NR(
-            n_gen, seed=attempt_seed, **PARAMS, **SPECTRUM_PARAMS
-        )
-        mask = (
-            (Ep >= EP_RANGE[0]) & (Ep <= EP_RANGE[1]) &
-            (Eq >= EQ_RANGE[0]) & (Eq <= EQ_RANGE[1])
-        )
-        ep_acc.append(Ep[mask])
-        eq_acc.append(Eq[mask])
-        n_acc += int(mask.sum())
-        attempt_seed += 1
-
-    Ep_all = np.concatenate(ep_acc)[:n]
-    Eq_all = np.concatenate(eq_acc)[:n]
-    return Ep_all, Eq_all
+    events = generate_events(
+        n, ER_frac=0.0, seed=seed, ep_range=EP_RANGE, eq_range=EQ_RANGE,
+        k=PARAMS["k"], Z=PARAMS["Z"], F0_NR=PARAMS["F0"], F0_ER=0.2,
+        eps=PARAMS["eps"], V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
+        q0=PARAMS["q0"], q10=PARAMS["q10"],
+        mix_frac_NR=SPECTRUM_PARAMS["mix_frac"],
+        scale_fast_NR=SPECTRUM_PARAMS["scale_fast"],
+        scale_slow_NR=SPECTRUM_PARAMS["scale_slow"],
+        mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
+    )
+    return events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 # ---------------------------------------------------------------------------
 # Build the Fortran PDF wrapper
