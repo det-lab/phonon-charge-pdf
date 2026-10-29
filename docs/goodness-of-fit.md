@@ -23,13 +23,31 @@ eq_min, eq_max = 0.75, 200.0
 FIT = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
            p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
 
-# Ep_obs/Eq_obs below are generated, for this walkthrough to run end to end --
-# use YOUR real measured events instead. generate_events_NR needs the NR
-# band's true-recoil-energy spectrum too (see "Generating simulated events");
-# this example reuses this project's own mix_frac/scale_fast/scale_slow.
-Ep_obs, Eq_obs, _, _ = pdf.generate_events_NR(
-    20_000, **FIT, mix_frac=0.53693208, scale_fast=6.41515782,
-    scale_slow=23.71789286, seed=0)
+# sampler_NR stands in for YOUR real measured events below, and is also
+# what "Validating the procedure itself" passes as run_chisquare_test's
+# sampler_func, further down -- it has to return events already inside
+# (ep_min, ep_max) x (eq_min, eq_max): generate_events_NR has no ROI
+# cropping of its own (see "Generating simulated events"), so this
+# oversamples and keeps only the in-range events. This isn't optional
+# bookkeeping -- real measured data is already cut to your ROI, but this
+# stand-in isn't, and skipping the crop silently breaks every chi-square
+# computation below (fewer observed events land in a bin than expected
+# assumes, inflating chi2 no matter how good the fit actually is).
+def sampler_NR(n, seed=None):
+    rng = np.random.default_rng(seed)
+    ep_parts, eq_parts, n_have = [], [], 0
+    attempt_seed = int(rng.integers(0, 2**31))
+    while n_have < n:
+        Ep, Eq, _, _ = pdf.generate_events_NR(
+            max((n - n_have) * 2, 1000), **FIT, mix_frac=0.53693208,
+            scale_fast=6.41515782, scale_slow=23.71789286, seed=attempt_seed)
+        mask = (Ep >= ep_min) & (Ep <= ep_max) & (Eq >= eq_min) & (Eq <= eq_max)
+        ep_parts.append(Ep[mask]); eq_parts.append(Eq[mask])
+        n_have += int(mask.sum())
+        attempt_seed += 1
+    return np.concatenate(ep_parts)[:n], np.concatenate(eq_parts)[:n]
+
+Ep_obs, Eq_obs = sampler_NR(20_000, seed=0)
 
 # bin your own data -- counts[i] is the observed count in bins[i]
 n_bins = 64
@@ -121,12 +139,9 @@ before trusting the single-fit check above.
 ```python
 from scipy.stats import kstest
 
-def sampler_NR(n, seed=None):
-    Ep, Eq, _, _ = pdf.generate_events_NR(                 # drop the latent Er/N outputs --
-        n, **FIT, mix_frac=0.53693208, scale_fast=6.41515782,  # sampler_func only returns (Ep, Eq)
-        scale_slow=23.71789286, seed=seed)
-    return Ep, Eq
-
+# sampler_NR is the same in-ROI sampler defined above, under "Checking your
+# fit" -- reused as-is here, since run_chisquare_test needs exactly the
+# sampler_func(n, seed=None) -> (Ep, Eq) shape it already has.
 chi2_values, dof, bins, expected = pdf.goodness_of_fit.run_chisquare_test(
     pdf_func, sampler_NR, (ep_min, ep_max), (eq_min, eq_max),
     n_events=1_000, n_throws=10_000, n_bins=64,

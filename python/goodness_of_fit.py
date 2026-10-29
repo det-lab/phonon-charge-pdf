@@ -20,8 +20,11 @@ Workflow
 
 run_chisquare_test/expected_counts_from_pdf are PDF-agnostic: supply
 any pdf_func(Ep_flat, Eq_flat) -> values_flat callable and a matching
-sampler(n_events, seed=None) -> (Ep, Eq) callable -- e.g.
-generate_events_NR/generate_events_ER at your fitted parameters.
+sampler(n_events, seed=None) -> (Ep, Eq) callable that returns events
+already cropped to the region -- see run_chisquare_test's own docstring
+for why generate_events_NR/generate_events_ER can't be passed directly
+(they have no ROI cropping of their own) and docs/goodness-of-fit.md
+for a sampler that wraps one correctly.
 make_Ppq_densities_NR/make_Ppq_densities_ER (re-exported here from
 python/internal/_Ppq_fort_bindings.py -- see that module's docstring) build
 the one pdf_func this package actually ships, so they live here rather
@@ -393,10 +396,21 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
     pdf_func : callable
         pdf_func(Ep_flat, Eq_flat) -> values_flat
     sampler_func : callable
-        sampler_func(n, seed=None) -> (Ep, Eq) -- e.g. generate_events_NR/
-        generate_events_ER at your fitted parameters.
+        sampler_func(n, seed=None) -> (Ep, Eq), returning n events that are
+        ALL already inside ep_range x eq_range. generate_events_NR/
+        generate_events_ER have no ROI cropping of their own (by design --
+        see event_generator.py), so passing either directly as sampler_func
+        is wrong: this function reshapes sampler_func's output assuming
+        every requested event lands in a bin, so any that don't just
+        silently vanish from the observed counts while the expected counts
+        below still assume the full n_events -- chi2 comes out inflated no
+        matter how good the fit actually is, with no error to flag it.
+        Wrap the generator to oversample and keep only the in-range events
+        (see docs/goodness-of-fit.md's sampler_NR for a worked example).
     ep_range, eq_range : (float, float)
         Bounds of the sampling region, passed to equibin as hard limits.
+        sampler_func's events must already be cropped to this box (see
+        sampler_func above) -- this function does not crop for you.
     n_events : int
         Events per chi-square throw. All bins should have
         expected count >> 1; aim for n_events / n_bins >= 10.
