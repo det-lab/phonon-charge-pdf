@@ -44,10 +44,11 @@ inside a table and checked on every call.
 ## Building a table by hand
 
 ```bash
-# describe the grid (region and epsrel are required; nodes default to RECOMMENDED_NODES
-# and the box to the one above -- a wrong region makes a table that looks fine and isn't)
-python python/cli/normgrid.py make-spec --band NR --region 2.5 350 0.75 200 --epsrel 1e-7 --out spec_NR.json
-python python/cli/normgrid.py make-random-spec --band NR --n 200 --region 2.5 350 0.75 200 --epsrel 1e-7 --out held_NR.json
+# describe the grid (ep-range/eq-range and epsrel are required; nodes default to
+# RECOMMENDED_NODES and the box to the one above -- a wrong region makes a table
+# that looks fine and isn't)
+python python/cli/normgrid.py make-spec --band NR --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 --out spec_NR.json
+python python/cli/normgrid.py make-random-spec --band NR --n 200 --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 --out held_NR.json
 
 # run it: on one machine, or as batch jobs (osg/normgrid.sub + osg/normgrid_job.sh are an HTCondor template)
 python python/cli/normgrid.py chunks spec_NR.json --size 100        # "start stop" ranges, one per job
@@ -103,16 +104,16 @@ an analytic stand-in for the integrals.
 certifying `epsrel=1e-7`) kills the process, so a supervisor records that point as `nan`
 and restarts past it; re-run failures with a looser tolerance via
 `run --retry-failed --epsrel 1e-6`. `merge` refuses to build a table with missing points.
-The HDF5 file records the region, fixed parameters, library version and git commit it was
-built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
+The HDF5 file records the `ep_range`/`eq_range`, fixed parameters, library version and git
+commit it was built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
 the tables to `Ppq_compiled`; nothing else in the fit changes:
 
 ```python
 # define the data region: must match what the tables were built for exactly
-ep_min, ep_max = 2.5, 350.0
-eq_min, eq_max = 0.75, 200.0
+ep_range = (2.5, 350.0)
+eq_range = (0.75, 200.0)
 
-fit_pdf = pdf.Ppq_compiled(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
                       Ppq_table_NR="norm_NR.h5", Ppq_table_ER="norm_ER.h5")
 # fit_pdf.Ppq_integral_NR(...) / fit_pdf.Ppq_integral_ER(...) now interpolate instead of integrating
 ```

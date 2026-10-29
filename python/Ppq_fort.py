@@ -3,7 +3,7 @@ Ppq_compiled is the one intended entrypoint for using this library in a fit or
 MCMC -- if you want normalized PDF values or a likelihood, start here:
 
     from Ppq_fort import Ppq_compiled
-    likelihood = Ppq_compiled(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
+    likelihood = Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
                  norm_epsrel=1e-4, norm_epsabs=1e-10)
     normalized = likelihood.Ppq_normalized_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V,
                                              p0=p0, p10=p10, q0=q0, q10=q10)
@@ -92,8 +92,12 @@ class Ppq_compiled:
 
     Parameters
     ----------
-    ep_min, ep_max, eq_min, eq_max : float
-        The (Ep, Eq) region the PDF is normalized over.
+    ep_range, eq_range : (float, float)
+        The (Ep, Eq) region the PDF is normalized over. Scalars at this
+        boundary (not a tuple) only below the C ABI, in
+        python/internal/_Ppq_fort_bindings.py and the Fortran bind(c)
+        interface itself -- ctypes/bind(c) only marshal simple scalars,
+        not tuples, across that boundary.
     ep_data, eq_data : array_like
         The fixed observed dataset this fit is evaluated against.
     norm_epsrel, norm_epsabs : float or None
@@ -122,7 +126,7 @@ class Ppq_compiled:
         see goodness_of_fit.make_Ppq_densities_NR.
     """
 
-    def __init__(self, ep_min, ep_max, eq_min, eq_max, ep_data, eq_data, *,
+    def __init__(self, ep_range, eq_range, ep_data, eq_data, *,
                  norm_epsrel=None, norm_epsabs=None,
                  Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
                  n_workers=None):
@@ -134,8 +138,8 @@ class Ppq_compiled:
         # succeeding silently and failing on the first likelihood call
         # deep into a fit or MCMC run.
         _fort_version()
-        self.ep_min, self.ep_max = ep_min, ep_max
-        self.eq_min, self.eq_max = eq_min, eq_max
+        self.ep_min, self.ep_max = ep_range
+        self.eq_min, self.eq_max = eq_range
         self.ep_data = np.ascontiguousarray(np.asarray(ep_data, dtype=np.float64))
         self.eq_data = np.ascontiguousarray(np.asarray(eq_data, dtype=np.float64))
         self.norm_epsrel = norm_epsrel
@@ -211,9 +215,11 @@ class Ppq_compiled:
             table = normgrid.NormInterpolator.from_hdf5(table)
         if table.band != band:
             raise ValueError(f"table is for the {table.band} band, expected {band}")
-        region = (self.ep_min, self.ep_max, self.eq_min, self.eq_max)
-        if not np.allclose(table.region, region, rtol=0, atol=1e-12):
-            raise ValueError(f"table was built for region {table.region}, not {region}")
+        ep_range, eq_range = (self.ep_min, self.ep_max), (self.eq_min, self.eq_max)
+        if (not np.allclose(table.ep_range, ep_range, rtol=0, atol=1e-12)
+                or not np.allclose(table.eq_range, eq_range, rtol=0, atol=1e-12)):
+            raise ValueError(f"table was built for ep_range={table.ep_range}, eq_range={table.eq_range}, "
+                             f"not ep_range={ep_range}, eq_range={eq_range}")
         return table
 
     def _quadrature_tolerances(self):

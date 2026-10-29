@@ -16,8 +16,8 @@ import phonon_charge_pdf as pdf
 
 events = pdf.generate_events(
     target_size=1000, ER_frac=0.6, seed=1,
-    ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
-    k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
+    ep_range=(2.5, 350.0), eq_range=(0.75, 200.0),
+    k=0.18, Z=32.0, F0_NR=0.122, F0_ER=0.2, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
     mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
     mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,

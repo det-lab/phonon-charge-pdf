@@ -84,7 +84,8 @@ degs = (2, 3, 1, 2, 1, 1, 2)                       # nodes per axis = degree + 1
 nodes = {a: ng.chebyshev_lobatto(*ng.DEFAULT_BOX[a], d + 1) for a, d in zip(ng.AXES, degs)}
 grid = np.array([poly(dict(zip(ng.AXES, pt)), degs)
                  for pt in itertools.product(*[nodes[a] for a in ng.AXES])]).reshape([d + 1 for d in degs])
-table = ng.NormInterpolator(ng.AXES, nodes, grid, band="NR", region=ng.DEFAULT_REGION, fixed=ng.DEFAULT_FIXED)
+table = ng.NormInterpolator(ng.AXES, nodes, grid, band="NR", ep_range=ng.DEFAULT_EP_RANGE,
+                            eq_range=ng.DEFAULT_EQ_RANGE, fixed=ng.DEFAULT_FIXED)
 rng = np.random.default_rng(0)
 worst = 0.0
 for _ in range(50):
@@ -110,16 +111,16 @@ check("matching Z/eps accepted", np.isfinite(table(**mid, Z=32.0, eps=3.0e-3)))
 
 # ---- Ppq_compiled uses a table when given one ----
 from Ppq_fort import Ppq_compiled
-reg = ng.DEFAULT_REGION
+ep_rng, eq_rng = ng.DEFAULT_EP_RANGE, ng.DEFAULT_EQ_RANGE
 ep_d, eq_d = np.array([50.0, 60.0]), np.array([20.0, 25.0])
-fit = Ppq_compiled(*reg, ep_d, eq_d, Ppq_table_NR=table)
+fit = Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=table)
 mid_full = dict(mid, Z=32.0, eps=3.0e-3)
 check("Ppq_compiled.Ppq_integral_NR interpolates the table", fit.Ppq_integral_NR(**mid_full) == table(**mid, Z=32.0, eps=3.0e-3))
 check("Ppq_compiled without table or tolerances refuses to guess",
-      raises(ValueError, lambda: Ppq_compiled(*reg, ep_d, eq_d).Ppq_integral_NR(**mid_full)))
+      raises(ValueError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d).Ppq_integral_NR(**mid_full)))
 check("Ppq_compiled rejects a table built for a different region",
-      raises(ValueError, lambda: Ppq_compiled(2.0, 100.0, 4.0, 100.0, ep_d, eq_d, Ppq_table_NR=table)))
-check("Ppq_compiled rejects a table for the wrong band", raises(ValueError, lambda: Ppq_compiled(*reg, ep_d, eq_d, Ppq_table_ER=table)))
+      raises(ValueError, lambda: Ppq_compiled((2.0, 100.0), (4.0, 100.0), ep_d, eq_d, Ppq_table_NR=table)))
+check("Ppq_compiled rejects a table for the wrong band", raises(ValueError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_ER=table)))
 
 # ---- worker: crash tolerance, resume, retry (fake evaluator) ----
 os.environ["NORMGRID_FAKE"] = "1"
@@ -156,7 +157,8 @@ with tempfile.TemporaryDirectory() as d:
         v_direct = ng.read_results(out)[37][0]
         check("HDF5 table reproduces a stored grid point",
               abs(t(**{k: v for k, v in p.items() if k not in ("eps",)}, eps=p["eps"]) - v_direct) < 1e-12 * abs(v_direct))
-        check("HDF5 table knows its band/region/fixed", t.band == "ER" and t.region == tuple(ng.DEFAULT_REGION))
+        check("HDF5 table knows its band/ep_range/eq_range/fixed",
+              t.band == "ER" and t.ep_range == tuple(ng.DEFAULT_EP_RANGE) and t.eq_range == tuple(ng.DEFAULT_EQ_RANGE))
 
 # ---- per-band default boxes ------------------------------------------------
 er_grid = ng.make_grid_spec("ER", ng.RECOMMENDED_NODES["ER"])

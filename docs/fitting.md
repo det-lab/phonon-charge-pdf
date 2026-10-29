@@ -21,8 +21,8 @@ import phonon_charge_pdf as pdf
 # 1. Define your region: your analysis ROI in keV -- the same (Ep, Eq) window
 # your data is already cut to. 2.5-350 / 0.75-200 is this project's region;
 # use YOUR actual cut, not this one, unless it happens to match.
-ep_min, ep_max = 2.5, 350.0
-eq_min, eq_max = 0.75, 200.0
+ep_range = (2.5, 350.0)
+eq_range = (0.75, 200.0)
 
 # 2. Build fit_pdf: the probability distribution bound to your region and data,
 # from a precomputed table (see "Computing new normalization tables") -- an
@@ -34,7 +34,7 @@ BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
           "q0": (0.0475, 0.4), "q10": (0.2, 0.4),
           "k": (0.13, 0.22), "F0_NR": (1e-5, 1.0)}
 
-fit_pdf = pdf.Ppq_compiled(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
+fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
                       Ppq_table_NR="NR_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # fails now, not partway into the fit
 

@@ -70,7 +70,7 @@ except Exception as e:
     check("Ppq_inspect_NR runs with no Fortran library", False, repr(e))
 
 try:
-    bd.Ppq_compiled(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
+    bd.Ppq_compiled((0, 1), (0, 1), [], [], norm_epsrel=0.1, norm_epsabs=0.1)
     check("Ppq_compiled() raises at construction without the Fortran library", False,
           "construction succeeded -- it should have failed fast instead")
 except RuntimeError as e:

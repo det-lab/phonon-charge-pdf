@@ -8,10 +8,10 @@
 #
 # Usage (from the repository root, after `mkdir -p logs results`):
 #
-#   python python/cli/normgrid.py make-spec --band NR --region 2 200 4 100 \
+#   python python/cli/normgrid.py make-spec --band NR --ep-range 2 200 --eq-range 4 100 \
 #          --epsrel 1e-7 --out spec_NR.json          # nodes: RECOMMENDED_NODES
 #   python python/cli/normgrid.py make-random-spec --band NR --n 200 \
-#          --region 2 200 4 100 --epsrel 1e-7 --out held_NR.json
+#          --ep-range 2 200 --eq-range 4 100 --epsrel 1e-7 --out held_NR.json
 #   N=$(python python/cli/normgrid.py chunks spec_NR.json --size 500 | wc -l)
 #   sbatch --array=0-$((N-1))%200 slurm/normgrid.sbatch spec_NR.json 500 results
 #   # same for the held-out validation points (used by `validate` below):

@@ -38,12 +38,12 @@ def raises(exc, fn):
     return False
 
 
-REGION, EPSREL = (2.5, 350.0, 0.75, 200.0), 1e-7
+EP_RANGE, EQ_RANGE, EPSREL = (2.5, 350.0), (0.75, 200.0), 1e-7
 NODES = ng.chebyshev_lobatto(-1.0, 1.0, npl.STUDY_NODES)
 
 # ---- study spec layout ----
-nr = npl.make_study_spec("NR", REGION, EPSREL)
-er = npl.make_study_spec("ER", REGION, EPSREL)
+nr = npl.make_study_spec("NR", EP_RANGE, EQ_RANGE, EPSREL)
+er = npl.make_study_spec("ER", EP_RANGE, EQ_RANGE, EPSREL)
 check("NR study: 7 axes x 3 baselines x 33 nodes", ng.n_points(nr) == 7 * 3 * 33)
 check("ER study has no k axis: 6 x 3 x 33", ng.n_points(er) == 6 * 3 * 33 and "k" not in ng.axes_of(er))
 i, b = 4, 1                                            # axis "dp", second baseline
@@ -57,8 +57,10 @@ check("baseline 0 is the box centre (here on the k axis block, a non-varying axi
       abs(ng.coords_at(nr, 16)["p0"] - 0.5 * sum(nr["box"]["p0"])) < 1e-12)
 with tempfile.TemporaryDirectory() as d:
     ng.save_spec(nr, os.path.join(d, "s.json"))
+    reloaded = ng.load_spec(os.path.join(d, "s.json"))
     check("study spec round-trips through JSON",
-          ng.load_spec(os.path.join(d, "s.json"))["region"] == list(REGION) and ng.n_points(ng.load_spec(os.path.join(d, "s.json"))) == ng.n_points(nr))
+          reloaded["ep_range"] == list(EP_RANGE) and reloaded["eq_range"] == list(EQ_RANGE)
+          and ng.n_points(reloaded) == ng.n_points(nr))
 
 # ---- the criterion on functions with known degree / smoothness ----
 poly5 = np.polynomial.chebyshev.chebval(NODES, [0.3, 1.0, -0.4, 0.2, 0.1, 0.05])
@@ -82,8 +84,9 @@ with tempfile.TemporaryDirectory() as d:
     check("smooth stand-in: untouched axes get min_nodes", all(n[a] == 3 for a in others), str(n))
     check("V (exp 3u) needs more, q0 (exp 6u) more still", 3 < n["V"] < n["q0"] <= 29, str(n))
     check("report total equals the grid spec's size", rep["points"] == ng.n_points(spec) == int(np.prod(list(n.values()))))
-    check("grid spec keeps region, box and epsrel",
-          spec["region"] == list(REGION) and spec["box"] == nr["box"] and spec["epsrel"] == EPSREL and spec["kind"] == "grid")
+    check("grid spec keeps ep_range/eq_range, box and epsrel",
+          spec["ep_range"] == list(EP_RANGE) and spec["eq_range"] == list(EQ_RANGE)
+          and spec["box"] == nr["box"] and spec["epsrel"] == EPSREL and spec["kind"] == "grid")
 
     # the chosen n really does deliver tol along that axis (the meaning of the criterion)
     from numpy.polynomial import chebyshev as cheb

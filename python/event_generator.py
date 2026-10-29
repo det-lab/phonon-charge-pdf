@@ -15,8 +15,8 @@ Quickstart
     from event_generator import generate_events
     events = generate_events(
         target_size=20_000, ER_frac=0.6, seed=8,
-        ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
-        k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
+        ep_range=(2.5, 350.0), eq_range=(0.75, 200.0),
+        k=0.18, Z=32.0, F0_NR=0.122, F0_ER=0.2, eps=3.0e-3, V=3.0,
         p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
         mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
         mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
@@ -209,7 +209,7 @@ _DEFAULT_PASS_RATE = {"ER": 0.08, "NR": 0.20}
 
 
 def _species_in_roi(n_target, species, seed_sequence, *,
-                     ep_min, ep_max, eq_min, eq_max, max_retries,
+                     ep_range, eq_range, max_retries,
                      sampler, sampler_kwargs):
     """
     Generate exactly n_target ROI-passing (Ep, Eq, Er, N) events of one
@@ -225,6 +225,8 @@ def _species_in_roi(n_target, species, seed_sequence, *,
         return empty, empty, empty, empty
 
     child_seeds = iter(seed_sequence.spawn(max_retries))
+    ep_min, ep_max = ep_range
+    eq_min, eq_max = eq_range
 
     ep_parts, eq_parts, er_parts, n_parts = [], [], [], []
     n_have = 0
@@ -261,15 +263,15 @@ def _species_in_roi(n_target, species, seed_sequence, *,
 
 
 def generate_events(target_size, ER_frac, seed, *,
-                     ep_min, ep_max, eq_min, eq_max,
-                     k, Z, F0_ER, F0_NR, eps, V, p0, p10, q0, q10,
+                     ep_range, eq_range,
+                     k, Z, F0_NR, F0_ER, eps, V, p0, p10, q0, q10,
                      mix_frac_NR, scale_fast_NR, scale_slow_NR,
                      mix_frac_ER, scale_fast_ER, scale_slow_ER,
                      max_retries=40):
     """
     Generate target_size (Ep, Eq) events, ER_frac of them (in expectation)
-    electron recoils and the rest nuclear recoils, cropped to [ep_min,
-    ep_max] x [eq_min, eq_max].
+    electron recoils and the rest nuclear recoils, cropped to ep_range x
+    eq_range.
 
     ER_frac=1.0 / 0.0 generate pure ER / pure NR samples.
 
@@ -289,14 +291,14 @@ def generate_events(target_size, ER_frac, seed, *,
         Seed for the whole call. Reproducible: the same seed always
         produces the same events, independent of what other seeds are
         used elsewhere in the same run.
-    ep_min, ep_max, eq_min, eq_max : float
+    ep_range, eq_range : (float, float)
         ROI bounds, keV -- required, no default: this must be your real
         analysis region, not an arbitrary wide range.
     k, Z : float
         Lindhard ionization yield calibration constant and target atomic
         number (nuclear recoils only; unused but still required when
         ER_frac=1.0, for the same reason Ppq_compiled always requires them).
-    F0_ER, F0_NR : float
+    F0_NR, F0_ER : float
         Fano factor (constant), one per species -- ER and NR generally
         have different Fano factors even at the same operating point.
     eps, V, p0, p10, q0, q10 : float
@@ -326,7 +328,7 @@ def generate_events(target_size, ER_frac, seed, *,
     n_ER = int(np.random.default_rng(split_seed).binomial(target_size, ER_frac))
     n_NR = target_size - n_ER
 
-    roi = dict(ep_min=ep_min, ep_max=ep_max, eq_min=eq_min, eq_max=eq_max)
+    roi = dict(ep_range=ep_range, eq_range=eq_range)
 
     Ep_er, Eq_er, _, N_er = _species_in_roi(
         n_ER, "ER", er_seed, max_retries=max_retries, **roi,
@@ -355,6 +357,6 @@ def generate_events(target_size, ER_frac, seed, *,
     print(f"Generated {n_ok}/{target_size} events "
           f"(ER {int(df['is_ER'].sum())}, NR {n_ok - int(df['is_ER'].sum())}; "
           f"target ER count was {n_ER} of {target_size} via Binomial(ER_frac={ER_frac})); "
-          f"EP:[{ep_min},{ep_max}], EQ:[{eq_min},{eq_max}] keV")
+          f"EP:[{ep_range[0]},{ep_range[1]}], EQ:[{eq_range[0]},{eq_range[1]}] keV")
 
     return df
