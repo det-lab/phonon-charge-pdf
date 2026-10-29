@@ -60,12 +60,12 @@ def quad_reference(band, ep_min, ep_max, eq_min, eq_max, params):
     brute-force Simpson grid_ref."""
     if band == "NR":
         pdf_func = make_Ppq_densities_NR(**params, n_workers=os.cpu_count())
-        ridge = make_ridge_breakpoints("NR", **{k: params[k] for k in
+        ridge = make_ridge_breakpoints(False, **{k: params[k] for k in
                                                  ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
                                         er_max=700.0, n_window_widths=10.0)
     else:
         pdf_func = make_Ppq_densities_ER(**params, n_workers=os.cpu_count())
-        ridge = make_ridge_breakpoints("ER", k=None, Z=None,
+        ridge = make_ridge_breakpoints(True, k=None, Z=None,
                                         **{k: params[k] for k in
                                            ("eps", "V", "p0", "p10", "q0", "q10")},
                                         er_max=700.0, n_window_widths=10.0)

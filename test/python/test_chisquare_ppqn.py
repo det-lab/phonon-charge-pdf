@@ -89,7 +89,7 @@ def sigq(eq):
     return ppq.sigq(eq, q0=PARAMS["q0"], q10=PARAMS["q10"])
 
 ridge_breakpoints = make_ridge_breakpoints(
-    "NR", k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"], V=PARAMS["V"],
+    False, k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"], q0=PARAMS["q0"], q10=PARAMS["q10"],
     er_max=700.0, n_window_widths=10.0)
 

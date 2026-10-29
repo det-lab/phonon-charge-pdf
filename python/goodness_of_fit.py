@@ -68,7 +68,7 @@ __all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin", "make_
 # Band-specific breakpoints
 # ---------------------------------------------------------------------------
 
-def make_ridge_breakpoints(band, *, k, Z, eps, V,
+def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
                            p0, p10,
                            q0, q10,
                            er_max, n_window_widths):
@@ -148,9 +148,10 @@ def make_ridge_breakpoints(band, *, k, Z, eps, V,
 
     Parameters
     ----------
-    band : "NR" or "ER"
-        Nuclear recoils use the Lindhard yield model Y(Er, k, Z); electron
-        recoils use Y = 1 (the k and Z arguments are then ignored).
+    is_ER : bool
+        False (nuclear recoils) uses the Lindhard yield model Y(Er, k, Z);
+        True (electron recoils) uses Y = 1 (the k and Z arguments are then
+        ignored).
     k, Z, eps, V, p0, p10, q0, q10 : float
         Detector parameters, matching the PDF being integrated.
     er_max : float
@@ -167,12 +168,10 @@ def make_ridge_breakpoints(band, *, k, Z, eps, V,
         breakpoints for the inner quadrature at phonon energy ep. The
         harness drops any that fall outside the bin's (ymin, ymax).
     """
-    if band == "NR":
-        y_tab_func = lambda er_tab: ppq.Y(er_tab, k=k, Z=Z)
-    elif band == "ER":
+    if is_ER:
         y_tab_func = lambda er_tab: np.ones_like(er_tab)
     else:
-        raise ValueError(f"band must be 'NR' or 'ER', got {band!r}")
+        y_tab_func = lambda er_tab: ppq.Y(er_tab, k=k, Z=Z)
 
     # Tabulate the noiseless band centroid Er -> (Ep, Eq) and invert by
     # interpolation (both coordinates are monotone in Er).

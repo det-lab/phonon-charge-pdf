@@ -75,12 +75,12 @@ def Nbar(Er,
          *,
          k, Z,
          eps,
-         is_gamma):
+         is_ER):
     """Mean number of e/h pairs produced by a recoil of energy Er (keV).
-    is_gamma=True selects the electron-recoil yield (Y=1) instead of the
+    is_ER=True selects the electron-recoil yield (Y=1) instead of the
     Lindhard NR yield Y(Er, k=k, Z=Z); k, Z are unused (pass any value)
-    when is_gamma=True."""
-    yield_val = 1.0 if is_gamma else Y(Er, k=k, Z=Z)
+    when is_ER=True."""
+    yield_val = 1.0 if is_ER else Y(Er, k=k, Z=Z)
     return yield_val*Er/eps
 
 
@@ -154,12 +154,12 @@ def bN(Er, Ep, Eq,
        V,
        p0, p10,
        q0, q10,
-       is_gamma):
-    """Quadratic coefficient of N_exponent's Gaussian-in-N exponent. is_gamma
+       is_ER):
+    """Quadratic coefficient of N_exponent's Gaussian-in-N exponent. is_ER
     selects the electron-recoil yield (Y=1) instead of the Lindhard NR
     yield Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when
-    is_gamma=True."""
-    Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_gamma=is_gamma)
+    is_ER=True."""
+    Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_ER=is_ER)
     t1 = 1/(2*Nbar_val*F0)
     t2 = eps**2/(2*sigq(Eq,q0=q0,q10=q10)**2)
     t3 = V**2/(2*(sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)*1e3)**2)
@@ -174,11 +174,11 @@ def cN(Er, Ep, Eq,
        V,
        p0, p10,
        q0, q10,
-       is_gamma):
-    """Constant term of N_exponent's Gaussian-in-N exponent. is_gamma selects
+       is_ER):
+    """Constant term of N_exponent's Gaussian-in-N exponent. is_ER selects
     the electron-recoil yield (Y=1) instead of the Lindhard NR yield
-    Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_gamma=True."""
-    Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_gamma=is_gamma)
+    Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
+    Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_ER=is_ER)
     t1 = -(Ep-Er)**2/(2*sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2)
     t2 = -Eq**2/(2*sigq(Eq,q0=q0,q10=q10)**2)
     t3 = -Nbar_val/(2*F0)
@@ -193,15 +193,15 @@ def N_exponent(Er, Ep, Eq,
            V,
            p0, p10,
            q0, q10,
-           is_gamma):
+           is_ER):
     """The exponent of the Gaussian-in-N integral that pq_given_Er_NR/pq_given_Er_ER
     evaluate -- completing the square of cN + aN*N + bN*N**2 in N gives
-    cN + aN**2/(4*bN), which is what this returns. is_gamma selects the
+    cN + aN**2/(4*bN), which is what this returns. is_ER selects the
     electron-recoil yield (Y=1) instead of the Lindhard NR yield
-    Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_gamma=True."""
-    cN_val = cN(Er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=is_gamma)
+    Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
+    cN_val = cN(Er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=is_ER)
     aN_val = aN(Er,Ep,Eq,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10)
-    bN_val = bN(Er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=is_gamma)
+    bN_val = bN(Er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=is_ER)
     exponent = cN_val + (aN_val**2 / (4*bN_val))
     return exponent
 
@@ -218,7 +218,7 @@ def pq_given_Er_NR(Er, Ep, Eq,
     PEr_NR(Er) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak)."""
     F_val    = F0
-    Nbar_val = Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
+    Nbar_val = Nbar(Er, k=k, Z=Z, eps=eps, is_ER=False)
     if Nbar_val <= 0.0 or F_val <= 0.0:
         return 0.0
     sigma_N    = np.sqrt(Nbar_val * F_val)
@@ -293,14 +293,14 @@ def Ppq_inspect_NR(Ep, Eq,
         raise ValueError("Fano factor F(Er) = F0 is zero for all Er")
 
     # find Er_max
-    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
+    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
 
     maxx = max(Ep, Eq) + 5
     er_arr = np.arange(5e-21, maxx, er_step)
     f_arr = np.zeros(len(er_arr), dtype=np.float64)
     for idx, er in enumerate(er_arr):
         try:
-            f_arr[idx] = -1*N_exponent(er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=False)
+            f_arr[idx] = -1*N_exponent(er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
         except Exception:
             # N_exponent can over/underflow at extreme Er; leaving this
             # sample at its default 0 and continuing the scan is correct
@@ -334,7 +334,7 @@ def pq_given_Er_ER(Er, Ep, Eq,
     +/-5-sigma window around the Gaussian-in-N peak), with the electron-
     recoil yield Y=1 (see pq_given_Er_NR for the analogous NR calculation)."""
     F_val    = F0
-    Nbar_val = Nbar(Er, k=0.0, Z=1.0, eps=eps, is_gamma=True)   # k, Z unused: Y=1 for electron recoils
+    Nbar_val = Nbar(Er, k=0.0, Z=1.0, eps=eps, is_ER=True)   # k, Z unused: Y=1 for electron recoils
     if Nbar_val <= 0.0 or F_val <= 0.0:
         return 0.0
     sigma_N    = np.sqrt(Nbar_val * F_val)
@@ -596,8 +596,8 @@ def Ppq_inspect_ER(Ep, Eq,
 
     g = lambda er, ep, eq: pq_given_Er_ER(er, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    # k, Z are unused placeholders here: is_gamma=True forces Y=1 in N_exponent
-    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_gamma=True)
+    # k, Z are unused placeholders here: is_ER=True forces Y=1 in N_exponent
+    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=True)
 
     # WARNING: this will only work if your peaks have a width greater
     # than 0.1 keV, which seems to be true for all reasonable CDMS

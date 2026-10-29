@@ -79,11 +79,11 @@ submodule(Ppq_fort_m) Ppq_fort_s
 
 contains
 
-  ! Zfac is 0 (and unused downstream) when is_gamma is .true.: Ppq_ER passes
+  ! Zfac is 0 (and unused downstream) when is_ER is .true.: Ppq_ER passes
   ! a placeholder Z that may be 0, and Z**(-7/3) would be invalid there.
-  pure function make_params(k, Z, F0, eps, V, p0, p10, q0, q10, is_gamma) result(pars)
+  pure function make_params(k, Z, F0, eps, V, p0, p10, q0, q10, is_ER) result(pars)
       real(c_double), intent(in) :: k, Z, F0, eps, V, p0, p10, q0, q10
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       type(detector_params_t) :: pars
 
       pars%k   = k
@@ -94,7 +94,7 @@ contains
       pars%p10 = p10
       pars%q0  = q0
       pars%q10 = q10
-      if (is_gamma) then
+      if (is_ER) then
           pars%Zfac = 0.0d0
       else
           pars%Zfac = Z**(-7.0d0/3.0d0)
@@ -142,7 +142,7 @@ contains
 
       if (F0 == 0.0d0) &
           error stop "Fano factor F(Er) = F0 is zero for all Er"
-      ! k, Z are unused when is_gamma is .true. (electron-recoil yield is
+      ! k, Z are unused when is_ER is .true. (electron-recoil yield is
       ! always 1); the placeholders below are never read.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
       res = integrate_Ppq(Ep, Eq, pars, .true.)
@@ -256,7 +256,7 @@ contains
   module procedure Ppq_region_ER
       type(detector_params_t) :: pars
 
-      ! k, Z are unused when is_gamma is .true.; placeholders as elsewhere.
+      ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
       res = region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                                pars, .true.)
@@ -267,13 +267,13 @@ contains
   ! ---------------------------------------------------------------------
 
   ! P(Ep,Eq|Er): the 21-point Simpson N integral, without the recoil
-  ! spectrum factor.  is_gamma selects the electron-recoil yield (Y=1)
+  ! spectrum factor.  is_ER selects the electron-recoil yield (Y=1)
   ! instead of the Lindhard NR yield; pars%Zfac is Z**(-7/3), precomputed
-  ! once per Ppq_NR/Ppq_ER call (unused when is_gamma is .true.).
-  pure function PpqCondN(Er, Ep, Eq, pars, is_gamma) result(res)
+  ! once per Ppq_NR/Ppq_ER call (unused when is_ER is .true.).
+  pure function PpqCondN(Er, Ep, Eq, pars, is_ER) result(res)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: res
       real(c_double) :: F_val, Nbar_val, sigma_N, norm_const
       real(c_double) :: sp0, sp1, sq0, sq1
@@ -285,7 +285,7 @@ contains
       integer :: j
 
       F_val = pars%F0
-      if (is_gamma) then
+      if (is_ER) then
           Nbar_val = abs(Er) / pars%eps
       else
           Nbar_val = lindhard_yield_zfac(Er, pars%k, pars%Zfac) * Er / pars%eps
@@ -346,16 +346,16 @@ contains
   end function PpqCondN
 
   ! The full integrand P(Ep,Eq|Er)*P(Er) with the spectrum and yield
-  ! selected by is_gamma (electron recoils: Y=1, PEr_ER; nuclear recoils:
+  ! selected by is_ER (electron recoils: Y=1, PEr_ER; nuclear recoils:
   ! Lindhard(k,Zfac), PEr_NR).
-  pure function Ppq_integrand(Er, Ep, Eq, pars, is_gamma) result(res)
+  pure function Ppq_integrand(Er, Ep, Eq, pars, is_ER) result(res)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: res
 
-      res = PpqCondN(Er, Ep, Eq, pars, is_gamma)
-      if (is_gamma) then
+      res = PpqCondN(Er, Ep, Eq, pars, is_ER)
+      if (is_ER) then
           res = res * PEr_ER(Er)
       else
           res = res * PEr_NR(Er)
@@ -373,23 +373,23 @@ contains
   ! Branch-free on purpose: the validity guards are computed with
   ! clamped-safe values and applied with merge (a blend, not a branch)
   ! so the mode scan's array evaluation vectorizes cleanly.
-  elemental function log_N_exponent(Er, Ep, Eq, pars, sp2, sq2, is_gamma) result(H)
+  elemental function log_N_exponent(Er, Ep, Eq, pars, sp2, sq2, is_ER) result(H)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
       real(c_double), intent(in) :: sp2, sq2
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: H
       real(c_double) :: Er_s, F_s, Nbar_s, aN, bN, cN
       logical :: valid
 
       Er_s = max(Er, 1.0d-30)
       F_s  = max(pars%F0, 1.0d-30)
-      if (is_gamma) then
+      if (is_ER) then
           Nbar_s = max(Er_s / pars%eps, 1.0d-30)
       else
           Nbar_s = max(lindhard_yield_zfac(Er_s, pars%k, pars%Zfac) * Er_s / pars%eps, 1.0d-30)
       end if
-      valid = Er > 0.0d0 .and. pars%F0 > 0.0d0 .and. (is_gamma .or. pars%k > 0.0d0)
+      valid = Er > 0.0d0 .and. pars%F0 > 0.0d0 .and. (is_ER .or. pars%k > 0.0d0)
 
       aN = (pars%V * 1.0d-3) * (Ep - Er_s) / sp2 + pars%eps * Eq / sq2 + 1.0d0 / F_s
       bN = 1.0d0 / (2.0d0 * Nbar_s * F_s) + pars%eps**2 / (2.0d0 * sq2) &
@@ -401,15 +401,15 @@ contains
 
   ! Scalar convenience for the Newton refinement: N exponent plus the
   ! log recoil spectrum.
-  pure function log_integrand_approx(Er, Ep, Eq, pars, sp2, sq2, is_gamma) result(H)
+  pure function log_integrand_approx(Er, Ep, Eq, pars, sp2, sq2, is_ER) result(H)
       real(c_double), intent(in) :: Er, Ep, Eq
       type(detector_params_t), intent(in) :: pars
       real(c_double), intent(in) :: sp2, sq2
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: H
 
-      H = log_N_exponent(Er, Ep, Eq, pars, sp2, sq2, is_gamma)
-      if (is_gamma) then
+      H = log_N_exponent(Er, Ep, Eq, pars, sp2, sq2, is_ER)
+      if (is_ER) then
           H = H + log(PErG_impl(Er))
       else
           H = H + log(PErN_impl(Er))
@@ -430,12 +430,12 @@ contains
   !
   ! n_modes = 0 signals failure; the caller falls back to the original
   ! full-range grid.
-  pure subroutine locate_modes(Ep, Eq, pars, sp2, sq2, is_gamma, &
+  pure subroutine locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, &
                                er_m, sig_m, H_m, bnd_m, n_modes)
       real(c_double), intent(in) :: Ep, Eq
       type(detector_params_t), intent(in) :: pars
       real(c_double), intent(in) :: sp2, sq2
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double), intent(out) :: er_m(max_modes), sig_m(max_modes), H_m(max_modes)
       logical, intent(out) :: bnd_m(max_modes)
       integer, intent(out) :: n_modes
@@ -472,8 +472,8 @@ contains
       ! Branch-free N exponent over the whole grid, then the log
       ! spectrum as a second array pass with the band choice hoisted out
       ! of the loop: everything the scan does is vectorizable.
-      Hs = log_N_exponent(xs, Ep, Eq, pars, sp2, sq2, is_gamma)
-      if (is_gamma) then
+      Hs = log_N_exponent(xs, Ep, Eq, pars, sp2, sq2, is_ER)
+      if (is_ER) then
           Hs = Hs + log(PErG_impl(xs))
       else
           Hs = Hs + log(PErN_impl(xs))
@@ -512,7 +512,7 @@ contains
               ! Boundary mode: integrand decays away from the low-Er edge
               x = xs(1)
               d = 1.0d-5
-              H1 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_gamma) &
+              H1 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_ER) &
                   - Hs(1)) / d
               if (H1 >= 0.0d0) cycle
               n_modes = n_modes + 1
@@ -529,13 +529,13 @@ contains
               ! Accept the scan point with finite-difference curvature if usable
               x = xs(ik)
               d = max(1.0d-5, 1.0d-5 * x)
-              H2 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_gamma) &
+              H2 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_ER) &
                   - 2.0d0 * Hs(ik) &
-                  + log_integrand_approx(x - d, Ep, Eq, pars, sp2, sq2, is_gamma)) / d**2
+                  + log_integrand_approx(x - d, Ep, Eq, pars, sp2, sq2, is_ER)) / d**2
               if (H2 >= 0.0d0) cycle
           end if
           sig = 1.0d0 / sqrt(-H2)
-          Hv  = log_integrand_approx(x, Ep, Eq, pars, sp2, sq2, is_gamma)
+          Hv  = log_integrand_approx(x, Ep, Eq, pars, sp2, sq2, is_ER)
           if (sig /= sig .or. sig <= 1.0d-6 .or. sig > maxx_scan) cycle
 
           ! Drop refinements that landed on an already-recorded mode
@@ -583,9 +583,9 @@ contains
           H2_out = 0.0d0
           do it = 1, 60
               dd = max(1.0d-4, 1.0d-4 * xx)
-              Hm = log_integrand_approx(xx - dd, Ep, Eq, pars, sp2, sq2, is_gamma)
-              H0 = log_integrand_approx(xx,      Ep, Eq, pars, sp2, sq2, is_gamma)
-              Hp = log_integrand_approx(xx + dd, Ep, Eq, pars, sp2, sq2, is_gamma)
+              Hm = log_integrand_approx(xx - dd, Ep, Eq, pars, sp2, sq2, is_ER)
+              H0 = log_integrand_approx(xx,      Ep, Eq, pars, sp2, sq2, is_ER)
+              Hp = log_integrand_approx(xx + dd, Ep, Eq, pars, sp2, sq2, is_ER)
               H1_out = (Hp - Hm) / (2.0d0 * dd)
               H2_out = (Hp - 2.0d0 * H0 + Hm) / dd**2
               if (H2_out >= 0.0d0) return
@@ -608,20 +608,20 @@ contains
 
   ! Trapezoid rule over [lo, lo + (npts-1)*h].  For a smooth integrand
   ! vanishing at both edges this is spectrally accurate on a uniform grid.
-  pure function integrate_window(lo, h, npts, Ep, Eq, pars, is_gamma) result(total)
+  pure function integrate_window(lo, h, npts, Ep, Eq, pars, is_ER) result(total)
       real(c_double), intent(in) :: lo, h, Ep, Eq
       type(detector_params_t), intent(in) :: pars
       integer, intent(in) :: npts
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: total
       integer :: i
       real(c_double) :: f_i, w_i
 
       total = 0.0d0
       do concurrent(i = 1:npts) default(none) reduce(+: total) &
-          shared(lo, h, npts, Ep, Eq, pars, is_gamma) &
+          shared(lo, h, npts, Ep, Eq, pars, is_ER) &
           local(f_i, w_i)
-          f_i = Ppq_integrand(lo + (i - 1) * h, Ep, Eq, pars, is_gamma)
+          f_i = Ppq_integrand(lo + (i - 1) * h, Ep, Eq, pars, is_ER)
           w_i = merge(0.5d0, 1.0d0, i == 1 .or. i == npts)
           total = total + w_i * f_i
       end do
@@ -632,15 +632,15 @@ contains
   ! of the window that overlaps the sharp low-Er component of the gamma
   ! spectrum (decay length PGb).  The two pieces share their split point,
   ! whose two trapezoid half-weights sum to the exact union.
-  pure function integrate_piecewise(lo, hi, h_target, Ep, Eq, pars, is_gamma) result(total)
+  pure function integrate_piecewise(lo, hi, h_target, Ep, Eq, pars, is_ER) result(total)
       real(c_double), intent(in) :: lo, hi, h_target, Ep, Eq
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: total
       real(c_double), parameter :: spike_edge = 5.0d0 * PGb_scale
       real(c_double) :: h_fine
 
-      if (is_gamma .and. lo < spike_edge) then
+      if (is_ER .and. lo < spike_edge) then
           h_fine = min(h_target, PGb_scale / 6.0d0)
           if (hi > spike_edge) then
               total = one_piece(lo, spike_edge, h_fine) + one_piece(spike_edge, hi, h_target)
@@ -661,7 +661,7 @@ contains
 
           npts  = min(max(int((p_hi - p_lo) / p_ht) + 2, 25), max_pts)
           h     = (p_hi - p_lo) / (npts - 1)
-          piece = integrate_window(p_lo, h, npts, Ep, Eq, pars, is_gamma)
+          piece = integrate_window(p_lo, h, npts, Ep, Eq, pars, is_ER)
       end function one_piece
 
   end function integrate_piecewise
@@ -669,10 +669,10 @@ contains
   ! Shared driver for Ppq_NR / Ppq_ER: locate every integrand mode, place an
   ! integration window around each, merge overlapping windows, and guard
   ! the window edges.
-  pure function integrate_Ppq(Ep, Eq, pars, is_gamma) result(res)
+  pure function integrate_Ppq(Ep, Eq, pars, is_ER) result(res)
       real(c_double), intent(in) :: Ep, Eq
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: res
       real(c_double) :: sp2, sq2, maxx_scan, resolution
       real(c_double) :: er_m(max_modes), sig_m(max_modes), H_m(max_modes)
@@ -685,7 +685,7 @@ contains
       sp2 = sigp(Ep, pars%eps, pars%V, pars%p0, pars%p10)**2
       sq2 = sigq(Eq, pars%q0, pars%q10)**2
 
-      call locate_modes(Ep, Eq, pars, sp2, sq2, is_gamma, &
+      call locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, &
                         er_m, sig_m, H_m, bnd_m, n_modes)
 
       if (n_modes == 0) then
@@ -694,7 +694,7 @@ contains
           maxx_scan  = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
           resolution = merge(0.002d0, 0.01d0, maxx_scan < 15.0d0)
           npts = int((maxx_scan - er_min) / resolution) + 1
-          res  = integrate_window(er_min, resolution, npts, Ep, Eq, pars, is_gamma)
+          res  = integrate_window(er_min, resolution, npts, Ep, Eq, pars, is_ER)
           return
       end if
 
@@ -750,7 +750,7 @@ contains
       ! Edge-guard threshold: the tallest mode sets the scale
       f_star = 0.0d0
       do m = 1, n_modes
-          f_star = max(f_star, Ppq_integrand(er_m(m), Ep, Eq, pars, is_gamma))
+          f_star = max(f_star, Ppq_integrand(er_m(m), Ep, Eq, pars, is_ER))
       end do
 
       res = 0.0d0
@@ -765,11 +765,11 @@ contains
           w_lo(m) = max(w_lo(m), lo_limit)
 
           do guard = 1, 4
-              tmp = integrate_piecewise(w_lo(m), w_hi(m), w_ht(m), Ep, Eq, pars, is_gamma)
+              tmp = integrate_piecewise(w_lo(m), w_hi(m), w_ht(m), Ep, Eq, pars, is_ER)
               ! Edge guard: expand if the integrand has not died off at the
               ! window edges (protects against an underestimated sigma)
-              f_lo = Ppq_integrand(w_lo(m), Ep, Eq, pars, is_gamma)
-              f_hi = Ppq_integrand(w_hi(m), Ep, Eq, pars, is_gamma)
+              f_lo = Ppq_integrand(w_lo(m), Ep, Eq, pars, is_ER)
+              f_hi = Ppq_integrand(w_hi(m), Ep, Eq, pars, is_ER)
               need_lo = f_lo > 1.0d-10 * f_star .and. w_lo(m) > lo_limit
               need_hi = f_hi > 1.0d-10 * f_star .and. w_hi(m) < hi_limit
               if (.not. (need_lo .or. need_hi)) exit
@@ -819,12 +819,12 @@ contains
   ! Tabulate the noiseless band ridge Er -> (Ep(Er), Eq(Er)) on a
   ! log-spaced Er grid from 1e-3 keV to er_hi.  Same physics as
   ! band_breakpoints.py: Eq = Y(Er)*Er, Ep = Er*(1 + Y(Er)*V/(1000*eps)),
-  ! with Y=1 for the ER band (is_gamma) and the Lindhard yield otherwise.
+  ! with Y=1 for the ER band (is_ER) and the Lindhard yield otherwise.
   ! Both are monotone increasing in Er, so this table is invertible by
   ! interpolation (interp1d, via ridge_eq_and_width below).
-  pure subroutine build_ridge_table(pars, is_gamma, er_hi, n_tab, ep_tab, eq_tab)
+  pure subroutine build_ridge_table(pars, is_ER, er_hi, n_tab, ep_tab, eq_tab)
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double), intent(in) :: er_hi
       integer, intent(in) :: n_tab
       real(c_double), intent(out) :: ep_tab(n_tab), eq_tab(n_tab)
@@ -835,7 +835,7 @@ contains
       dlx = (log(er_hi) - log(er_lo)) / real(n_tab - 1, c_double)
       do i = 1, n_tab
           er = exp(log(er_lo) + real(i - 1, c_double) * dlx)
-          if (is_gamma) then
+          if (is_ER) then
               y_val = 1.0d0
           else
               y_val = lindhard_yield_zfac(er, pars%k, pars%Zfac)
@@ -883,13 +883,13 @@ contains
   ! Ep order than the matched-order scheme needed -- see the
   ! doubling ladder's pairing below).
   pure function gl_region_pass(ep_min, ep_max, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
-      pars, is_gamma, n_window_widths, &
+      pars, is_ER, n_window_widths, &
       nodes_ep, weights_ep, n_ord_ep, nodes_eq, weights_eq, n_ord_eq) result(res)
       real(c_double), intent(in) :: ep_min, ep_max, eq_min, eq_max
       integer, intent(in) :: n_tab
       real(c_double), intent(in) :: ep_tab(n_tab), eq_tab(n_tab)
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double), intent(in) :: n_window_widths
       integer, intent(in) :: n_ord_ep, n_ord_eq
       real(c_double), intent(in) :: nodes_ep(n_ord_ep), weights_ep(n_ord_ep)
@@ -907,7 +907,7 @@ contains
       do concurrent (i = 1:n_ord_ep) default(none) reduce(+: res) &
           shared(nodes_ep, weights_ep, nodes_eq, weights_eq, ep_half, ep_mid, &
                  eq_min, eq_max, n_window_widths, &
-                 ep_tab, eq_tab, n_tab, pars, is_gamma, n_ord_ep, n_ord_eq) &
+                 ep_tab, eq_tab, n_tab, pars, is_ER, n_ord_ep, n_ord_eq) &
           local(ep_i, ep_w_i, eqr, width, eq_lo, eq_hi, eq_half, eq_mid, j, eq_i, eq_w_i, inner)
 
           ep_i   = ep_mid + ep_half * nodes_ep(i)
@@ -924,7 +924,7 @@ contains
               do j = 1, n_ord_eq
                   eq_i   = eq_mid + eq_half * nodes_eq(j)
                   eq_w_i = eq_half * weights_eq(j)
-                  inner  = inner + eq_w_i * integrate_Ppq(ep_i, eq_i, pars, is_gamma)
+                  inner  = inner + eq_w_i * integrate_Ppq(ep_i, eq_i, pars, is_ER)
               end do
           end if
 
@@ -1028,7 +1028,7 @@ contains
   ! region_integral_gl split at the breakpoints found above while reusing
   ! gl_region_pass unchanged on each piece.
   pure function gl_multi_segment_pass(ep_bounds, n_seg, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
-      pars, is_gamma, n_window_widths, &
+      pars, is_ER, n_window_widths, &
       nodes_ep, weights_ep, n_ord_ep, nodes_eq, weights_eq, n_ord_eq) result(res)
       integer, intent(in) :: n_seg
       real(c_double), intent(in) :: ep_bounds(n_seg + 1)
@@ -1036,7 +1036,7 @@ contains
       integer, intent(in) :: n_tab
       real(c_double), intent(in) :: ep_tab(n_tab), eq_tab(n_tab)
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double), intent(in) :: n_window_widths
       integer, intent(in) :: n_ord_ep, n_ord_eq
       real(c_double), intent(in) :: nodes_ep(n_ord_ep), weights_ep(n_ord_ep)
@@ -1047,7 +1047,7 @@ contains
       res = 0.0d0
       do s = 1, n_seg
           res = res + gl_region_pass(ep_bounds(s), ep_bounds(s + 1), eq_min, eq_max, &
-                                      ep_tab, eq_tab, n_tab, pars, is_gamma, n_window_widths, &
+                                      ep_tab, eq_tab, n_tab, pars, is_ER, n_window_widths, &
                                       nodes_ep, weights_ep, n_ord_ep, nodes_eq, weights_eq, n_ord_eq)
       end do
   end function gl_multi_segment_pass
@@ -1061,10 +1061,10 @@ contains
   ! rejected.  All checks are written as .not. (x > ...) so NaN inputs
   ! fail them too.
   pure subroutine validate_region_inputs(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      pars, is_gamma)
+      pars, is_ER)
       real(c_double), intent(in) :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
 
       if (.not. (ep_max > ep_min .and. eq_max > eq_min)) &
           error stop "Ppq_region_NR/Ppq_region_ER: invalid region: need ep_max > ep_min and eq_max > eq_min"
@@ -1082,7 +1082,7 @@ contains
           error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: p10 < p0 makes the phonon resolution sigp^2 negative at high energy"
       if (.not. (pars%q10 >= pars%q0)) &
           error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: q10 < q0 makes the charge resolution sigq^2 negative at high energy"
-      if (.not. is_gamma) then
+      if (.not. is_ER) then
           if (.not. (pars%k > 0.0d0)) &
               error stop "Ppq_region_NR: invalid parameters: k must be > 0"
           if (.not. (pars%Zfac > 0.0d0 .and. pars%Zfac < huge(1.0d0))) &
@@ -1100,10 +1100,10 @@ contains
   ! first split at any window-clipping breakpoints (find_window_breakpoints)
   ! so each Gauss-Legendre pass only ever integrates a smooth piece.
   pure function region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      pars, is_gamma) result(res)
+      pars, is_ER) result(res)
       real(c_double), intent(in) :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
       type(detector_params_t), intent(in) :: pars
-      logical, intent(in) :: is_gamma
+      logical, intent(in) :: is_ER
       real(c_double) :: res
 
       real(c_double), parameter :: n_window_widths = 8.0d0
@@ -1114,10 +1114,10 @@ contains
       real(c_double) :: ep_bounds(4)
       real(c_double) :: res32, res64, res128, res256
 
-      call validate_region_inputs(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, pars, is_gamma)
+      call validate_region_inputs(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, pars, is_ER)
 
       er_hi = max(ep_max, eq_max) * 1.5d0 + 10.0d0
-      call build_ridge_table(pars, is_gamma, er_hi, n_tab, ep_tab, eq_tab)
+      call build_ridge_table(pars, is_ER, er_hi, n_tab, ep_tab, eq_tab)
 
       call find_window_breakpoints(ep_min, ep_max, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
                                     pars, n_window_widths, brk, n_brk)
@@ -1144,10 +1144,10 @@ contains
       ! escalation to a higher Ep order than the matched-order scheme
       ! needed.  Kept both orders equal per level instead.
       res32 = gl_multi_segment_pass(ep_bounds, n_seg, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
-                                     pars, is_gamma, n_window_widths, &
+                                     pars, is_ER, n_window_widths, &
                                      gl_nodes_32, gl_weights_32, 32, gl_nodes_32, gl_weights_32, 32)
       res64 = gl_multi_segment_pass(ep_bounds, n_seg, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
-                                     pars, is_gamma, n_window_widths, &
+                                     pars, is_ER, n_window_widths, &
                                      gl_nodes_64, gl_weights_64, 64, gl_nodes_64, gl_weights_64, 64)
       if (gl_converged(res32, res64, epsrel, epsabs)) then
           res = res64
@@ -1155,7 +1155,7 @@ contains
       end if
 
       res128 = gl_multi_segment_pass(ep_bounds, n_seg, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
-                                      pars, is_gamma, n_window_widths, &
+                                      pars, is_ER, n_window_widths, &
                                       gl_nodes_128, gl_weights_128, 128, gl_nodes_128, gl_weights_128, 128)
       if (gl_converged(res64, res128, epsrel, epsabs)) then
           res = res128
@@ -1163,7 +1163,7 @@ contains
       end if
 
       res256 = gl_multi_segment_pass(ep_bounds, n_seg, eq_min, eq_max, ep_tab, eq_tab, n_tab, &
-                                      pars, is_gamma, n_window_widths, &
+                                      pars, is_ER, n_window_widths, &
                                       gl_nodes_256, gl_weights_256, 256, gl_nodes_256, gl_weights_256, 256)
       if (gl_converged(res128, res256, epsrel, epsabs)) then
           res = res256

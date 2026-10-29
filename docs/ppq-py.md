@@ -20,7 +20,7 @@ sq = pdf.sigq(Eq, q0=q0, q10=q10)
 
 # Ionization yield Y(Er) and mean e/h pair count Nbar(Er)
 y    = pdf.Y(Er, k=k, Z=Z)
-nbar = pdf.Nbar(Er, k=k, Z=Z, eps=eps, is_gamma=False)
+nbar = pdf.Nbar(Er, k=k, Z=Z, eps=eps, is_ER=False)
 ```
 
 The true-recoil-energy spectra (`PEr_NR`/`PEr_ER`) are public the same way — see the

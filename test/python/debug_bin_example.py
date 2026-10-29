@@ -44,7 +44,7 @@ BIN = (64.17183111582968, 66.41909324688707, 33.49076000562251, 184.461887092046
 # unaffected, so this doesn't change what debug_bin demonstrates.
 pdf_fort = make_Ppq_densities_ER(**PARAMS, n_workers=os.cpu_count())
 ridge_breakpoints = make_ridge_breakpoints(
-    "ER", k=None, Z=None, eps=PARAMS["eps"], V=PARAMS["V"],
+    True, k=None, Z=None, eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"],
     q0=PARAMS["q0"], q10=PARAMS["q10"],
     er_max=700.0, n_window_widths=10.0,

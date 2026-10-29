@@ -145,7 +145,7 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
     # band-ridge breakpoints keep the per-bin quadrature from missing
     # the narrow band inside wide (tail) bins; see goodness_of_fit.py
     inner_points_func = make_ridge_breakpoints(
-        "NR", k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
+        False, k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
         V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
         er_max=700.0, n_window_widths=10.0),
