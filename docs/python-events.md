@@ -1,9 +1,9 @@
 # Generating simulated events
 
 If you want simulated `(Ep, Eq)` detector events — to validate a fit
-pipeline end to end, or to feed a downstream analysis — use `generate_events` (or possibly the
-lower-level `generate_events_NR`/`generate_events_ER`). These functions have **no Fortran dependency**:
-it's pure Python/numpy, so it works in any environment this package is installed into, container or not.
+pipeline end to end, or to feed a downstream analysis — use `generate_events` (`ER_frac=0.0`/`1.0`
+for a pure-NR/pure-ER sample). It has **no Fortran dependency**: it's pure Python/numpy, so it
+works in any environment this package is installed into, container or not.
 
 ```python
 import phonon_charge_pdf as pdf
@@ -23,10 +23,12 @@ Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 real analysis ROI, the same box `Ppq_compiled` would be normalized over); the ER/NR split is
 `Binomial(target_size, ER_frac)`, so `ER_frac=1.0`/`0.0` give deterministic pure-ER/pure-NR
 samples and anything in between carries the same sampling fluctuation a real dataset would.
-The returned `DataFrame` has columns `EP, EQ, N, is_ER, seed, is_bkg` — `is_bkg` is
-always `False` here; it exists only so these rows can be concatenated directly with a
-separate zero-charge/surface-background generator that produces the same columns (e.g. a
-KDE-based one kept in a downstream analysis repo, out of scope for this library).
+The returned `DataFrame` has columns `EP, EQ, ERECOIL, N, is_ER, seed, is_bkg` — `ERECOIL`
+is the latent true recoil energy `Er` (named to avoid reading as `is_ER`, a different
+thing: "is this event an electron recoil?"). `is_bkg` is always `False` here; it exists
+only so these rows can be concatenated directly with a separate zero-charge/surface-background
+generator that produces the same columns (e.g. a KDE-based one kept in a downstream
+analysis repo, out of scope for this library).
 
 The same generative model this draws from — `Er ~ PEr_NR`/`PEr_ER`, `N | Er ~ TruncNormal`,
 `(Ep, Eq) | Er, N ~ Normal` — is what `Ppq_NR`/`Ppq_ER` are obtained by marginalizing
@@ -35,9 +37,15 @@ checks that events from this module land on the Fortran `Ppq_NR`/`Ppq_ER`, which
 physics check since this module never touches `Ppq_NR`/`Ppq_ER` itself. See
 [Verification and validation](testing.md).
 
-For single-species sampling without the ROI retry/mixing logic (e.g. for a custom
-pipeline), the lower-level `generate_events_NR`/`generate_events_ER` are also public — see
-their docstrings, or the [API reference](api/index.md#phonon_charge_pdf.generate_events).
+`generate_events_NR`/`generate_events_ER` (the single-species generators `generate_events`
+itself is built on) are deliberately **not** exported: they have no ROI cropping of their
+own, which is a real footgun if you reach for them directly (e.g. passing one as a
+chi-square `sampler_func` silently produces inflated chi2 — see
+[Testing goodness of fit](goodness-of-fit.md) and `run_chisquare_test`'s own docstring).
+`generate_events(ER_frac=0.0`/`1.0)` does everything they do, correctly cropped, with the
+same columns. They're still importable directly from `phonon_charge_pdf.event_generator`
+if you genuinely want the uncropped full physical model (e.g. studying the spectrum
+itself, not a detector's cut of it) — see their docstrings there.
 
 The resolution/yield model functions this is built on -- `Y`, `Nbar`, `sigp`, `sigq`,
 `PEr_NR`, `PEr_ER` -- are also public, for analyzers who want one of them directly rather

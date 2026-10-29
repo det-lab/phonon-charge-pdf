@@ -17,8 +17,6 @@ their own since nothing outside goodness-of-fit testing needs them). For
       members:
         - Ppq_compiled
         - generate_events
-        - generate_events_NR
-        - generate_events_ER
         - Y
         - Nbar
         - sigp

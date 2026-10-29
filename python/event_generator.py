@@ -48,14 +48,16 @@ is a real physics check, not a tautology: this module never touches Ppq_NR/Ppq_E
 
 Returned DataFrame
 -------------------
-generate_events() returns columns EP, EQ, N, is_ER, seed, is_bkg
+generate_events() returns columns EP, EQ, ERECOIL, N, is_ER, seed, is_bkg
 (is_bkg is always False here -- it exists only so these rows line up with
 a separate zero-charge/surface-background generator, e.g. the KDE-based
 one in nrFanoII_paper2022's ba_bknd_lines.py, which can be concatenated
-directly as long as it produces the same columns -- note that column was
+directly as long as it produces the same columns -- note that N was
 previously named N0, misleadingly, since it's the same Fano-fluctuated N
 generate_events_NR/generate_events_ER return, not a distinct quantity;
-anything consuming the old N0 name needs updating).
+anything consuming the old N0 name needs updating). ERECOIL is the
+latent true recoil energy Er -- named to avoid reading as is_ER (is this
+event an electron recoil?), a completely different thing.
 
 Reproducibility
 ----------------
@@ -79,6 +81,12 @@ import sys
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PYTHON_DIR)
 import Ppq_py as ppq
+
+# generate_events_NR/generate_events_ER are deliberately not here (see the
+# module docstring's "Returned DataFrame" section and generate_events()'s
+# own docstring for why calling them directly is a footgun) -- still
+# importable by name if you genuinely want them.
+__all__ = ["generate_events"]
 
 
 def _sample_biexponential(n, rng, *, mix_frac, scale_fast, scale_slow):
@@ -159,7 +167,12 @@ def generate_events_NR(n_events, *,
                         seed):
     """
     Generate (Ep, Eq) pairs distributed according to Ppq_NR -- no ROI
-    cropping, no species mixing; see generate_events() for that.
+    cropping, no species mixing. Not exported: generate_events(ER_frac=0.0)
+    gives you a pure-NR sample with the same columns, already cropped to
+    your ROI, for every normal use (including as a chi-square sampler_func
+    -- calling this directly there is a real footgun, see
+    run_chisquare_test's docstring). Reach for this directly only if you
+    genuinely want the uncropped full physical model.
 
     mix_frac, scale_fast, scale_slow are PEr_NR's biexponential
     true-recoil-energy spectrum parameters (see Ppq_py.py's PEr_NR).
@@ -185,7 +198,11 @@ def generate_events_ER(n_events, *,
                         seed):
     """
     Generate (Ep, Eq) pairs distributed according to Ppq_ER -- no ROI
-    cropping, no species mixing; see generate_events() for that.
+    cropping, no species mixing. Not exported: generate_events(ER_frac=1.0)
+    gives you a pure-ER sample with the same columns, already cropped to
+    your ROI, for every normal use (see generate_events_NR's docstring for
+    why calling this directly, e.g. as a chi-square sampler_func, is a
+    footgun).
 
     Gamma / electron-recoil events have ionization yield Y = 1. mix_frac,
     scale_fast, scale_slow are PEr_ER's biexponential true-recoil-energy
@@ -317,7 +334,7 @@ def generate_events(target_size, ER_frac, seed, *,
 
     Returns
     -------
-    pandas.DataFrame with columns EP, EQ, N, is_ER, seed, is_bkg --
+    pandas.DataFrame with columns EP, EQ, ERECOIL, N, is_ER, seed, is_bkg --
     shuffled, so downstream code doesn't need to worry about ER/NR
     ordering. is_bkg is always False; see the module docstring.
     """
@@ -333,12 +350,12 @@ def generate_events(target_size, ER_frac, seed, *,
 
     roi = dict(ep_range=ep_range, eq_range=eq_range)
 
-    Ep_er, Eq_er, _, N_er = _species_in_roi(
+    Ep_er, Eq_er, Er_er, N_er = _species_in_roi(
         n_ER, "ER", er_seed, max_retries=max_retries, **roi,
         sampler=generate_events_ER,
         sampler_kwargs=dict(F0=F0_ER, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
                             mix_frac=mix_frac_ER, scale_fast=scale_fast_ER, scale_slow=scale_slow_ER))
-    Ep_nr, Eq_nr, _, N_nr = _species_in_roi(
+    Ep_nr, Eq_nr, Er_nr, N_nr = _species_in_roi(
         n_NR, "NR", nr_seed, max_retries=max_retries, **roi,
         sampler=generate_events_NR,
         sampler_kwargs=dict(k=k, Z=Z, F0=F0_NR, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
@@ -346,12 +363,14 @@ def generate_events(target_size, ER_frac, seed, *,
 
     Ep = np.concatenate([Ep_er, Ep_nr])
     Eq = np.concatenate([Eq_er, Eq_nr])
+    Erecoil = np.concatenate([Er_er, Er_nr])
     N = np.concatenate([N_er, N_nr])
     is_ER = np.concatenate([np.ones(len(Ep_er), dtype=bool), np.zeros(len(Ep_nr), dtype=bool)])
 
     order = np.random.default_rng(shuffle_seed).permutation(len(Ep))
     df = pd.DataFrame({
-        "EP": Ep[order], "EQ": Eq[order], "N": N[order], "is_ER": is_ER[order],
+        "EP": Ep[order], "EQ": Eq[order], "ERECOIL": Erecoil[order],
+        "N": N[order], "is_ER": is_ER[order],
     })
     df["seed"] = seed
     df["is_bkg"] = False
