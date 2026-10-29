@@ -539,7 +539,7 @@ class NormInterpolator:
                        ep_range=f.attrs["ep_range"], eq_range=f.attrs["eq_range"],
                        fixed=json.loads(f.attrs["fixed_json"]), source=path)
 
-    def _coords(self, k, F0, V, p0, p10, q0, q10, Z, eps):
+    def _coords(self, k, Z, F0, eps, V, p0, p10, q0, q10):
         for name, given in (("Z", Z), ("eps", eps)):
             if given is not None and name in self.fixed and abs(given - self.fixed[name]) > 1e-12 * max(1.0, abs(given)):
                 raise ValueError(f"{name}={given} differs from the {self.fixed[name]} this table was built for")
@@ -552,8 +552,8 @@ class NormInterpolator:
             raise ValueError("ER table does not depend on k; do not pass it")
         return c
 
-    def __call__(self, *, F0, V, p0, p10, q0, q10, k=None, Z=None, eps=None):
-        c = self._coords(k, F0, V, p0, p10, q0, q10, Z, eps)
+    def __call__(self, *, k=None, Z=None, F0, eps=None, V, p0, p10, q0, q10):
+        c = self._coords(k, Z, F0, eps, V, p0, p10, q0, q10)
         coef = self._coef
         for d, a in enumerate(self.axes):
             x = c[a]
