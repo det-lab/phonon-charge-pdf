@@ -33,6 +33,7 @@ their own since nothing outside goodness-of-fit testing needs them). For
         - run_chisquare_test
         - expected_counts_from_pdf
         - debug_bin
-        - make_ridge_breakpoints
+        - make_ridge_breakpoints_NR
+        - make_ridge_breakpoints_ER
         - make_Ppq_densities_NR
         - make_Ppq_densities_ER

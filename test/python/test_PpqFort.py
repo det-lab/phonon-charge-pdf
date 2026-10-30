@@ -131,6 +131,20 @@ print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
 check("pq_given_Erecoil_NR", result_fort, result_py, rtol=1e-6, atol=1e-12)
 
+# Define argument and return types for the function pq_given_Erecoil_ER
+api.pq_given_Erecoil_ER.argtypes = [ctypes.c_double] * 10
+api.pq_given_Erecoil_ER.restype = ctypes.c_double
+
+result_fort = api.pq_given_Erecoil_ER(ctypes.c_double(Erecoil), ctypes.c_double(Ep), ctypes.c_double(Eq),
+                           ctypes.c_double(F0), ctypes.c_double(eps),
+                           ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
+                           ctypes.c_double(q0), ctypes.c_double(q10))
+result_py = ppq.pq_given_Erecoil_ER(Erecoil, Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+print('back in python after running function pq_given_Erecoil_ER')
+print('The fortran result is ', result_fort)
+print('The python result is ', result_py)
+check("pq_given_Erecoil_ER", result_fort, result_py, rtol=1e-6, atol=1e-12)
+
 # Define argument and return types for the function Ppq_NR
 api.Ppq_NR.argtypes = [ctypes.c_double] * 11
 api.Ppq_NR.restype = ctypes.c_double

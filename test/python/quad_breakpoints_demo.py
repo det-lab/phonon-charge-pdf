@@ -32,7 +32,7 @@ This script demonstrates the failure and the fix in two steps:
      x, integrated with a nested quad(quad(...)) over an (x, y) box.
      This is the same technique used in this package's
      goodness_of_fit.py (see `inner_points_func`), with the
-     band-specific breakpoints built in `make_ridge_breakpoints`.
+     band-specific breakpoints built in `make_ridge_breakpoints_NR`/`ER`.
 
 No threads, no external dependencies beyond numpy/scipy.
 """

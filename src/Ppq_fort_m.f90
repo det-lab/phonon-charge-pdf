@@ -5,66 +5,66 @@ module Ppq_fort_m
 
   interface
 
-    pure module subroutine Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_NR")
-      !! Ppq_NR evaluated at n (Ep, Eq) points via do concurrent, which compiles to
-      !! genuine multi-threaded parallelism under ifx/flang but runs serially under
-      !! gfortran. Measured at roughly 6 microseconds per point under ifx/flang (18
-      !! threads, x86 emulation, over a representative grid); gfortran builds run this
-      !! loop serially and are roughly 25x slower.
-      integer(c_int), value :: n
-      real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
-      real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
-      real(c_double), intent(out) :: res_arr(n)
-    end subroutine Ppq_vector_NR
+  pure module subroutine Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_NR")
+    !! Ppq_NR evaluated at n (Ep, Eq) points via do concurrent, which compiles to
+    !! genuine multi-threaded parallelism under ifx/flang but runs serially under
+    !! gfortran. Measured at roughly 6 microseconds per point under ifx/flang (18
+    !! threads, x86 emulation, over a representative grid); gfortran builds run this
+    !! loop serially and are roughly 25x slower.
+    integer(c_int), value :: n
+    real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
+    real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
+    real(c_double), intent(out) :: res_arr(n)
+  end subroutine Ppq_vector_NR
 
-    pure module subroutine Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_ER")
-      !! Same as Ppq_vector_NR but for Ppq_ER.
-      integer(c_int), value :: n
-      real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
-      real(c_double), value :: F0, eps, V, p0, p10, q0, q10
-      real(c_double), intent(out) :: res_arr(n)
-    end subroutine Ppq_vector_ER
+  pure module subroutine Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_ER")
+    !! Same as Ppq_vector_NR but for Ppq_ER.
+    integer(c_int), value :: n
+    real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
+    real(c_double), value :: F0, eps, V, p0, p10, q0, q10
+    real(c_double), intent(out) :: res_arr(n)
+  end subroutine Ppq_vector_ER
 
-    pure module function Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_NR")
-      !! The nuclear-recoil band probability density at one (Ep, Eq) point. Integrates
-      !! over a window placed around the located peak(s) of the Erecoil integrand
-      !! rather than sampling the full physical range, since the ridge location/width
-      !! is already known exactly (see Ppq_region_NR).
-      real(c_double), value :: Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
-      real(c_double) :: res
-    end function Ppq_NR
+  pure module function Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_NR")
+    !! The nuclear-recoil band probability density at one (Ep, Eq) point. Integrates
+    !! over a window placed around the located peak(s) of the Erecoil integrand
+    !! rather than sampling the full physical range, since the ridge location/width
+    !! is already known exactly (see Ppq_region_NR).
+    real(c_double), value :: Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
+    real(c_double) :: res
+  end function Ppq_NR
 
-    pure module function Ppq_ER(Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_ER")
-      !! Same as Ppq_NR but for the electron-recoil band (Y=1).
-      real(c_double), value :: Ep, Eq, F0, eps, V, p0, p10, q0, q10
-      real(c_double) :: res
-    end function Ppq_ER
+  pure module function Ppq_ER(Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_ER")
+    !! Same as Ppq_NR but for the electron-recoil band (Y=1).
+    real(c_double), value :: Ep, Eq, F0, eps, V, p0, p10, q0, q10
+    real(c_double) :: res
+  end function Ppq_ER
 
-   pure module function Y(Erecoil, k, Z) result(res) bind(c, name="Y")
-       !! the ionization yield, using the Lindhard model
-       !! Y(Erecoil) = k*g(eps_L) / (1 + k*g(eps_L)), with
-       !! eps_L = 11.5*Erecoil*Z**(-7/3) and g(eps_L) = 3*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L
-       real(c_double), value :: Erecoil, k, Z
-       real(c_double) :: res
-    end function Y
+  pure module function Y(Erecoil, k, Z) result(res) bind(c, name="Y")
+    !! the ionization yield, using the Lindhard model
+    !! Y(Erecoil) = k*g(eps_L) / (1 + k*g(eps_L)), with
+    !! eps_L = 11.5*Erecoil*Z**(-7/3) and g(eps_L) = 3*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L
+    real(c_double), value :: Erecoil, k, Z
+    real(c_double) :: res
+  end function Y
 
-   pure module function Nbar(Erecoil, k, Z, eps) result(res) bind(c, name="Nbar")
-     !! average number of electron-hole pairs for a given Erecoil
-     real(c_double), value :: Erecoil, k, Z, eps
-     real(c_double) :: res
-   end function Nbar
+  pure module function Nbar(Erecoil, k, Z, eps) result(res) bind(c, name="Nbar")
+    !! average number of electron-hole pairs for a given Erecoil
+    real(c_double), value :: Erecoil, k, Z, eps
+    real(c_double) :: res
+  end function Nbar
 
-   pure module function sigp(Ep, eps, V, p0, p10) result(res) bind(c, name="sigp")
-      !! phonon sensor resolution
-      real(c_double), value :: Ep, eps, V, p0, p10
-      real(c_double) :: res
-   end function sigp
+  pure module function sigp(Ep, eps, V, p0, p10) result(res) bind(c, name="sigp")
+    !! phonon sensor resolution
+    real(c_double), value :: Ep, eps, V, p0, p10
+    real(c_double) :: res
+  end function sigp
 
-   pure module function sigq(Eq, q0, q10) result(res) bind(c, name="sigq")
-   !! charge sensor resolution
-      real(c_double), value :: Eq, q0, q10
-      real(c_double) :: res
-   end function sigq
+  pure module function sigq(Eq, q0, q10) result(res) bind(c, name="sigq")
+    !! charge sensor resolution
+    real(c_double), value :: Eq, q0, q10
+    real(c_double) :: res
+  end function sigq
 
   pure module function PErecoil_NR(Erecoil) result(res) bind(c, name="PErecoil_NR")
     !! the Erecoil (energy) distribution of neutrons
@@ -83,6 +83,12 @@ module Ppq_fort_m
     real(c_double), value :: Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
   end function pq_given_Erecoil_NR
+
+  pure module function pq_given_Erecoil_ER(Erecoil, Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_ER")
+    ! Input arguments
+    real(c_double), value :: Erecoil, Ep, Eq, F0, eps, V, p0, p10, q0, q10
+    real(c_double) :: res
+  end function pq_given_Erecoil_ER
 
   pure module function Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
       k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_region_NR")
@@ -122,10 +128,6 @@ module Ppq_fort_m
   end subroutine PpqFort_version
 
   end interface
-
-  ! Define pi
-  real(c_double), parameter :: pi = 3.14159265358979323846_c_double
-    ! TODO: move the pi definition to just above the submodule's "contains" statement
 
   ! Package version (semver): version_major/minor/patch, generated from
   ! fpm.toml by scripts/generate_version_include.py.  Not hand-typed here

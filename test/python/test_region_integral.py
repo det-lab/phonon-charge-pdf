@@ -4,7 +4,7 @@ Validates the rectangular-region normalization integral
 a doubling-verified nested Gauss-Legendre quadrature) against the
 existing, algorithmically independent nested-quad reference
 (goodness_of_fit.debug_bin, treating the whole region as one "bin",
-via goodness_of_fit.make_ridge_breakpoints for the required ridge
+via goodness_of_fit.make_ridge_breakpoints_NR/ER for the required ridge
 breakpoints) -- ground truth -- plus timing, across a few representative
 regions including the user's actual MCMC target region, for both the NR
 and ER bands.
@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 
 from _Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
                                Ppq_region_ER, Ppq_region_NR)
-from goodness_of_fit import make_ridge_breakpoints, debug_bin
+from goodness_of_fit import make_ridge_breakpoints_NR, make_ridge_breakpoints_ER, debug_bin
 
 PARAMS_NR = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
                   p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
@@ -60,13 +60,12 @@ def quad_reference(band, ep_min, ep_max, eq_min, eq_max, params):
     brute-force Simpson grid_ref."""
     if band == "NR":
         pdf_func = make_Ppq_densities_NR(**params, n_workers=os.cpu_count())
-        ridge = make_ridge_breakpoints(False, **{k: params[k] for k in
-                                                 ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
+        ridge = make_ridge_breakpoints_NR(**{k: params[k] for k in
+                                             ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
                                         erecoil_max=700.0, n_window_widths=10.0)
     else:
         pdf_func = make_Ppq_densities_ER(**params, n_workers=os.cpu_count())
-        ridge = make_ridge_breakpoints(True, k=None, Z=None,
-                                        **{k: params[k] for k in
+        ridge = make_ridge_breakpoints_ER(**{k: params[k] for k in
                                            ("eps", "V", "p0", "p10", "q0", "q10")},
                                         erecoil_max=700.0, n_window_widths=10.0)
     with redirect_stdout(io.StringIO()):

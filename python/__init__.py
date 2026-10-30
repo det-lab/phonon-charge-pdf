@@ -12,7 +12,7 @@ from .Ppq_fort import Ppq_compiled
 from .Ppq_py import __all__ as _Ppq_py_all
 from .Ppq_py import *  # noqa: F401,F403 -- Y, Nbar, sigp, sigq, PErecoil_NR, PErecoil_ER, ... ; see Ppq_py.__all__
 
-# run_chisquare_test/expected_counts_from_pdf/debug_bin/make_ridge_breakpoints
+# run_chisquare_test/expected_counts_from_pdf/debug_bin/make_ridge_breakpoints_NR/ER
 # and make_Ppq_densities_NR/ER are deliberately NOT flattened here -- call
 # them as goodness_of_fit.<name>, not pdf.<name> (see that module's docstring).
 #

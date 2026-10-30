@@ -13,8 +13,8 @@ normalization integral, never the per-event PDF evaluation), so
 construction eagerly loads it and raises immediately if it can't be found,
 rather than succeeding and failing on the first likelihood call instead.
 
-See the README's "Normalizing a likelihood fit to a region" section for the
-full walkthrough, including precomputed tables for MCMC.  If you instead
+See docs/fitting.md for the full walkthrough and docs/mcmc.md for precomputed
+tables for MCMC.  If you instead
 want to generate simulated (Ep, Eq) events -- e.g. to validate a fit
 pipeline or feed a downstream analysis -- see event_generator.py
 (python/event_generator.py), a second, independent entrypoint with no

@@ -77,6 +77,11 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! Table resolution used by build_ridge_table below.
   integer(c_int), parameter :: region_ridge_n_tab = 4000
 
+  ! pi, used by the N-integral's normalization constant below. Lives here
+  ! rather than in Ppq_fort_m.f90: nothing in the public interface module
+  ! needs it, only this submodule's implementation does.
+  real(c_double), parameter :: pi = 3.14159265358979323846_c_double
+
 contains
 
   ! Zfac is 0 (and unused downstream) when is_ER is .true.: Ppq_ER passes
@@ -242,6 +247,20 @@ contains
       res = PpqCondN(Erecoil, Ep, Eq, pars, .false.) * PErecoil_NR(Erecoil)
   end procedure pq_given_Erecoil_NR
 
+  ! Same as pq_given_Erecoil_NR but for the ER case. The only consumer of
+  ! either is test_PpqFort.py's machine-precision cross-check against
+  ! Ppq_py.py's pq_given_Erecoil_NR/ER: PpqCondN itself isn't bind(c), so
+  ! this is the only C-callable handle on the per-Erecoil integrand Python
+  ! can reach directly, rather than only through an already-integrated
+  ! Ppq_NR/Ppq_ER value.
+  module procedure pq_given_Erecoil_ER
+      type(detector_params_t) :: pars
+
+      ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
+      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      res = PpqCondN(Erecoil, Ep, Eq, pars, .true.) * PErecoil_ER(Erecoil)
+  end procedure pq_given_Erecoil_ER
+
   ! Ppq_region_NR / Ppq_region_ER: integral of Ppq_NR/Ppq_ER over a rectangular
   ! (Ep,Eq) region, e.g. to normalize a likelihood to its fit region.
   ! See region_integral_gl for the algorithm.
@@ -270,6 +289,9 @@ contains
   ! spectrum factor.  is_ER selects the electron-recoil yield (Y=1)
   ! instead of the Lindhard NR yield; pars%Zfac is Z**(-7/3), precomputed
   ! once per Ppq_NR/Ppq_ER call (unused when is_ER is .true.).
+  ! (The "N" here and below is the number of electron-hole pairs, the
+  ! model's latent variable integrated out below -- not a species marker;
+  ! this file predates and is unrelated to the NR/ER rename.)
   pure function PpqCondN(Erecoil, Ep, Eq, pars, is_ER) result(res)
       real(c_double), intent(in) :: Erecoil, Ep, Eq
       type(detector_params_t), intent(in) :: pars

@@ -58,9 +58,9 @@ pdf_func = pdf.goodness_of_fit.make_Ppq_densities_NR(**FIT, n_workers=8)
 # ...and where its ridge is (see "Why inner_points_func is required" below),
 # both at FIT, not re-derived per bin. Listed individually, not **FIT: this
 # one doesn't take F0 at all (its width model ignores Fano broadening -- see
-# its own docstring), and it needs is_ER as a positional arg FIT doesn't have.
-ridge_breakpoints = pdf.goodness_of_fit.make_ridge_breakpoints(
-    False, k=FIT["k"], Z=FIT["Z"], eps=FIT["eps"], V=FIT["V"],
+# its own docstring). Use make_ridge_breakpoints_ER (no k/Z) for the ER band.
+ridge_breakpoints = pdf.goodness_of_fit.make_ridge_breakpoints_NR(
+    k=FIT["k"], Z=FIT["Z"], eps=FIT["eps"], V=FIT["V"],
     p0=FIT["p0"], p10=FIT["p10"], q0=FIT["q0"], q10=FIT["q10"],
     erecoil_max=700.0, n_window_widths=10.0,
 )
@@ -93,7 +93,7 @@ The NR/ER band PDFs are narrow ridges in the (Ep, Eq) plane. Plain adaptive quad
 a bin starts from a fixed set of sample points; if a bin is wider than the ridge, every one
 of those points can land in the ~zero region on either side and quadrature will confidently
 report a ~zero integral without ever subdividing toward the peak — a silent wrong answer,
-not an error. `make_ridge_breakpoints` locates the ridge from the band physics (the yield
+not an error. `make_ridge_breakpoints_NR`/`ER` locates the ridge from the band physics (the yield
 model and Neganov-Luke amplification) and its local width (phonon and charge resolution
 added in quadrature), so `expected_counts_from_pdf` can force quadrature to subdivide there.
 There's no "skip this" option for these PDFs — passing `inner_points_func=None` is not

@@ -70,7 +70,7 @@ Suggested reading order:
 
 1. `quad_breakpoints_demo.py` — run it and watch plain `quad` return ~0 for
    a narrow peak, then fix it with the `points=` argument.
-2. `goodness_of_fit.make_ridge_breakpoints` — where the ridge is physically:
+2. `goodness_of_fit.make_ridge_breakpoints_NR`/`ER` — where the ridge is physically:
    the noiseless band centroid Erecoil → (Ep, Eq) from the yield model and
    Neganov-Luke amplification, inverted to give the most probable Eq at
    each Ep, plus the local band width setting the breakpoint window.

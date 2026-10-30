@@ -53,7 +53,7 @@ from event_generator import generate_events
 # simulated events (chi-square binning), not absolute probability.  For a
 # fit or MCMC, use Ppq_compiled (python/Ppq_fort.py) instead.
 from _Ppq_fort_bindings import make_Ppq_densities_NR
-from goodness_of_fit import make_ridge_breakpoints, run_chisquare_test
+from goodness_of_fit import make_ridge_breakpoints_NR, run_chisquare_test
 
 # ---------------------------------------------------------------------------
 # Physics parameters (from nrFanoII_paper2022/python/detector_params.txt)
@@ -137,8 +137,8 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
     n_bins     = N_BINS,
     # band-ridge breakpoints keep the per-bin quadrature from missing
     # the narrow band inside wide (tail) bins; see goodness_of_fit.py
-    inner_points_func = make_ridge_breakpoints(
-        False, k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
+    inner_points_func = make_ridge_breakpoints_NR(
+        k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
         V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
         erecoil_max=700.0, n_window_widths=10.0),

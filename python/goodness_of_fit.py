@@ -32,7 +32,7 @@ than at the top level: nothing else in this package needs arbitrary-point
 density evaluation.
 
 Step 2's per-bin quadrature also requires an inner_points_func giving
-the band-ridge breakpoints (make_ridge_breakpoints below); the NR/ER
+the band-ridge breakpoints (make_ridge_breakpoints_NR/ER below); the NR/ER
 band PDFs are narrow ridges, for which plain adaptive quadrature over a
 wide bin can silently return ~0, so there is no "skip the breakpoints"
 option.
@@ -63,7 +63,8 @@ except ImportError:
     # needed here.
     pass
 
-__all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin", "make_ridge_breakpoints",
+__all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin",
+           "make_ridge_breakpoints_NR", "make_ridge_breakpoints_ER",
            "make_Ppq_densities_NR", "make_Ppq_densities_ER"]
 
 
@@ -71,12 +72,44 @@ __all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin", "make_
 # Band-specific breakpoints
 # ---------------------------------------------------------------------------
 
-def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
-                           p0, p10,
-                           q0, q10,
-                           erecoil_max, n_window_widths):
+def make_ridge_breakpoints_for_yield(y_tab_func, *, eps, V, p0, p10, q0, q10,
+                                      erecoil_max, n_window_widths):
+    """The math shared by make_ridge_breakpoints_NR/ER -- see
+    make_ridge_breakpoints_NR's docstring for the problem this solves and
+    the band physics/geometry; y_tab_func(erecoil_tab) is the one thing
+    that differs between the two (the Lindhard yield for NR, Y=1 for ER).
+    Not part of the public API (not in __all__)."""
+    # Tabulate the noiseless band centroid Erecoil -> (Ep, Eq) and invert by
+    # interpolation (both coordinates are monotone in Erecoil).
+    erecoil_tab = np.geomspace(1e-3, erecoil_max, 4000)
+    y_tab = y_tab_func(erecoil_tab)
+    ep_tab = erecoil_tab * (1.0 + y_tab * V / (1000.0 * eps))
+    eq_tab = y_tab * erecoil_tab
+
+    def eq_ridge(ep):
+        return np.interp(ep, ep_tab, eq_tab)
+
+    def inner_points_func(ep, ymin, ymax):
+        eqr = float(eq_ridge(ep))
+        # local band width in Eq: charge resolution plus the phonon
+        # resolution mapped through the ridge slope
+        dep = max(1e-3, 0.01 * ep)
+        slope = (float(eq_ridge(ep + dep)) - float(eq_ridge(ep - dep))) / (2 * dep)
+        sigp_val = float(ppq.sigp(ep, eps=eps, V=V, p0=p0, p10=p10))
+        sigq_val = float(ppq.sigq(eqr, q0=q0, q10=q10))
+        width = np.hypot(sigq_val, slope * sigp_val)
+        return [eqr - n_window_widths * width, eqr,
+                eqr + n_window_widths * width]
+
+    return inner_points_func
+
+
+def make_ridge_breakpoints_NR(*, k, Z, eps, V,
+                               p0, p10,
+                               q0, q10,
+                               erecoil_max, n_window_widths):
     """
-    Build an inner_points_func for expected_counts_from_pdf.
+    Build an inner_points_func for expected_counts_from_pdf, for the NR band.
 
     The problem
     -----------
@@ -151,12 +184,11 @@ def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
 
     Parameters
     ----------
-    is_ER : bool
-        False (nuclear recoils) uses the Lindhard yield model Y(Erecoil, k, Z);
-        True (electron recoils) uses Y = 1 (the k and Z arguments are then
-        ignored).
     k, Z, eps, V, p0, p10, q0, q10 : float
-        Detector parameters, matching the PDF being integrated.
+        Detector parameters, matching the PDF being integrated. The
+        Lindhard yield model Y(Erecoil, k, Z) is used here; see
+        make_ridge_breakpoints_ER for the electron-recoil band (Y = 1,
+        no k/Z).
     erecoil_max : float
         Upper end of the tabulated Erecoil range (keV); must comfortably
         exceed the largest Ep of interest.
@@ -171,34 +203,23 @@ def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
         breakpoints for the inner quadrature at phonon energy ep. The
         harness drops any that fall outside the bin's (ymin, ymax).
     """
-    if is_ER:
-        y_tab_func = lambda erecoil_tab: np.ones_like(erecoil_tab)
-    else:
-        y_tab_func = lambda erecoil_tab: ppq.Y(erecoil_tab, k=k, Z=Z)
+    return make_ridge_breakpoints_for_yield(
+        lambda erecoil_tab: ppq.Y(erecoil_tab, k=k, Z=Z),
+        eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
+        erecoil_max=erecoil_max, n_window_widths=n_window_widths)
 
-    # Tabulate the noiseless band centroid Erecoil -> (Ep, Eq) and invert by
-    # interpolation (both coordinates are monotone in Erecoil).
-    erecoil_tab = np.geomspace(1e-3, erecoil_max, 4000)
-    y_tab = y_tab_func(erecoil_tab)
-    ep_tab = erecoil_tab * (1.0 + y_tab * V / (1000.0 * eps))
-    eq_tab = y_tab * erecoil_tab
 
-    def eq_ridge(ep):
-        return np.interp(ep, ep_tab, eq_tab)
-
-    def inner_points_func(ep, ymin, ymax):
-        eqr = float(eq_ridge(ep))
-        # local band width in Eq: charge resolution plus the phonon
-        # resolution mapped through the ridge slope
-        dep = max(1e-3, 0.01 * ep)
-        slope = (float(eq_ridge(ep + dep)) - float(eq_ridge(ep - dep))) / (2 * dep)
-        sigp_val = float(ppq.sigp(ep, eps=eps, V=V, p0=p0, p10=p10))
-        sigq_val = float(ppq.sigq(eqr, q0=q0, q10=q10))
-        width = np.hypot(sigq_val, slope * sigp_val)
-        return [eqr - n_window_widths * width, eqr,
-                eqr + n_window_widths * width]
-
-    return inner_points_func
+def make_ridge_breakpoints_ER(*, eps, V,
+                               p0, p10,
+                               q0, q10,
+                               erecoil_max, n_window_widths):
+    """Same as make_ridge_breakpoints_NR but for the ER band (Y = 1
+    everywhere, so there's no k/Z to pass) -- see its docstring for the
+    problem this solves and the band physics/geometry."""
+    return make_ridge_breakpoints_for_yield(
+        lambda erecoil_tab: np.ones_like(erecoil_tab),
+        eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
+        erecoil_max=erecoil_max, n_window_widths=n_window_widths)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +247,7 @@ def expected_counts_from_pdf(pdf_func, bins, n_events, inner_points_func, *,
         wider than the ridge can have every sample point land in the
         ~zero region on both sides and quad will confidently report a
         ~zero integral without ever subdividing toward the peak. Passing
-        the ridge location as a breakpoint (see make_ridge_breakpoints)
+        the ridge location as a breakpoint (see make_ridge_breakpoints_NR/ER)
         forces a subdivision there, so this argument is required rather
         than optional. Breakpoints outside (ymin, ymax) are dropped; an
         empty result for a bin is fine (scipy's points-based quadrature
@@ -423,7 +444,7 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
         Target number of equibin bins.
     inner_points_func : callable
         Passed to expected_counts_from_pdf; see its docstring (and
-        make_ridge_breakpoints) for why this is required rather than
+        make_ridge_breakpoints_NR/ER) for why this is required rather than
         optional.
     n_ref : int or None
         Reference dataset size for computing bin boundaries.

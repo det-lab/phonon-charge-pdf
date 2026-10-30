@@ -29,7 +29,7 @@ peaks = result["peaks"]
 ## Plotting the integrand
 
 `erecoil_scan_grid`/`erecoil_scan_integrand` are the raw scan the peak search ran over, and `peaks`
-has each located peak's center (`Erecoilmx`), width, and integration window (`minx`/`maxx`) —
+has each located peak's center (`Erecoil_peak`), width, and integration window (`minx`/`maxx`) —
 plotting them together is a quick way to confirm the peak search found the right thing, and
 that `erecoil_step` actually resolves it:
 
@@ -48,9 +48,9 @@ ax_full.set_title("full Erecoil scan")
 ax_full.legend(fontsize=8)
 
 peak = peaks[0]
-zoom = (erecoil_scan > peak["Erecoilmx"] - 5 * peak["width"]) & (erecoil_scan < peak["Erecoilmx"] + 5 * peak["width"])
+zoom = (erecoil_scan > peak["Erecoil_peak"] - 5 * peak["width"]) & (erecoil_scan < peak["Erecoil_peak"] + 5 * peak["width"])
 ax_peak.plot(erecoil_scan[zoom], integrand_scan[zoom], ".-", ms=4)
-ax_peak.axvline(peak["Erecoilmx"], color="C1", linestyle="--", label="located peak (Erecoilmx)")
+ax_peak.axvline(peak["Erecoil_peak"], color="C1", linestyle="--", label="located peak (Erecoil_peak)")
 ax_peak.set_xlabel("Erecoil (keV)")
 ax_peak.set_title("zoomed near the peak")
 ax_peak.legend(fontsize=8)

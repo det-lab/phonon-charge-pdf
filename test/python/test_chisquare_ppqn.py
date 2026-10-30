@@ -45,7 +45,7 @@ sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))  # _Ppq_fort_bindings
 sys.path.insert(0, str(REPO_ROOT / "python"))  # Ppq_compiled
 import Ppq_py as ppq
 import sample_from_pdf as spdf
-from goodness_of_fit import make_ridge_breakpoints, run_chisquare_test
+from goodness_of_fit import make_ridge_breakpoints_NR, run_chisquare_test
 from _Ppq_fort_bindings import make_Ppq_densities_NR
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ PPQ_GRID_CACHE_NR = REPO_ROOT / "ppq_nr_vertex_grid.npz"
 # ---------------------------------------------------------------------------
 # Detector resolutions (from the python reference implementation), used
 # for the feature-scaled grid edges; band-ridge breakpoints for the
-# per-bin quadrature come from goodness_of_fit.make_ridge_breakpoints.
+# per-bin quadrature come from goodness_of_fit.make_ridge_breakpoints_NR.
 # ---------------------------------------------------------------------------
 def sigp(ep):
     return ppq.sigp(ep, eps=PARAMS["eps"], V=PARAMS["V"],
@@ -88,8 +88,8 @@ def sigp(ep):
 def sigq(eq):
     return ppq.sigq(eq, q0=PARAMS["q0"], q10=PARAMS["q10"])
 
-ridge_breakpoints = make_ridge_breakpoints(
-    False, k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"], V=PARAMS["V"],
+ridge_breakpoints = make_ridge_breakpoints_NR(
+    k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"], q0=PARAMS["q0"], q10=PARAMS["q10"],
     erecoil_max=700.0, n_window_widths=10.0)
 

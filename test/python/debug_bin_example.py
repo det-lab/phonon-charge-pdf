@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))
 sys.path.insert(0, str(REPO_ROOT / "python"))
 
-from goodness_of_fit import make_ridge_breakpoints, debug_bin
+from goodness_of_fit import make_ridge_breakpoints_ER, debug_bin
 # Unnormalized: debug_bin inspects the PDF's shape over one bin, not an
 # absolute probability.  For a fit or MCMC, use Ppq_compiled (python/Ppq_fort.py).
 from _Ppq_fort_bindings import make_Ppq_densities_ER
@@ -43,8 +43,8 @@ BIN = (64.17183111582968, 66.41909324688707, 33.49076000562251, 184.461887092046
 # points at once); the quad-driven calls are all single points and are
 # unaffected, so this doesn't change what debug_bin demonstrates.
 pdf_fort = make_Ppq_densities_ER(**PARAMS, n_workers=os.cpu_count())
-ridge_breakpoints = make_ridge_breakpoints(
-    True, k=None, Z=None, eps=PARAMS["eps"], V=PARAMS["V"],
+ridge_breakpoints = make_ridge_breakpoints_ER(
+    eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"],
     q0=PARAMS["q0"], q10=PARAMS["q10"],
     erecoil_max=700.0, n_window_widths=10.0,
