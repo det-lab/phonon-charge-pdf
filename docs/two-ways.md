@@ -10,11 +10,12 @@ them.
 `pip install phonon-charge-pdf` is enough. This covers:
 
 - **Generating simulated events** — [`generate_events`](python-events.md), built on `event_generator.py`.
-- **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](ppq-py.md), built on `Ppq_py.py`, the pure-Python reference implementation.
+- **Resolution/yield functions** — `sigp`, `sigq`, `Y`, `Nbar`, and `PErecoil_NR`/`PErecoil_ER`, all in `Ppq_py.py`
+  (the pure-Python reference implementation) and listed in the [API reference](api/index.md).
 
-Use the pure-Python library to generate or describe simulated data, or to get
-resolution/yield model values directly. It works in any environment the package installs
-into — no container, no compiler.
+Use the pure-Python library to generate or describe simulated data, or to get those
+values directly. It works in any environment the package installs into — no container,
+no compiler.
 
 ## 2. The Fortran-backed PDF — needs the compiled library
 

@@ -44,7 +44,6 @@ nav:
       - Profiling: PROFILING.md
   - To delete:
       - Fortran-backed PDF (Ppq_compiled): ppq-fort.md
-      - Resolution/yield model: ppq-py.md
       - Miscellaneous notes: misc-notes.md
 
 markdown_extensions:
