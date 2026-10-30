@@ -180,14 +180,14 @@ contains
   ! spectrum formulas live in elemental implementations that array-valued
   ! internal code (the mode scan) can evaluate in vectorizable form.
   module procedure PErecoil_NR
-      res = PErecoilN_impl(Erecoil)
+      res = PErecoil_NR_impl(Erecoil)
   end procedure PErecoil_NR
 
   module procedure PErecoil_ER
-      res = PErecoilG_impl(Erecoil)
+      res = PErecoil_ER_impl(Erecoil)
   end procedure PErecoil_ER
 
-  elemental function PErecoilN_impl(Erecoil) result(res)
+  elemental function PErecoil_NR_impl(Erecoil) result(res)
       real(c_double), intent(in) :: Erecoil
       real(c_double) :: res
       real(c_double), parameter :: PNa = 0.53693208d0
@@ -197,9 +197,9 @@ contains
       real(c_double), parameter :: one_minus_PNa_over_PNd = (1.0d0 - PNa) / PNd
 
       res = PNa_over_PNb * exp(-Erecoil / PNb) + one_minus_PNa_over_PNd * exp(-Erecoil / PNd)
-  end function PErecoilN_impl
+  end function PErecoil_NR_impl
 
-  elemental function PErecoilG_impl(Erecoil) result(res)
+  elemental function PErecoil_ER_impl(Erecoil) result(res)
       real(c_double), intent(in) :: Erecoil
       real(c_double) :: res
       real(c_double), parameter :: PGa = 0.573211975d0
@@ -209,7 +209,7 @@ contains
       real(c_double), parameter :: one_minus_PGa_over_PGd = (1.0d0 - PGa) / PGd
 
       res = PGa_over_PGb * exp(-Erecoil / PGb) + one_minus_PGa_over_PGd * exp(-Erecoil / PGd)
-  end function PErecoilG_impl
+  end function PErecoil_ER_impl
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
   ! per Ppq_NR/Ppq_ER call (by integrate_Ppq) instead of recomputing the Z
@@ -410,9 +410,9 @@ contains
 
       H = log_N_exponent(Erecoil, Ep, Eq, pars, sp2, sq2, is_ER)
       if (is_ER) then
-          H = H + log(PErecoilG_impl(Erecoil))
+          H = H + log(PErecoil_ER_impl(Erecoil))
       else
-          H = H + log(PErecoilN_impl(Erecoil))
+          H = H + log(PErecoil_NR_impl(Erecoil))
       end if
   end function log_integrand_approx
 
@@ -474,9 +474,9 @@ contains
       ! of the loop: everything the scan does is vectorizable.
       Hs = log_N_exponent(xs, Ep, Eq, pars, sp2, sq2, is_ER)
       if (is_ER) then
-          Hs = Hs + log(PErecoilG_impl(xs))
+          Hs = Hs + log(PErecoil_ER_impl(xs))
       else
-          Hs = Hs + log(PErecoilN_impl(xs))
+          Hs = Hs + log(PErecoil_NR_impl(xs))
       end if
 
       ! Candidate local maxima (including the low-Erecoil boundary)

@@ -105,8 +105,8 @@ def sigq(Eq,
     return np.sqrt(q0**2+e2pre*e2e)
 
 
-# Fit parameters -- matches the Fortran PErN_impl constants exactly (not
-# exposed as arguments there either: PErecoil_NR(Erecoil) is the public signature)
+# Fit parameters -- matches the Fortran PErecoil_NR_impl constants exactly
+# (not exposed as arguments there either: PErecoil_NR(Erecoil) is the public signature)
 _PNa, _PNb, _PNd = 0.53693208, 6.41515782, 23.71789286
 
 
@@ -119,7 +119,7 @@ def PErecoil_NR(Erecoil):
 #...TBD gammas
 
 
-# Cfgammas -- matches the Fortran PErG_impl constants exactly
+# Cfgammas -- matches the Fortran PErecoil_ER_impl constants exactly
 _PGa, _PGb, _PGd = 5.73211975e-01, 1.69520023e-01, 2.79552394e+02
 
 
