@@ -19,9 +19,9 @@ into — no container, no compiler.
 ## 2. The Fortran-backed PDF — needs the compiled library
 
 **If you want normalized PDF values or a likelihood** — a fit, an MCMC, anything beyond
-generating or describing simulated events — you need [`Ppq_compiled`](ppq-fort.md), and it
-always needs the compiled Fortran library (`Ppq_NR`/`Ppq_ER`). Three ways to get it, easiest
-first:
+generating or describing simulated events — you need `Ppq_compiled` (see
+[Fitting](fitting.md)), and it always needs the compiled Fortran library (`Ppq_NR`/`Ppq_ER`).
+Three ways to get it, easiest first:
 
 | Option | Command |
 |---|---|

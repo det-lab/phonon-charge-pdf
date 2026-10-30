@@ -45,7 +45,7 @@ by name.
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](python-events.md) |
 | Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model](ppq-py.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq_compiled)](ppq-fort.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fitting](fitting.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](testing.md) |

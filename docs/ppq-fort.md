@@ -1,37 +1,5 @@
 # Fortran-backed PDF: `Ppq_compiled`
 
-**If you want normalized PDF values or a likelihood — a fit, an MCMC, anything beyond
-generating or describing simulated events — `Ppq_compiled` is the one entrypoint.** It always
-needs the compiled Fortran library; see [Two ways to use this](two-ways.md) for how to get
-it (pip install, a published container, or [building from source](building-from-source.md)).
-See the [API reference](api/index.md#phonon_charge_pdf.Ppq_compiled) for the full method list.
-
-```python
-import phonon_charge_pdf as pdf
-
-# define the data region: your analysis ROI in keV -- the same (Ep, Eq)
-# window your data is already cut to. 2.5-350 / 0.75-200 is this project's
-# region; use YOUR actual cut, not this one, unless it happens to match.
-ep_range = (2.5, 350.0)
-eq_range = (0.75, 200.0)
-
-likelihood = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
-                      norm_epsrel=1e-4, norm_epsabs=1e-10)
-normalized = likelihood.Ppq_normalized_densities_NR(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
-                                                  p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
-```
-
-The region is the box the normalization integral is computed over — it has to be your real
-analysis ROI, not an arbitrary wide range, or the normalization (and so the likelihood) is
-wrong. **If you use precomputed tables (`Ppq_table_NR=`/`Ppq_table_ER=`, see
-[Precomputed normalization tables](normalization-tables.md)) and your region doesn't match
-the one a table was built for exactly, `Ppq_compiled` raises at construction** rather than
-silently normalizing wrong — the fix is to build a new table for your region.
-
-Same shape for the ER band (`Ppq_normalized_densities_ER`, no `k`/`Z` — `Y=1` there — also
-`Ppq_integral_ER` if you want the normalization on its own). Build `likelihood` once,
-outside the fit loop; call its methods once per step, inside.
-
 ## Why a batched Fortran call instead of `scipy.integrate.quad`
 
 A likelihood fit needs the density at each data point (over the full physical plane, not
