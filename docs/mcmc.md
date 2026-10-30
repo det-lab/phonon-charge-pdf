@@ -2,11 +2,11 @@
 
 MCMC needs the same `fit_pdf` (a `Ppq_compiled` instance, see [Fitting](fitting.md)) as a fit
 does, called many more times -- see [Fitting](fitting.md) for the basic construction/call
-pattern and performance notes (vectorized calls, shuffling events). The one thing that
-changes for MCMC specifically: at ~1 second per call, computing the normalization integral
-at every step is out of the question, so an MCMC run always needs
+pattern. The one thing that changes for MCMC specifically: at ~1 second per call, computing
+the normalization integral at every step is out of the question, so an MCMC run always needs
 [precomputed normalization tables](normalization-tables.md) (`Ppq_table_NR=`/
-`Ppq_table_ER=`), not just the compiled library.
+`Ppq_table_ER=`), not just the compiled library -- a table turns that into tens of
+microseconds per step instead.
 
 MCMC samples the full posterior (so you get errors, not just a point); a likelihood fit
 with the same Gaussian prior (see [Fitting](fitting.md#the-likelihood-function-step-3))

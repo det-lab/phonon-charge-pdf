@@ -54,7 +54,7 @@ and the resolution/yield functions (`sigp`, `sigq`, `Y`, `Nbar`, ...), listed in
 
 **2. The Fortran-backed PDF — needs the compiled library.** If you want normalized PDF
 values or a likelihood — a fit, an MCMC, anything beyond generating or describing
-simulated events — you need [`Ppq_compiled`](docs/ppq-fort.md), and it always needs the
+simulated events — you need [`Ppq_compiled`](docs/fitting.md), and it always needs the
 compiled library. Easiest first:
 
 | Option | Command |
@@ -86,7 +86,7 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](docs/python-events.md) |
 | Use the resolution/yield functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Python API reference](https://det-lab.github.io/phonon-charge-pdf/api/) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (Ppq_compiled)](docs/ppq-fort.md) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fitting](docs/fitting.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](docs/normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](docs/testing.md) |

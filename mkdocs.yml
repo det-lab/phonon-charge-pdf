@@ -42,9 +42,7 @@ nav:
   - For developers:
       - Building from source: building-from-source.md
       - Profiling: PROFILING.md
-  - To delete:
-      - Fortran-backed PDF (Ppq_compiled): ppq-fort.md
-      - Miscellaneous notes: misc-notes.md
+      - Decision records (ADRs): decision-records.md
 
 markdown_extensions:
   - admonition
