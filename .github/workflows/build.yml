@@ -313,5 +313,5 @@ jobs:
         set -x
         export LD_LIBRARY_PATH="lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         export DYLD_LIBRARY_PATH="lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-        "$pythonLocation/bin/python" test/python/test_chisquare_nr_simulator.py 100 64
-        "$pythonLocation/bin/python" test/python/test_chisquare_er_simulator.py 100 64
+        "$pythonLocation/bin/python" test/python/test_chisquare_simulator_nr.py 100 64
+        "$pythonLocation/bin/python" test/python/test_chisquare_simulator_er.py 100 64

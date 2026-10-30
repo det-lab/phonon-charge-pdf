@@ -24,8 +24,8 @@ build `lib/libphonon_charge_pdf.so` first.
 | `test_PpqFort_vectorFuncs.py` | The vectorized `Ppq_vector_NR` / `Ppq_vector_ER` entry points. |
 | `verify_sample_from_pdf.py` | Moments of the grid sampler used by the self-consistency tests. |
 | `test_chisquare_ppqn.py` | Self-consistency: events sampled *from* the Fortran `Ppq_NR` follow `Ppq_NR`. |
-| `test_chisquare_nr_simulator.py` | Physics: events from the independent NR simulator follow the Fortran `Ppq_NR`. |
-| `test_chisquare_er_simulator.py` | Physics: events from the independent ER simulator follow the Fortran `Ppq_ER`. |
+| `test_chisquare_simulator_nr.py` | Physics: events from the independent NR simulator follow the Fortran `Ppq_NR`. |
+| `test_chisquare_simulator_er.py` | Physics: events from the independent ER simulator follow the Fortran `Ppq_ER`. |
 | `test_region_integral.py` | The region-normalization integral (`Ppq_region_NR`/`Ppq_region_ER`) against nested `scipy.integrate.quad`, timing, the non-convergence safety net, and the fast error-out on invalid parameters (p10 < p0 etc.). |
 | `test_normgrid.py` | The precomputed-table pipeline (`python/cli/normgrid.py`): interpolant exactness, no-extrapolation, crash-tolerant worker, HDF5 round trip. No Fortran needed. |
 | `test_normplan.py` | The node-count planner (`python/cli/normplan.py`): study layout, the coefficient-tail criterion on functions of known smoothness, the study → analyze path with analytic stand-in evaluators, and that a rough axis stops the plan.  `test/slurm/test_build_table.sh` runs `slurm/build_table.sh` end to end against a mock `sbatch` (needs h5py). |
@@ -37,7 +37,7 @@ build `lib/libphonon_charge_pdf.so` first.
 The two simulator tests are the strongest statement: the event generator
 (`python/event_generator.py`, the public module -- see the main README's
 "Generating simulated events" section) knows nothing about the PDF's
-integrals — it draws Er from the recoil spectrum, N from a truncated
+integrals — it draws Erecoil from the recoil spectrum, N from a truncated
 normal, and applies the detector response — so agreement means the PDFs
 describe the physics.
 
@@ -71,7 +71,7 @@ Suggested reading order:
 1. `quad_breakpoints_demo.py` — run it and watch plain `quad` return ~0 for
    a narrow peak, then fix it with the `points=` argument.
 2. `goodness_of_fit.make_ridge_breakpoints` — where the ridge is physically:
-   the noiseless band centroid Er → (Ep, Eq) from the yield model and
+   the noiseless band centroid Erecoil → (Ep, Eq) from the yield model and
    Neganov-Luke amplification, inverted to give the most probable Eq at
    each Ep, plus the local band width setting the breakpoint window.
 3. `goodness_of_fit.expected_counts_from_pdf` — the nested quadrature that

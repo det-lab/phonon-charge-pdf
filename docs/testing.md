@@ -64,28 +64,28 @@ band integrals serially (see the compiler notes under
 The tests above only check that the PDFs are *self-consistent* (samples drawn from a PDF
 match that same PDF). The two tests below are the stronger check: they generate events
 from an independent physics simulator ([`event_generator.py`](python-events.md), which
-draws Er from the recoil spectrum, N from a truncated normal, and applies detector
+draws Erecoil from the recoil spectrum, N from a truncated normal, and applies detector
 resolution) and compare the binned counts against the Fortran PDFs. A pass means the
 Fortran `Ppq_NR`/`Ppq_ER` implementations correctly describe the physics.
 
 ```bash
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws] [n_bins]   # NR band vs Ppq_NR
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]   # ER band vs Ppq_ER
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py [n_throws] [n_bins]   # NR band vs Ppq_NR
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py [n_throws] [n_bins]   # ER band vs Ppq_ER
 ```
 
-Both write their chi-square histograms to `figures/chisquare_nr_simulator.png` and
-`figures/chisquare_er_simulator.png`. `n_throws` defaults to 1000 and `n_bins` to 400. The
+Both write their chi-square histograms to `figures/chisquare_simulator_nr.png` and
+`figures/chisquare_simulator_er.png`. `n_throws` defaults to 1000 and `n_bins` to 400. The
 one-time integration of the PDF over the bins dominates the wall time, so reducing
 `n_bins` is the way to get a fast smoke test:
 
 ```bash
 # smoke test: 100 throws, 64 bins
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py 100 64   # ~1 min
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 100 64   # ~1 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py 100 64   # ~1 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py 100 64   # ~1 min
 
 # full validation: 10,000 throws, 400 bins
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py 10000    # ~4 min
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 10000    # ~5 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py 10000    # ~4 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py 10000    # ~5 min
 ```
 
 (Timings measured with the ifx build, 18 workers, under x86 emulation on an Apple Silicon
@@ -98,5 +98,5 @@ repository's `figures/` directory so the plot survives the container:
 
 ```bash
 docker run --rm -v $(pwd)/figures:/app/figures pdf \
-    bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
+    bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_simulator_nr.py 100 64"
 ```

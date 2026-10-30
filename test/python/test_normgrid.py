@@ -161,15 +161,15 @@ with tempfile.TemporaryDirectory() as d:
               t.band == "ER" and t.ep_range == tuple(ng.DEFAULT_EP_RANGE) and t.eq_range == tuple(ng.DEFAULT_EQ_RANGE))
 
 # ---- per-band default boxes ------------------------------------------------
-er_grid = ng.make_grid_spec("ER", ng.RECOMMENDED_NODES["ER"])
-nr_grid = ng.make_grid_spec("NR", ng.RECOMMENDED_NODES["NR"])
-check("ER default box narrows F0 to 0.1-0.35", er_grid["box"]["F0"] == [0.1, 0.35])
-check("NR default box keeps F0 1e-5..1", nr_grid["box"]["F0"] == [1e-5, 1.0])
+grid_ER = ng.make_grid_spec("ER", ng.RECOMMENDED_NODES["ER"])
+grid_NR = ng.make_grid_spec("NR", ng.RECOMMENDED_NODES["NR"])
+check("ER default box narrows F0 to 0.1-0.35", grid_ER["box"]["F0"] == [0.1, 0.35])
+check("NR default box keeps F0 1e-5..1", grid_NR["box"]["F0"] == [1e-5, 1.0])
 check("other axes are the same in both bands",
-      all(er_grid["box"][a] == nr_grid["box"][a] for a in er_grid["box"] if a != "F0"))
-er_held = ng.make_random_spec("ER", 40, seed=3)
+      all(grid_ER["box"][a] == grid_NR["box"][a] for a in grid_ER["box"] if a != "F0"))
+held_ER = ng.make_random_spec("ER", 40, seed=3)
 check("ER held-out points stay inside the ER F0 box",
-      all(0.1 <= ng.coords_at(er_held, i)["F0"] <= 0.35 for i in range(40)))
+      all(0.1 <= ng.coords_at(held_ER, i)["F0"] <= 0.35 for i in range(40)))
 
 # ---- out-of-box errors carry what is needed to act on them ----
 try:

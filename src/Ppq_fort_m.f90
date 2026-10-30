@@ -33,17 +33,17 @@ module Ppq_fort_m
       real(c_double) :: res
     end function Ppq_ER
 
-   pure module function Y(Er, k, Z) result(res) bind(c, name="Y")
+   pure module function Y(Erecoil, k, Z) result(res) bind(c, name="Y")
        !! the ionization yield, using the Lindhard model
-       !! Y(Er) = k*g(eps_L) / (1 + k*g(eps_L)), with
-       !! eps_L = 11.5*Er*Z**(-7/3) and g(eps_L) = 3*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L
-       real(c_double), value :: Er, k, Z
+       !! Y(Erecoil) = k*g(eps_L) / (1 + k*g(eps_L)), with
+       !! eps_L = 11.5*Erecoil*Z**(-7/3) and g(eps_L) = 3*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L
+       real(c_double), value :: Erecoil, k, Z
        real(c_double) :: res
     end function Y
 
-   pure module function Nbar(Er, k, Z, eps) result(res) bind(c, name="Nbar")
-     !! average number of electron-hole pairs for a given Er
-     real(c_double), value :: Er, k, Z, eps
+   pure module function Nbar(Erecoil, k, Z, eps) result(res) bind(c, name="Nbar")
+     !! average number of electron-hole pairs for a given Erecoil
+     real(c_double), value :: Erecoil, k, Z, eps
      real(c_double) :: res
    end function Nbar
 
@@ -59,23 +59,23 @@ module Ppq_fort_m
       real(c_double) :: res
    end function sigq
 
-  pure module function PEr_NR(Er) result(res) bind(c, name="PEr_NR")
-    !! the Er (energy) distribution of neutrons
-    real(c_double), value :: Er
+  pure module function PErecoil_NR(Erecoil) result(res) bind(c, name="PErecoil_NR")
+    !! the Erecoil (energy) distribution of neutrons
+    real(c_double), value :: Erecoil
     real(c_double) :: res
-  end function PEr_NR
+  end function PErecoil_NR
 
-  pure module function PEr_ER(Er) result(res) bind(c, name="PEr_ER")
-    !! the Er (energy) distribution of gamma events/electron recoils
-    real(c_double), value :: Er
+  pure module function PErecoil_ER(Erecoil) result(res) bind(c, name="PErecoil_ER")
+    !! the Erecoil (energy) distribution of gamma events/electron recoils
+    real(c_double), value :: Erecoil
     real(c_double) :: res
-  end function PEr_ER
+  end function PErecoil_ER
 
-  pure module function pq_given_Er_NR(Er, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Er_NR")
+  pure module function pq_given_Erecoil_NR(Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_NR")
     ! Input arguments
-    real(c_double), value :: Er, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
+    real(c_double), value :: Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
-  end function pq_given_Er_NR
+  end function pq_given_Erecoil_NR
 
   pure module function Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
       k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_region_NR")

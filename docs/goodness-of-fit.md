@@ -28,7 +28,7 @@ FIT = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
 # sampler_func, further down -- it has to return events already inside
 # (ep_min, ep_max) x (eq_min, eq_max). generate_events_NR has no ROI
 # cropping of its own (see "Generating simulated events"), so this uses
-# the top-level generate_events(ER_frac=0.0) instead, which already
+# the top-level generate_events(fraction_ER=0.0) instead, which already
 # crops to ep_range/eq_range and is deterministically pure-NR
 # (Var(Binomial(n, p)) is exactly zero at p=0 -- see that function's
 # docstring). F0_ER/mix_frac_ER/scale_fast_ER/scale_slow_ER are still
@@ -36,7 +36,7 @@ FIT = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
 # never actually used here, since zero ER events are ever generated.
 def sampler_NR(n, seed=None):
     events = pdf.generate_events(
-        n, ER_frac=0.0, seed=seed, ep_range=(ep_min, ep_max), eq_range=(eq_min, eq_max),
+        n, fraction_ER=0.0, seed=seed, ep_range=(ep_min, ep_max), eq_range=(eq_min, eq_max),
         k=FIT["k"], Z=FIT["Z"], F0_NR=FIT["F0"], F0_ER=0.2,
         eps=FIT["eps"], V=FIT["V"], p0=FIT["p0"], p10=FIT["p10"], q0=FIT["q0"], q10=FIT["q10"],
         mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
@@ -62,7 +62,7 @@ pdf_func = pdf.goodness_of_fit.make_Ppq_densities_NR(**FIT, n_workers=8)
 ridge_breakpoints = pdf.goodness_of_fit.make_ridge_breakpoints(
     False, k=FIT["k"], Z=FIT["Z"], eps=FIT["eps"], V=FIT["V"],
     p0=FIT["p0"], p10=FIT["p10"], q0=FIT["q0"], q10=FIT["q10"],
-    er_max=700.0, n_window_widths=10.0,
+    erecoil_max=700.0, n_window_widths=10.0,
 )
 
 expected = pdf.goodness_of_fit.expected_counts_from_pdf(

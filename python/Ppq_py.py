@@ -7,7 +7,7 @@ dependency at all (pure numpy/scipy), so it works anywhere this package
 is installed, compiler or not.
 
 This is deliberately the *slow*, brute-force path: Ppq_inspect_NR and
-Ppq_inspect_ER scan a uniform Er grid (step set by `er_step`) rather than
+Ppq_inspect_ER scan a uniform Erecoil grid (step set by `erecoil_step`) rather than
 using the Fortran side's analytic peak location and windowed quadrature,
 specifically so they can serve as an independent cross-check of
 Ppq_compiled/_Ppq_fort_bindings (see test/python/test_chisquare_ppqn.py and
@@ -17,9 +17,9 @@ for that.
 Public functions:
 * Y, Nbar, sigp, sigq -- the ionization-yield, mean pair-count, and
   phonon/ionization resolution models.
-* PEr_NR, PEr_ER -- the true-recoil-energy spectra (NR, ER).
+* PErecoil_NR, PErecoil_ER -- the true-recoil-energy spectra (NR, ER).
 * Ppq_inspect_NR, Ppq_inspect_ER -- the full Ppq_NR/Ppq_ER value at (Ep, Eq),
-  found by scanning for peak(s) in Er and integrating each with
+  found by scanning for peak(s) in Erecoil and integrating each with
   scipy.integrate.quad, and returning the scan grid and per-peak
   diagnostics (width, location) alongside the value -- the point of
   reaching for this over the Fortran side.
@@ -27,13 +27,13 @@ Public functions:
 Not part of the public API (not in __all__) -- no end user needs these directly:
 * aN, bN, cN -- the Gaussian-in-N exponent's quadratic coefficients, used only
   to build N_exponent below.
-* N_exponent, pq_given_Er_NR, pq_given_Er_ER -- internal pieces Ppq_inspect_NR/ER
+* N_exponent, pq_given_Erecoil_NR, pq_given_Erecoil_ER -- internal pieces Ppq_inspect_NR/ER
   are built from; still importable from this module by name (and from
   ctypes-level tests cross-checking the Fortran side) if you need them.
 * integrate_inspect -- the peak-finding/integration engine Ppq_inspect_NR/
   Ppq_inspect_ER are built on. Its "g" argument is a generic placeholder for
-  "the function being integrated" (called with pq_given_Er_NR for NR,
-  pq_given_Er_ER for ER) -- not a reference to gamma/ER. Exercised directly
+  "the function being integrated" (called with pq_given_Erecoil_NR for NR,
+  pq_given_Erecoil_ER for ER) -- not a reference to gamma/ER. Exercised directly
   against a custom multimodal integrand only by
   test_integrate_inspect_multimodal.py, to prove it finds every peak rather
   than just the one Ppq_inspect_NR/ER happen to feed it -- not something an
@@ -50,7 +50,7 @@ import scipy.integrate as integrate
 from scipy.optimize import curve_fit
 
 __all__ = [
-    "Y", "Nbar", "sigp", "sigq", "PEr_NR", "PEr_ER",
+    "Y", "Nbar", "sigp", "sigq", "PErecoil_NR", "PErecoil_ER",
     "Ppq_inspect_NR", "Ppq_inspect_ER",
 ]
 
@@ -60,28 +60,28 @@ __all__ = [
 # per-file version drift this rename is meant to retire.
 
 
-def Y(Er,
+def Y(Erecoil,
       *,
       k, Z):
-    """The ionization yield, Lindhard model: Y(Er) = k*g(eps_L) / (1 + k*g(eps_L)),
-    with eps_L = 11.5*Er*Z**(-7/3) and g(eps_L) = 3*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L.
-    Er in keV; Z is the target's atomic number."""
-    eps_L = 11.5 * np.absolute(Er) * Z**(-7.0/3.0)
+    """The ionization yield, Lindhard model: Y(Erecoil) = k*g(eps_L) / (1 + k*g(eps_L)),
+    with eps_L = 11.5*Erecoil*Z**(-7/3) and g(eps_L) = 3*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L.
+    Erecoil in keV; Z is the target's atomic number."""
+    eps_L = 11.5 * np.absolute(Erecoil) * Z**(-7.0/3.0)
     g = 3.0*eps_L**0.15 + 0.7*eps_L**0.29 + eps_L
     return k*g / (1.0 + k*g)
 
 
-def Nbar(Er,
+def Nbar(Erecoil,
          *,
          k, Z,
          eps,
          is_ER):
-    """Mean number of e/h pairs produced by a recoil of energy Er (keV).
+    """Mean number of e/h pairs produced by a recoil of energy Erecoil (keV).
     is_ER=True selects the electron-recoil yield (Y=1) instead of the
-    Lindhard NR yield Y(Er, k=k, Z=Z); k, Z are unused (pass any value)
+    Lindhard NR yield Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value)
     when is_ER=True."""
-    yield_val = 1.0 if is_ER else Y(Er, k=k, Z=Z)
-    return yield_val*Er/eps
+    yield_val = 1.0 if is_ER else Y(Erecoil, k=k, Z=Z)
+    return yield_val*Erecoil/eps
 
 
 def sigp(Ep,
@@ -106,15 +106,15 @@ def sigq(Eq,
 
 
 # Fit parameters -- matches the Fortran PErN_impl constants exactly (not
-# exposed as arguments there either: PEr_NR(Er) is the public signature)
+# exposed as arguments there either: PErecoil_NR(Erecoil) is the public signature)
 _PNa, _PNb, _PNd = 0.53693208, 6.41515782, 23.71789286
 
 
-def PEr_NR(Er):
-    """Probability density of the *true* recoil energy Er (keV) for
-    neutron recoils: a two-component exponential mixture, zero for Er < 0."""
-    Er = np.asarray(Er)  # Convert input to a NumPy array
-    result = np.where(Er < 0, 0, _PNa * (1 / _PNb) * np.exp(-Er / _PNb) + (1 - _PNa) * (1 / _PNd) * np.exp(-Er / _PNd))
+def PErecoil_NR(Erecoil):
+    """Probability density of the *true* recoil energy Erecoil (keV) for
+    neutron recoils: a two-component exponential mixture, zero for Erecoil < 0."""
+    Erecoil = np.asarray(Erecoil)  # Convert input to a NumPy array
+    result = np.where(Erecoil < 0, 0, _PNa * (1 / _PNb) * np.exp(-Erecoil / _PNb) + (1 - _PNa) * (1 / _PNd) * np.exp(-Erecoil / _PNd))
     return result
 #...TBD gammas
 
@@ -123,16 +123,16 @@ def PEr_NR(Er):
 _PGa, _PGb, _PGd = 5.73211975e-01, 1.69520023e-01, 2.79552394e+02
 
 
-def PEr_ER(Er):
-    """Probability density of the *true* recoil energy Er (keV) for
+def PErecoil_ER(Erecoil):
+    """Probability density of the *true* recoil energy Erecoil (keV) for
     electron recoils (Cf gammas): a two-component exponential mixture,
-    zero for Er < 0."""
-    Er = np.asarray(Er)  # Convert Er to a NumPy array
-    result = np.where(Er < 0, 0, _PGa * (1 / _PGb) * np.exp(-Er / _PGb) + (1 - _PGa) * (1 / _PGd) * np.exp(-Er / _PGd))
+    zero for Erecoil < 0."""
+    Erecoil = np.asarray(Erecoil)  # Convert Erecoil to a NumPy array
+    result = np.where(Erecoil < 0, 0, _PGa * (1 / _PGb) * np.exp(-Erecoil / _PGb) + (1 - _PGa) * (1 / _PGd) * np.exp(-Erecoil / _PGd))
     return result
 
 
-def aN(Er, Ep, Eq,
+def aN(Erecoil, Ep, Eq,
        *,
        F0,
        eps,
@@ -140,13 +140,13 @@ def aN(Er, Ep, Eq,
        p0, p10,
        q0, q10):
     """Linear coefficient of N_exponent's Gaussian-in-N exponent."""
-    t1 = (V/1e3)*(Ep-Er)/sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2
+    t1 = (V/1e3)*(Ep-Erecoil)/sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2
     t2 = eps*Eq/sigq(Eq,q0=q0,q10=q10)**2
     t3 = 1/F0
     return t1+t2+t3
 
 
-def bN(Er, Ep, Eq,
+def bN(Erecoil, Ep, Eq,
        *,
        k, Z,
        F0,
@@ -157,16 +157,16 @@ def bN(Er, Ep, Eq,
        is_ER):
     """Quadratic coefficient of N_exponent's Gaussian-in-N exponent. is_ER
     selects the electron-recoil yield (Y=1) instead of the Lindhard NR
-    yield Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when
+    yield Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value) when
     is_ER=True."""
-    Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_ER=is_ER)
+    Nbar_val = Nbar(Erecoil,k=k,Z=Z,eps=eps,is_ER=is_ER)
     t1 = 1/(2*Nbar_val*F0)
     t2 = eps**2/(2*sigq(Eq,q0=q0,q10=q10)**2)
     t3 = V**2/(2*(sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)*1e3)**2)
     return t1+t2+t3
 
 
-def cN(Er, Ep, Eq,
+def cN(Erecoil, Ep, Eq,
        *,
        k, Z,
        F0,
@@ -177,15 +177,15 @@ def cN(Er, Ep, Eq,
        is_ER):
     """Constant term of N_exponent's Gaussian-in-N exponent. is_ER selects
     the electron-recoil yield (Y=1) instead of the Lindhard NR yield
-    Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
-    Nbar_val = Nbar(Er,k=k,Z=Z,eps=eps,is_ER=is_ER)
-    t1 = -(Ep-Er)**2/(2*sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2)
+    Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
+    Nbar_val = Nbar(Erecoil,k=k,Z=Z,eps=eps,is_ER=is_ER)
+    t1 = -(Ep-Erecoil)**2/(2*sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2)
     t2 = -Eq**2/(2*sigq(Eq,q0=q0,q10=q10)**2)
     t3 = -Nbar_val/(2*F0)
     return t1+t2+t3
 
 
-def N_exponent(Er, Ep, Eq,
+def N_exponent(Erecoil, Ep, Eq,
            *,
            k, Z,
            F0,
@@ -194,19 +194,19 @@ def N_exponent(Er, Ep, Eq,
            p0, p10,
            q0, q10,
            is_ER):
-    """The exponent of the Gaussian-in-N integral that pq_given_Er_NR/pq_given_Er_ER
+    """The exponent of the Gaussian-in-N integral that pq_given_Erecoil_NR/pq_given_Erecoil_ER
     evaluate -- completing the square of cN + aN*N + bN*N**2 in N gives
     cN + aN**2/(4*bN), which is what this returns. is_ER selects the
     electron-recoil yield (Y=1) instead of the Lindhard NR yield
-    Y(Er, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
-    cN_val = cN(Er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=is_ER)
-    aN_val = aN(Er,Ep,Eq,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10)
-    bN_val = bN(Er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=is_ER)
+    Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
+    cN_val = cN(Erecoil,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=is_ER)
+    aN_val = aN(Erecoil,Ep,Eq,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10)
+    bN_val = bN(Erecoil,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=is_ER)
     exponent = cN_val + (aN_val**2 / (4*bN_val))
     return exponent
 
 
-def pq_given_Er_NR(Er, Ep, Eq,
+def pq_given_Erecoil_NR(Erecoil, Ep, Eq,
              *,
              k, Z,
              F0,
@@ -214,11 +214,11 @@ def pq_given_Er_NR(Er, Ep, Eq,
              V,
              p0, p10,
              q0, q10):
-    """Unnormalized NR (Ep, Eq) density at one true recoil energy Er (keV):
-    PEr_NR(Er) times the N-integral (a fixed 21-point Simpson rule over a
+    """Unnormalized NR (Ep, Eq) density at one true recoil energy Erecoil (keV):
+    PErecoil_NR(Erecoil) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak)."""
     F_val    = F0
-    Nbar_val = Nbar(Er, k=k, Z=Z, eps=eps, is_ER=False)
+    Nbar_val = Nbar(Erecoil, k=k, Z=Z, eps=eps, is_ER=False)
     if Nbar_val <= 0.0 or F_val <= 0.0:
         return 0.0
     sigma_N    = np.sqrt(Nbar_val * F_val)
@@ -227,11 +227,11 @@ def pq_given_Er_NR(Er, Ep, Eq,
     sp1 = (p10 ** 2 - p0 ** 2) / (10.0 * (1.0 + V / (eps * 1.0e3))) ** 2
     sq0 = q0 ** 2
     sq1 = (q10 ** 2 - q0 ** 2) / 100.0
-    EP_mean      = Er + (V * 1.0e-3) * Nbar_val
+    EP_mean      = Erecoil + (V * 1.0e-3) * Nbar_val
     EQ_mean      = eps * Nbar_val
     sigp_mean_sq = sp0 + sp1 * EP_mean ** 2
     sigq_mean_sq = sq0 + sq1 * EQ_mean ** 2
-    a_coeff = ((V * 1.0e-3) * (Ep - Er) / sigp_mean_sq
+    a_coeff = ((V * 1.0e-3) * (Ep - Erecoil) / sigp_mean_sq
                + eps * Eq / sigq_mean_sq
                + 1.0 / F_val)
     b_coeff = (1.0 / (2.0 * Nbar_val * F_val)
@@ -245,7 +245,7 @@ def pq_given_Er_NR(Er, Ep, Eq,
         N_lo, N_hi = N_star - 5.0 * sigma_Neff, N_star + 5.0 * sigma_Neff
     N_pts = np.linspace(N_lo, N_hi, 21)
     h_N   = (N_hi - N_lo) / 20.0
-    EP_nl = Er + (V * 1.0e-3) * N_pts
+    EP_nl = Erecoil + (V * 1.0e-3) * N_pts
     EQ_nl = eps * N_pts
     sig_p = np.sqrt(sp0 + sp1 * EP_nl ** 2)
     sig_q = np.sqrt(sq0 + sq1 * EQ_nl ** 2)
@@ -257,7 +257,7 @@ def pq_given_Er_NR(Er, Ep, Eq,
     integrand[mask] = (norm_const / (sigma_N * sig_p[mask] * sig_q[mask])
                        * np.exp(exp_arg[mask]))
     simps_w = np.array([1,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,1], dtype=float)
-    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PEr_NR(Er))
+    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PErecoil_NR(Erecoil))
 
 
 def Ppq_inspect_NR(Ep, Eq,
@@ -268,10 +268,10 @@ def Ppq_inspect_NR(Ep, Eq,
               V,
               p0, p10,
               q0, q10,
-              er_step):
-    """The full NR PDF value Ppq_NR(Ep, Eq), found by scanning a uniform Er
-    grid (step `er_step`, in keV) for the Gaussian-in-N exponent's peak
-    and integrating pq_given_Er_NR around it with scipy.integrate.quad -- the
+              erecoil_step):
+    """The full NR PDF value Ppq_NR(Ep, Eq), found by scanning a uniform Erecoil
+    grid (step `erecoil_step`, in keV) for the Gaussian-in-N exponent's peak
+    and integrating pq_given_Erecoil_NR around it with scipy.integrate.quad -- the
     slow, brute-force reference this package's event_generator.py and
     the compiled Fortran Ppq_NR are cross-checked against (see
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
@@ -279,10 +279,10 @@ def Ppq_inspect_NR(Ep, Eq,
 
     Returns a dict:
       value, value_err : the PDF value and its quadrature error.
-      er_scan_grid, er_scan_integrand : the Er scan arrays.
+      erecoil_scan_grid, erecoil_scan_integrand : the Erecoil scan arrays.
       peaks : one dict per located peak, with "minx"/"maxx" (the
         integration window), "integral"/"integral_err" (that peak's own
-        quad result), and "width"/"Ermx"/"integrand_max" from a Gaussian
+        quad result), and "width"/"Erecoilmx"/"integrand_max" from a Gaussian
         fit (nan if the fit didn't converge).
     Usage to just get the value: Ppq_inspect_NR(...)["value"].
 
@@ -292,19 +292,19 @@ def Ppq_inspect_NR(Ep, Eq,
     fails to find *a* peak (an exact minimizer sometimes does).
     """
     if F0 == 0:
-        raise ValueError("Fano factor F(Er) = F0 is zero for all Er")
+        raise ValueError("Fano factor F(Erecoil) = F0 is zero for all Erecoil")
 
-    # find Er_max
-    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
+    # find Erecoil_max
+    f = lambda erecoil,ep,eq: -1*N_exponent(erecoil,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
 
     maxx = max(Ep, Eq) + 5
-    er_arr = np.arange(5e-21, maxx, er_step)
-    f_arr = np.zeros(len(er_arr), dtype=np.float64)
-    for idx, er in enumerate(er_arr):
+    erecoil_arr = np.arange(5e-21, maxx, erecoil_step)
+    f_arr = np.zeros(len(erecoil_arr), dtype=np.float64)
+    for idx, erecoil in enumerate(erecoil_arr):
         try:
-            f_arr[idx] = -1*N_exponent(er,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
+            f_arr[idx] = -1*N_exponent(erecoil,Ep,Eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
         except Exception:
-            # N_exponent can over/underflow at extreme Er; leaving this
+            # N_exponent can over/underflow at extreme Erecoil; leaving this
             # sample at its default 0 and continuing the scan is correct
             # here, since a real peak is never isolated to a single
             # sample on a grid this fine.
@@ -312,33 +312,33 @@ def Ppq_inspect_NR(Ep, Eq,
     real_val_idx = np.where(f_arr > 0)[0]
     if len(real_val_idx) == 0:
         if np.all(f_arr == 0):
-            return {"value": 0, "value_err": 0, "er_scan_grid": er_arr,
-                    "er_scan_integrand": f_arr, "peaks": []}
+            return {"value": 0, "value_err": 0, "erecoil_scan_grid": erecoil_arr,
+                    "erecoil_scan_integrand": f_arr, "peaks": []}
         elif np.all(np.isnan(f_arr)):
-            return {"value": np.nan, "value_err": np.nan, "er_scan_grid": er_arr,
-                    "er_scan_integrand": f_arr, "peaks": []}
+            return {"value": np.nan, "value_err": np.nan, "erecoil_scan_grid": erecoil_arr,
+                    "erecoil_scan_integrand": f_arr, "peaks": []}
     else:
         min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
-        Ermx = er_arr[min_idx]
+        Erecoilmx = erecoil_arr[min_idx]
 
-    g = lambda er, ep, eq: pq_given_Er_NR(er, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    g = lambda erecoil, ep, eq: pq_given_Erecoil_NR(erecoil, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
-    return integrate_inspect(g, Ep, Eq, Ermx, er_step)
+    return integrate_inspect(g, Ep, Eq, Erecoilmx, erecoil_step)
 
 
-def pq_given_Er_ER(Er, Ep, Eq,
+def pq_given_Erecoil_ER(Erecoil, Ep, Eq,
              *,
              F0,
              eps,
              V,
              p0, p10,
              q0, q10):
-    """Unnormalized ER (Ep, Eq) density at one true recoil energy Er (keV):
-    PEr_ER(Er) times the N-integral (a fixed 21-point Simpson rule over a
+    """Unnormalized ER (Ep, Eq) density at one true recoil energy Erecoil (keV):
+    PErecoil_ER(Erecoil) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak), with the electron-
-    recoil yield Y=1 (see pq_given_Er_NR for the analogous NR calculation)."""
+    recoil yield Y=1 (see pq_given_Erecoil_NR for the analogous NR calculation)."""
     F_val    = F0
-    Nbar_val = Nbar(Er, k=0.0, Z=1.0, eps=eps, is_ER=True)   # k, Z unused: Y=1 for electron recoils
+    Nbar_val = Nbar(Erecoil, k=0.0, Z=1.0, eps=eps, is_ER=True)   # k, Z unused: Y=1 for electron recoils
     if Nbar_val <= 0.0 or F_val <= 0.0:
         return 0.0
     sigma_N    = np.sqrt(Nbar_val * F_val)
@@ -347,11 +347,11 @@ def pq_given_Er_ER(Er, Ep, Eq,
     sp1 = (p10 ** 2 - p0 ** 2) / (10.0 * (1.0 + V / (eps * 1.0e3))) ** 2
     sq0 = q0 ** 2
     sq1 = (q10 ** 2 - q0 ** 2) / 100.0
-    EP_mean      = Er + (V * 1.0e-3) * Nbar_val
+    EP_mean      = Erecoil + (V * 1.0e-3) * Nbar_val
     EQ_mean      = eps * Nbar_val
     sigp_mean_sq = sp0 + sp1 * EP_mean ** 2
     sigq_mean_sq = sq0 + sq1 * EQ_mean ** 2
-    a_coeff = ((V * 1.0e-3) * (Ep - Er) / sigp_mean_sq
+    a_coeff = ((V * 1.0e-3) * (Ep - Erecoil) / sigp_mean_sq
                + eps * Eq / sigq_mean_sq
                + 1.0 / F_val)
     b_coeff = (1.0 / (2.0 * Nbar_val * F_val)
@@ -365,7 +365,7 @@ def pq_given_Er_ER(Er, Ep, Eq,
         N_lo, N_hi = N_star - 5.0 * sigma_Neff, N_star + 5.0 * sigma_Neff
     N_pts = np.linspace(N_lo, N_hi, 21)
     h_N   = (N_hi - N_lo) / 20.0
-    EP_nl = Er + (V * 1.0e-3) * N_pts
+    EP_nl = Erecoil + (V * 1.0e-3) * N_pts
     EQ_nl = eps * N_pts
     sig_p = np.sqrt(sp0 + sp1 * EP_nl ** 2)
     sig_q = np.sqrt(sq0 + sq1 * EQ_nl ** 2)
@@ -377,7 +377,7 @@ def pq_given_Er_ER(Er, Ep, Eq,
     integrand[mask] = (norm_const / (sigma_N * sig_p[mask] * sig_q[mask])
                        * np.exp(exp_arg[mask]))
     simps_w = np.array([1,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,2,4,1], dtype=float)
-    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PEr_ER(Er))
+    return float((h_N / 3.0) * np.dot(simps_w, integrand) * PErecoil_ER(Erecoil))
 
 
 def consecutive_groups(data, stepsize=1):
@@ -396,36 +396,36 @@ def gaussian_profile(x, A, mu, sigma):
     return A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
 
 
-def integrate_inspect(g, Ep, Eq, Ermx, er_step):
-    """Integrate g(Er, Ep, Eq) over Er by locating its peak(s) on a
-    uniform scan grid (step `er_step/2`, in keV, starting from an
-    approximate peak location Ermx) and integrating each located peak
+def integrate_inspect(g, Ep, Eq, Erecoilmx, erecoil_step):
+    """Integrate g(Erecoil, Ep, Eq) over Erecoil by locating its peak(s) on a
+    uniform scan grid (step `erecoil_step/2`, in keV, starting from an
+    approximate peak location Erecoilmx) and integrating each located peak
     with scipy.integrate.quad. This is the engine Ppq_inspect_NR and
     Ppq_inspect_ER are built on. Not part of the public API (not in
     __all__); test/python/test_integrate_inspect_multimodal.py exercises it
     directly against a synthetic multi-peak integrand to prove the
     peak-finding itself is correct, independent of either band's physics.
     The "g" here is a generic placeholder for
-    "the function being integrated" (it's called with pq_given_Er_NR for NR,
-    pq_given_Er_ER for ER) -- not a reference to gamma/ER, which is why this
+    "the function being integrated" (it's called with pq_given_Erecoil_NR for NR,
+    pq_given_Erecoil_ER for ER) -- not a reference to gamma/ER, which is why this
     function's own name doesn't carry an N/G suffix the way Ppq_inspect_NR/
     Ppq_inspect_ER do.
 
     Returns a dict: value, value_err (the integral and its quadrature
-    error), er_scan_grid, er_scan_integrand, and peaks -- see
+    error), erecoil_scan_grid, erecoil_scan_integrand, and peaks -- see
     Ppq_inspect_NR's docstring for the shape of each peaks entry.
     """
     minx = 5e-21
     maxx = max(Ep, Eq) + 5
 
-    # This early-out (Ermx's own value is exactly zero or NaN) has not
-    # been confirmed to be reachable given how Ermx is located by the
+    # This early-out (Erecoilmx's own value is exactly zero or NaN) has not
+    # been confirmed to be reachable given how Erecoilmx is located by the
     # callers above -- kept rather than removed without first proving it
     # dead, but flagged here since it predates this module's public-API
     # promotion.
-    if g(Ermx, Ep, Eq) == 0 or np.isnan(g(Ermx, Ep, Eq)):
-        return {"value": 0, "value_err": 0, "er_scan_grid": None,
-                "er_scan_integrand": None, "peaks": []}
+    if g(Erecoilmx, Ep, Eq) == 0 or np.isnan(g(Erecoilmx, Ep, Eq)):
+        return {"value": 0, "value_err": 0, "erecoil_scan_grid": None,
+                "erecoil_scan_integrand": None, "peaks": []}
 
     # Scan the integrand on a uniform grid.  If it is still non-zero
     # near the end of the scan range, extend the range and re-scan the
@@ -433,26 +433,26 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     # consistent array.
     scan_min = minx
     while True:
-        er_arr = np.arange(scan_min, maxx, er_step / 2)
-        er_integrand_arr = np.zeros(np.size(er_arr))
-        for idx, er in enumerate(er_arr):
-            er_integrand_arr[idx] = g(er, Ep, Eq)
-        nonZero_idx = np.where(er_integrand_arr > 0)[0]
-        if len(nonZero_idx) == 0 or nonZero_idx[-1] + 5 < len(er_arr) - 1:
+        erecoil_arr = np.arange(scan_min, maxx, erecoil_step / 2)
+        erecoil_integrand_arr = np.zeros(np.size(erecoil_arr))
+        for idx, erecoil in enumerate(erecoil_arr):
+            erecoil_integrand_arr[idx] = g(erecoil, Ep, Eq)
+        nonZero_idx = np.where(erecoil_integrand_arr > 0)[0]
+        if len(nonZero_idx) == 0 or nonZero_idx[-1] + 5 < len(erecoil_arr) - 1:
             break
         maxx = 1.5 * maxx
 
     if len(nonZero_idx) == 0:
         # the peak is narrower than the scan step and fell between grid
         # points; integrate around the known maximum instead
-        val, err = integrate.quad(g, er_arr[0], er_arr[-1], args=(Ep, Eq),
-                                  points=[Ermx], epsabs=0, epsrel=1e-12,
+        val, err = integrate.quad(g, erecoil_arr[0], erecoil_arr[-1], args=(Ep, Eq),
+                                  points=[Erecoilmx], epsabs=0, epsrel=1e-12,
                                   limit=200)
-        peak_info = {"minx": er_arr[0], "maxx": er_arr[-1],
+        peak_info = {"minx": erecoil_arr[0], "maxx": erecoil_arr[-1],
                      "integral": val, "integral_err": err,
-                     "width": np.nan, "Ermx": Ermx, "integrand_max": np.nan}
-        return {"value": val, "value_err": err, "er_scan_grid": er_arr,
-                "er_scan_integrand": er_integrand_arr, "peaks": [peak_info]}
+                     "width": np.nan, "Erecoilmx": Erecoilmx, "integrand_max": np.nan}
+        return {"value": val, "value_err": err, "erecoil_scan_grid": erecoil_arr,
+                "erecoil_scan_integrand": erecoil_integrand_arr, "peaks": [peak_info]}
 
     # We expect a structure of peaks surrounded by zeros: group the
     # consecutive non-zero samples and pad each group's range by 5 grid
@@ -462,13 +462,13 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
     peak_info_array = []
     for peak_idx in nonZero_idx_groups:
         min_idx = max(0, min(peak_idx) - 5)
-        max_idx = min(np.size(er_integrand_arr) - 1, max(peak_idx) + 5)
-        peak_info_array.append({"minx": er_arr[min_idx],
-                                "maxx": er_arr[max_idx]})
+        max_idx = min(np.size(erecoil_integrand_arr) - 1, max(peak_idx) + 5)
+        peak_info_array.append({"minx": erecoil_arr[min_idx],
+                                "maxx": erecoil_arr[max_idx]})
 
     # Merge overlapping ranges (union), so that quad below neither
     # double-counts the overlap nor drops a peak.  The groups are in
-    # ascending Er order by construction.
+    # ascending Erecoil order by construction.
     merged = [peak_info_array[0]]
     for peak_info in peak_info_array[1:]:
         if peak_info["minx"] <= merged[-1]["maxx"]:
@@ -494,20 +494,20 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
         peak_info_array[jdx]["integral_err"] = ans[1]
 
         # this array is for the fitting
-        er_arr = np.linspace(minx, maxx, 2000)
-        er_integrand_arr = np.zeros(np.size(er_arr))
-        for idx, er in enumerate(er_arr):
-            er_integrand_arr[idx] = g(er, Ep, Eq)
+        erecoil_arr = np.linspace(minx, maxx, 2000)
+        erecoil_integrand_arr = np.zeros(np.size(erecoil_arr))
+        for idx, erecoil in enumerate(erecoil_arr):
+            erecoil_integrand_arr[idx] = g(erecoil, Ep, Eq)
 
         # find the width
         # Find maximum function value and corresponding energy
-        er_arr = er_arr.flatten()
+        erecoil_arr = erecoil_arr.flatten()
 
         # Filter data to only include points where the value is not NaN
-        mask_nan = np.isnan(er_integrand_arr)
-        mask_zeros = er_integrand_arr == 0
-        filtered_energies = er_arr[~mask_nan & ~mask_zeros]
-        filtered_values = er_integrand_arr[~mask_nan & ~mask_zeros]
+        mask_nan = np.isnan(erecoil_integrand_arr)
+        mask_zeros = erecoil_integrand_arr == 0
+        filtered_energies = erecoil_arr[~mask_nan & ~mask_zeros]
+        filtered_values = erecoil_integrand_arr[~mask_nan & ~mask_zeros]
 
         max_index = np.argmax(filtered_values)
         max_value = filtered_values[max_index]
@@ -521,12 +521,12 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
             if np.all(curvature == 0):
                 warnings.warn(
                     f"integrate_inspect: peak {jdx} at Ep={Ep}, Eq={Eq} "
-                    "is a flat line over its scan window -- width/Ermx left as "
+                    "is a flat line over its scan window -- width/Erecoilmx left as "
                     "the plain max, no Gaussian fit attempted.",
                     stacklevel=2,
                 )
                 peak_info_array[jdx]["width"] = width_estimate
-                peak_info_array[jdx]["Ermx"] = max_energy
+                peak_info_array[jdx]["Erecoilmx"] = max_energy
                 peak_info_array[jdx]['integrand_max'] = max_value
 
             else:
@@ -543,12 +543,12 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
                 # this is so that when the values are small the fit still works!
                 popt, _ = curve_fit(gaussian_profile, filtered_energies, filtered_values * 1/max_value, p0=[1, max_energy, width_estimate])
 
-                # Er_max is the value of Er for which g is maximum
+                # Erecoil_max is the value of Erecoil for which g is maximum
                 peak_info_array[jdx]['integrand_max'] = popt[0] * max_value
                 peak_info_array[jdx]["width"] = popt[2]
-                peak_info_array[jdx]["Ermx"] = popt[1]
+                peak_info_array[jdx]["Erecoilmx"] = popt[1]
         except Exception as e:
-            # Not setting an Ermx here means a caller relying on it will
+            # Not setting an Erecoilmx here means a caller relying on it will
             # fail noisily rather than silently continuing with a wrong
             # peak location.
             warnings.warn(
@@ -566,18 +566,18 @@ def integrate_inspect(g, Ep, Eq, Ermx, er_step):
         integral += peak_info["integral"]
         error += peak_info["integral_err"]
 
-    # find the overall minimum and maximum and evaluate er_integrand_arr over that range
+    # find the overall minimum and maximum and evaluate erecoil_integrand_arr over that range
     min_minx = min(d["minx"] for d in peak_info_array)
     max_maxx = max(d["maxx"] for d in peak_info_array)
-    er_arr = np.arange(min_minx, max_maxx, er_step / 2)
-    er_integrand_arr = np.zeros(np.size(er_arr))
-    for idx, er in enumerate(er_arr):
-        val = g(er, Ep, Eq)
-        er_integrand_arr[idx] = val
+    erecoil_arr = np.arange(min_minx, max_maxx, erecoil_step / 2)
+    erecoil_integrand_arr = np.zeros(np.size(erecoil_arr))
+    for idx, erecoil in enumerate(erecoil_arr):
+        val = g(erecoil, Ep, Eq)
+        erecoil_integrand_arr[idx] = val
 
     # now we're ready to return everything to the user
-    return {"value": integral, "value_err": error, "er_scan_grid": er_arr,
-            "er_scan_integrand": er_integrand_arr, "peaks": peak_info_array}
+    return {"value": integral, "value_err": error, "erecoil_scan_grid": erecoil_arr,
+            "erecoil_scan_integrand": erecoil_integrand_arr, "peaks": peak_info_array}
 
 
 def Ppq_inspect_ER(Ep, Eq,
@@ -587,41 +587,43 @@ def Ppq_inspect_ER(Ep, Eq,
               V,
               p0, p10,
               q0, q10,
-              er_step):
+              erecoil_step):
     """The full ER PDF value Ppq_ER(Ep, Eq) -- the ER counterpart of
     Ppq_inspect_NR (see its docstring for the method, return shape, and
-    the "never use this in a fit/MCMC loop" caveat). `er_step` (keV)
+    the "never use this in a fit/MCMC loop" caveat). `erecoil_step` (keV)
     should be scanned finer than the narrowest expected peak: ER peaks
     can be as narrow as the zero-energy ionization resolution q0 (~0.06
-    keV for typical CDMS parameters), so e.g. er_step=0.01 (a 0.005 keV
+    keV for typical CDMS parameters), so e.g. erecoil_step=0.01 (a 0.005 keV
     scan step) is finer than the 0.01 keV grid the Fortran Ppq_ER
     integrates on. Usage to just get the value:
     Ppq_inspect_ER(...)["value"].
     """
     if F0 == 0:
-        raise ValueError("Fano factor F(Er) = F0 is zero for all Er")
+        raise ValueError("Fano factor F(Erecoil) = F0 is zero for all Erecoil")
 
-    g = lambda er, ep, eq: pq_given_Er_ER(er, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    g = lambda erecoil, ep, eq: pq_given_Erecoil_ER(erecoil, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
     # k, Z are unused placeholders here: is_ER=True forces Y=1 in N_exponent
-    f = lambda er,ep,eq: -1*N_exponent(er,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=True)
+    f = lambda erecoil,ep,eq: -1*N_exponent(erecoil,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=True)
 
     # WARNING: this will only work if your peaks have a width greater
     # than 0.1 keV, which seems to be true for all reasonable CDMS
     # parameters (see Ppq_inspect_NR's docstring).
     maxx = max(Ep, Eq) + 5
-    er_arr = np.arange(5e-21, maxx, er_step)
-    f_arr = np.zeros(len(er_arr))
-    for idx, er in enumerate(er_arr):
-        f_arr[idx] = f(er, Ep, Eq)
+    erecoil_arr = np.arange(5e-21, maxx, erecoil_step)
+    f_arr = np.zeros(len(erecoil_arr))
+    for idx, erecoil in enumerate(erecoil_arr):
+        f_arr[idx] = f(erecoil, Ep, Eq)
 
     if not np.any(f_arr > 0):
         if np.all(f_arr == 0):
-            return (0, 0), (er_arr, f_arr), []
+            return {"value": 0, "value_err": 0, "erecoil_scan_grid": erecoil_arr,
+                    "erecoil_scan_integrand": f_arr, "peaks": []}
         elif np.all(np.isnan(f_arr)):
-            return (np.nan, np.nan), (er_arr, f_arr), []
+            return {"value": np.nan, "value_err": np.nan, "erecoil_scan_grid": erecoil_arr,
+                    "erecoil_scan_integrand": f_arr, "peaks": []}
     else:
         min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
-        Ermx = er_arr[min_idx]
+        Erecoilmx = erecoil_arr[min_idx]
 
-    return integrate_inspect(g, Ep, Eq, Ermx, er_step)
+    return integrate_inspect(g, Ep, Eq, Erecoilmx, erecoil_step)

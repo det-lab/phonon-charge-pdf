@@ -15,7 +15,7 @@ docstring for the general workflow).  Specific to this test:
   roughly linearly with energy, so the edges are spaced proportionally to
   the local resolution.  This keeps a constant number of cells per band
   width with far fewer points than a uniform grid would need.
-- The grid evaluation (~1e6 Fortran calls) is cached in PPQ_NR_GRID_CACHE;
+- The grid evaluation (~1e6 Fortran calls) is cached in PPQ_GRID_CACHE_NR;
   delete the file to force re-evaluation.
 - Expected counts integrate the *true* Fortran PDF per bin.  Because the
   band is a narrow ridge crossing wide tail bins, the inner (Eq)
@@ -74,7 +74,7 @@ N_THROWS        = int(sys.argv[1]) if len(sys.argv) > 1 else 100_000
 N_BINS          = int(sys.argv[2]) if len(sys.argv) > 2 else 64   # equibin target bins
 CELLS_PER_SIGMA = 6.0       # sampling-grid cells per local band width
 N_WORKERS       = os.cpu_count()
-PPQ_NR_GRID_CACHE = REPO_ROOT / "ppq_nr_vertex_grid.npz"
+PPQ_GRID_CACHE_NR = REPO_ROOT / "ppq_nr_vertex_grid.npz"
 
 # ---------------------------------------------------------------------------
 # Detector resolutions (from the python reference implementation), used
@@ -91,7 +91,7 @@ def sigq(eq):
 ridge_breakpoints = make_ridge_breakpoints(
     False, k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"], q0=PARAMS["q0"], q10=PARAMS["q10"],
-    er_max=700.0, n_window_widths=10.0)
+    erecoil_max=700.0, n_window_widths=10.0)
 
 # ---------------------------------------------------------------------------
 # Build (or load) the sampling grid
@@ -110,21 +110,21 @@ with open(REPO_ROOT / "lib" / "libphonon_charge_pdf.so", "rb") as f:
     lib_hash = hashlib.sha256(f.read()).hexdigest()
 
 vertex_values = None
-if os.path.exists(PPQ_NR_GRID_CACHE):
-    cache = np.load(PPQ_NR_GRID_CACHE)
+if os.path.exists(PPQ_GRID_CACHE_NR):
+    cache = np.load(PPQ_GRID_CACHE_NR)
     if (np.array_equal(cache["ep_edges"], ep_edges)
             and np.array_equal(cache["eq_edges"], eq_edges)
             and np.array_equal(cache["params"],
                                np.array(list(PARAMS.values())))
             and str(cache["lib_hash"]) == lib_hash):
         vertex_values = cache["values"]
-        print(f"Loaded cached vertex grid from {PPQ_NR_GRID_CACHE}")
+        print(f"Loaded cached vertex grid from {PPQ_GRID_CACHE_NR}")
     else:
         print("Cache exists but edges/params/library differ — re-evaluating.")
 
 if vertex_values is None:
     print(f"Evaluating Ppq_NR at {ep_edges.size * eq_edges.size:,} vertices "
-          f"(cached afterwards in {PPQ_NR_GRID_CACHE})...")
+          f"(cached afterwards in {PPQ_GRID_CACHE_NR})...")
     t0 = time.time()
     Ep_g, Eq_g = np.meshgrid(ep_edges, eq_edges, indexing="ij")
     ep_flat, eq_flat = Ep_g.ravel(), Eq_g.ravel()
@@ -142,12 +142,12 @@ if vertex_values is None:
               flush=True)
     vertex_values = vertex_values.reshape(ep_edges.size, eq_edges.size)
     np.savez_compressed(
-        PPQ_NR_GRID_CACHE,
+        PPQ_GRID_CACHE_NR,
         ep_edges=ep_edges, eq_edges=eq_edges, values=vertex_values,
         params=np.array(list(PARAMS.values())), lib_hash=lib_hash,
     )
     print(f"Grid evaluated in {(time.time()-t0)/60:.1f} min, "
-          f"saved to {PPQ_NR_GRID_CACHE}")
+          f"saved to {PPQ_GRID_CACHE_NR}")
 
 pdf_lookup = spdf.make_vertex_lookup_pdf(ep_edges, eq_edges, vertex_values)
 sampler = spdf.build_sampler_from_edges(pdf_lookup, ep_edges, eq_edges)

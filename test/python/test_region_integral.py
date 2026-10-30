@@ -62,13 +62,13 @@ def quad_reference(band, ep_min, ep_max, eq_min, eq_max, params):
         pdf_func = make_Ppq_densities_NR(**params, n_workers=os.cpu_count())
         ridge = make_ridge_breakpoints(False, **{k: params[k] for k in
                                                  ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
-                                        er_max=700.0, n_window_widths=10.0)
+                                        erecoil_max=700.0, n_window_widths=10.0)
     else:
         pdf_func = make_Ppq_densities_ER(**params, n_workers=os.cpu_count())
         ridge = make_ridge_breakpoints(True, k=None, Z=None,
                                         **{k: params[k] for k in
                                            ("eps", "V", "p0", "p10", "q0", "q10")},
-                                        er_max=700.0, n_window_widths=10.0)
+                                        erecoil_max=700.0, n_window_widths=10.0)
     with redirect_stdout(io.StringIO()):
         result = debug_bin(pdf_func, (ep_min, ep_max, eq_min, eq_max), ridge)
     rel_fixed_grid = abs(result["fixed"] - result["grid_ref"]) / max(abs(result["grid_ref"]), 1e-300)

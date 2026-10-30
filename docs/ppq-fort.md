@@ -39,7 +39,7 @@ def loglike(k, Z, F0, eps, V, p0, p10, q0, q10):
 
 ## Performance notes
 
-`Ppq_NR`/`Ppq_ER` integrate over a window placed around the located peak(s) of the Er
+`Ppq_NR`/`Ppq_ER` integrate over a window placed around the located peak(s) of the Erecoil
 integrand rather than sampling the full physical range, evaluating at roughly 6
 microseconds per (Ep, Eq) point in vector mode (18 threads under x86 emulation; measured
 via `Ppq_vector_NR` over a representative grid). This number assumes an ifx or flang build;

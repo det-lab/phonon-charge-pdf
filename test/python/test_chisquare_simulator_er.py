@@ -2,7 +2,7 @@
 Chi-square distribution test: electron-recoil physics simulator vs Fortran Ppq_ER.
 
 Generates (Ep, Eq) pairs from the physics model
-(Er ~ PEr_ER, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal, with Y = 1)
+(Erecoil ~ PErecoil_ER, N | Erecoil ~ TruncNormal float, Ep/Eq | Erecoil,N ~ Normal, with Y = 1)
 and checks that chi-square values against the Fortran Ppq_ER PDF follow
 chi2(dof).  This validates that Ppq_ER correctly describes the physics.
 
@@ -18,13 +18,13 @@ Observable range
 
 Usage
 -----
-    LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]
+    LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py [n_throws] [n_bins]
 
 n_throws defaults to 1000 for a quick check; use 10000 for a thorough test.
 n_bins defaults to 400; use a smaller value (e.g. 64) for a fast smoke test
 of the wiring, since the one-time bin integration dominates the wall time.
 
-The chi-square histogram is written to figures/chisquare_er_simulator.png.
+The chi-square histogram is written to figures/chisquare_simulator_er.png.
 
 Approximate wall times (18 workers, x86 emulation on an Apple Silicon Mac;
 native x86 hardware should be faster):
@@ -90,18 +90,18 @@ N_WORKERS = os.cpu_count()
 # Sampler: generate exactly n in-range ER events from the physics simulator.
 #
 # generate_events_ER has no ROI cropping of its own (the gamma spectrum
-# PEr_ER has scale_fast ~ 0.17 keV, so the majority of generated events sit
-# at very low Er and fall below the Ep threshold), so this uses the
-# top-level generate_events instead: ER_frac=1.0 is deterministically
+# PErecoil_ER has scale_fast ~ 0.17 keV, so the majority of generated events sit
+# at very low Erecoil and fall below the Ep threshold), so this uses the
+# top-level generate_events instead: fraction_ER=1.0 is deterministically
 # pure-ER (Var(Binomial(n, p)) is exactly zero at p=1 -- see that
 # function's docstring), and it already crops to ep_range/eq_range. k/Z/
 # F0_NR/mix_frac_NR/scale_fast_NR/scale_slow_NR are still required
 # (generate_events() always needs both bands' parameters) but never
 # actually used here, since zero NR events are ever generated.
 # ---------------------------------------------------------------------------
-def er_sampler(n, seed=None):
+def sampler_ER(n, seed=None):
     events = generate_events(
-        n, ER_frac=1.0, seed=seed, ep_range=EP_RANGE, eq_range=EQ_RANGE,
+        n, fraction_ER=1.0, seed=seed, ep_range=EP_RANGE, eq_range=EQ_RANGE,
         k=0.18, Z=32.0, F0_NR=0.122, F0_ER=PARAMS["F0"],
         eps=PARAMS["eps"], V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
@@ -121,7 +121,7 @@ pdf_fort = make_Ppq_densities_ER(**PARAMS, n_workers=N_WORKERS)
 # Quick sanity check on the sampler
 print("Spot-checking sampler output range...")
 t0 = time.time()
-Ep_chk, Eq_chk = er_sampler(500)
+Ep_chk, Eq_chk = sampler_ER(500)
 print(f"  Generated 500 events in {time.time()-t0:.2f} s")
 print(f"  Ep: [{Ep_chk.min():.2f}, {Ep_chk.max():.2f}] keV")
 print(f"  Eq: [{Eq_chk.min():.4f}, {Eq_chk.max():.2f}] keV")
@@ -131,7 +131,7 @@ print(f"  Eq: [{Eq_chk.min():.4f}, {Eq_chk.max():.2f}] keV")
 # ---------------------------------------------------------------------------
 t_start = time.time()
 chi2_vals, dof, bins, expected = run_chisquare_test(
-    pdf_fort, er_sampler, EP_RANGE, EQ_RANGE,
+    pdf_fort, sampler_ER, EP_RANGE, EQ_RANGE,
     n_events   = N_EVENTS,
     n_throws   = N_THROWS,
     n_bins     = N_BINS,
@@ -141,7 +141,7 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
         True, k=None, Z=None, eps=PARAMS["eps"], V=PARAMS["V"],
         p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
-        er_max=700.0, n_window_widths=10.0),
+        erecoil_max=700.0, n_window_widths=10.0),
     n_workers  = N_WORKERS,
     batch_size = 50,
     seed       = 42,
@@ -195,6 +195,6 @@ ax.text(0.97, 0.97, stats_text, transform=ax.transAxes,
         bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
 ax.legend()
 fig.tight_layout()
-outfile = REPO_ROOT / "figures" / "chisquare_er_simulator.png"
+outfile = REPO_ROOT / "figures" / "chisquare_simulator_er.png"
 fig.savefig(outfile, dpi=150)
 print(f"\nPlot saved to {outfile}")

@@ -29,7 +29,7 @@ All physics parameters are required keyword arguments — there are no
 defaults, so the caller must specify the model fully.
 
 The shared library evaluates points sequentially (~3-25 ms per point,
-scaling with max(Ep, Eq) because the internal Er integration range grows
+scaling with max(Ep, Eq) because the internal Erecoil integration range grows
 with energy).  Since ctypes releases the GIL during foreign calls, this
 wrapper parallelizes large requests by splitting them into chunks and
 dispatching Ppq_vector_NR calls across a thread pool.  Points are

@@ -30,7 +30,7 @@ import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of wha
 check("import phonon_charge_pdf with no compiled library present", True)
 check("Ppq_compiled is exported", hasattr(bd, "Ppq_compiled"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
-# Deliberately NOT exported (see python/__init__.py): generate_events(ER_frac=0.0/1.0)
+# Deliberately NOT exported (see python/__init__.py): generate_events(fraction_ER=0.0/1.0)
 # covers every normal use, and calling these directly as a sampler is a
 # real footgun (no ROI cropping of their own).
 check("generate_events_NR is not exported at the top level", not hasattr(bd, "generate_events_NR"))
@@ -62,14 +62,14 @@ try:
     # Not top-level exported (see above), but still importable directly --
     # confirms the underlying generator still works with no Fortran library.
     from phonon_charge_pdf.event_generator import generate_events_NR  # noqa: E402
-    Ep, Eq, Er, N = generate_events_NR(50, seed=1, **PARAMS, **SPECTRUM)
+    Ep, Eq, Erecoil, N = generate_events_NR(50, seed=1, **PARAMS, **SPECTRUM)
     check("generate_events_NR (imported directly) runs with no Fortran library",
-          Ep.shape == Eq.shape == Er.shape == N.shape == (50,))
+          Ep.shape == Eq.shape == Erecoil.shape == N.shape == (50,))
 except Exception as e:
     check("generate_events_NR (imported directly) runs with no Fortran library", False, repr(e))
 
 try:
-    result = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, er_step=0.1)
+    result = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, erecoil_step=0.1)
     check("Ppq_inspect_NR runs with no Fortran library",
           result["value"] > 0 and len(result["peaks"]) >= 1,
           (result["value"], len(result["peaks"])))

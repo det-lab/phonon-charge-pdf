@@ -2,7 +2,7 @@
 Chi-square distribution test: nuclear-recoil physics simulator vs Fortran Ppq_NR.
 
 Generates (Ep, Eq) pairs from the physics model
-(Er ~ PEr_NR, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal) and checks
+(Erecoil ~ PErecoil_NR, N | Erecoil ~ TruncNormal float, Ep/Eq | Erecoil,N ~ Normal) and checks
 that chi-square values against the Fortran Ppq_NR PDF follow chi2(dof).  This
 validates that Ppq_NR correctly describes the physics — unlike
 test_chisquare_ppqn.py, which only checks internal self-consistency.
@@ -13,18 +13,18 @@ Observable range
                              trigger threshold to ensure full coverage.
   EQ_RANGE = (0.5, 100) keV — charge channel; lower bound ~2 sigma above
                               zero (q0 = 0.237 keV).  Using 3 keV here would
-                              exclude ~60% of NR events whose low-Er true Eq
+                              exclude ~60% of NR events whose low-Erecoil true Eq
                               sits near 1-2 keV.
 
 Usage
 -----
-    LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws] [n_bins]
+    LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py [n_throws] [n_bins]
 
 n_throws defaults to 1000 for a quick check; use 10000 for a thorough test.
 n_bins defaults to 400; use a smaller value (e.g. 64) for a fast smoke test
 of the wiring, since the one-time bin integration dominates the wall time.
 
-The chi-square histogram is written to figures/chisquare_nr_simulator.png.
+The chi-square histogram is written to figures/chisquare_simulator_nr.png.
 
 Approximate wall times (18 workers, x86 emulation on an Apple Silicon Mac;
 native x86 hardware should be faster):
@@ -91,17 +91,17 @@ N_WORKERS = os.cpu_count()
 # Sampler: generate exactly n in-range NR events from the physics simulator.
 #
 # generate_events_NR has no ROI cropping of its own (events with
-# Ep < EP_RANGE[0], roughly Er < 2.5 keV, or Eq < EQ_RANGE[0] fall outside
+# Ep < EP_RANGE[0], roughly Erecoil < 2.5 keV, or Eq < EQ_RANGE[0] fall outside
 # the observable region), so this uses the top-level generate_events
-# instead: ER_frac=0.0 is deterministically pure-NR (Var(Binomial(n, p))
+# instead: fraction_ER=0.0 is deterministically pure-NR (Var(Binomial(n, p))
 # is exactly zero at p=0 -- see that function's docstring), and it already
 # crops to ep_range/eq_range. F0_ER/mix_frac_ER/scale_fast_ER/
 # scale_slow_ER are still required (generate_events() always needs both
 # bands' parameters) but never actually used here, since zero ER events
 # are ever generated.
-def nr_sampler(n, seed=None):
+def sampler_NR(n, seed=None):
     events = generate_events(
-        n, ER_frac=0.0, seed=seed, ep_range=EP_RANGE, eq_range=EQ_RANGE,
+        n, fraction_ER=0.0, seed=seed, ep_range=EP_RANGE, eq_range=EQ_RANGE,
         k=PARAMS["k"], Z=PARAMS["Z"], F0_NR=PARAMS["F0"], F0_ER=0.2,
         eps=PARAMS["eps"], V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
@@ -121,7 +121,7 @@ pdf_fort = make_Ppq_densities_NR(**PARAMS, n_workers=N_WORKERS)
 # Quick sanity check on the sampler
 print("Spot-checking sampler output range...")
 t0 = time.time()
-Ep_chk, Eq_chk = nr_sampler(500)
+Ep_chk, Eq_chk = sampler_NR(500)
 print(f"  Generated 500 events in {time.time()-t0:.2f} s")
 print(f"  Ep: [{Ep_chk.min():.2f}, {Ep_chk.max():.2f}] keV")
 print(f"  Eq: [{Eq_chk.min():.4f}, {Eq_chk.max():.2f}] keV")
@@ -131,7 +131,7 @@ print(f"  Eq: [{Eq_chk.min():.4f}, {Eq_chk.max():.2f}] keV")
 # ---------------------------------------------------------------------------
 t_start = time.time()
 chi2_vals, dof, bins, expected = run_chisquare_test(
-    pdf_fort, nr_sampler, EP_RANGE, EQ_RANGE,
+    pdf_fort, sampler_NR, EP_RANGE, EQ_RANGE,
     n_events   = N_EVENTS,
     n_throws   = N_THROWS,
     n_bins     = N_BINS,
@@ -141,7 +141,7 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
         False, k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
         V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
-        er_max=700.0, n_window_widths=10.0),
+        erecoil_max=700.0, n_window_widths=10.0),
     n_workers  = N_WORKERS,
     batch_size = 50,
     seed       = 42,
@@ -195,6 +195,6 @@ ax.text(0.97, 0.97, stats_text, transform=ax.transAxes,
         bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
 ax.legend()
 fig.tight_layout()
-outfile = REPO_ROOT / "figures" / "chisquare_nr_simulator.png"
+outfile = REPO_ROOT / "figures" / "chisquare_simulator_nr.png"
 fig.savefig(outfile, dpi=150)
 print(f"\nPlot saved to {outfile}")

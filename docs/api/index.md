@@ -21,8 +21,8 @@ their own since nothing outside goodness-of-fit testing needs them). For
         - Nbar
         - sigp
         - sigq
-        - PEr_NR
-        - PEr_ER
+        - PErecoil_NR
+        - PErecoil_ER
         - Ppq_inspect_NR
         - Ppq_inspect_ER
 

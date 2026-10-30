@@ -24,7 +24,7 @@ from goodness_of_fit import make_ridge_breakpoints, debug_bin
 # absolute probability.  For a fit or MCMC, use Ppq_compiled (python/Ppq_fort.py).
 from _Ppq_fort_bindings import make_Ppq_densities_ER
 
-# Same ER/Ppq_ER parameters as test_chisquare_er_simulator.py.
+# Same ER/Ppq_ER parameters as test_chisquare_simulator_er.py.
 PARAMS = dict(
     F0  = 0.122,
     eps = 3.0e-3,
@@ -47,7 +47,7 @@ ridge_breakpoints = make_ridge_breakpoints(
     True, k=None, Z=None, eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"],
     q0=PARAMS["q0"], q10=PARAMS["q10"],
-    er_max=700.0, n_window_widths=10.0,
+    erecoil_max=700.0, n_window_widths=10.0,
 )
 
 result = debug_bin(pdf_fort, BIN, ridge_breakpoints)

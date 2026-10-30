@@ -74,7 +74,7 @@ __all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin", "make_
 def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
                            p0, p10,
                            q0, q10,
-                           er_max, n_window_widths):
+                           erecoil_max, n_window_widths):
     """
     Build an inner_points_func for expected_counts_from_pdf.
 
@@ -96,24 +96,24 @@ def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
 
     The physics: where the ridge is
     -------------------------------
-    A recoil of true energy Er produces (noiselessly)
+    A recoil of true energy Erecoil produces (noiselessly)
 
-        N  = Y(Er) * Er / eps          e/h pairs, so
-        Eq = Y(Er) * Er                (ionization channel)
-        Ep = Er + (V/1000) * N
-           = Er * (1 + Y(Er) * V / (1000 * eps))   (phonon + Neganov-Luke)
+        N  = Y(Erecoil) * Erecoil / eps          e/h pairs, so
+        Eq = Y(Erecoil) * Erecoil                (ionization channel)
+        Ep = Erecoil + (V/1000) * N
+           = Erecoil * (1 + Y(Erecoil) * V / (1000 * eps))   (phonon + Neganov-Luke)
 
-    with Y(Er) the Lindhard yield (k, Z) for nuclear recoils and Y = 1
+    with Y(Erecoil) the Lindhard yield (k, Z) for nuclear recoils and Y = 1
     for electron recoils. These are parametric equations for the band
-    centroid: each Er gives one point (Ep(Er), Eq(Er)) on the ridge. We
+    centroid: each Erecoil gives one point (Ep(Erecoil), Eq(Erecoil)) on the ridge. We
     need the centroid in the form "most probable Eq at a given Ep" —
     that direction because the harness's *inner* quadrature runs over
-    Eq at fixed Ep, so the breakpoints must be Eq values. Ep(Er) = ep
-    cannot be solved for Er algebraically (Y makes it transcendental),
-    but both Ep(Er) and Eq(Er) are monotone in Er, so the centroid is
-    tabulated on an Er grid once and np.interp(ep, ep_tab, eq_tab)
+    Eq at fixed Ep, so the breakpoints must be Eq values. Ep(Erecoil) = ep
+    cannot be solved for Erecoil algebraically (Y makes it transcendental),
+    but both Ep(Erecoil) and Eq(Erecoil) are monotone in Erecoil, so the centroid is
+    tabulated on an Erecoil grid once and np.interp(ep, ep_tab, eq_tab)
     performs the inversion: find where the table's Ep equals ep, read
-    off the Eq at the same Er.
+    off the Eq at the same Erecoil.
 
     The geometry: how wide the ridge is
     ------------------------------------
@@ -152,13 +152,13 @@ def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
     Parameters
     ----------
     is_ER : bool
-        False (nuclear recoils) uses the Lindhard yield model Y(Er, k, Z);
+        False (nuclear recoils) uses the Lindhard yield model Y(Erecoil, k, Z);
         True (electron recoils) uses Y = 1 (the k and Z arguments are then
         ignored).
     k, Z, eps, V, p0, p10, q0, q10 : float
         Detector parameters, matching the PDF being integrated.
-    er_max : float
-        Upper end of the tabulated Er range (keV); must comfortably
+    erecoil_max : float
+        Upper end of the tabulated Erecoil range (keV); must comfortably
         exceed the largest Ep of interest.
     n_window_widths : float
         Half-width of the breakpoint window in units of the local band
@@ -172,16 +172,16 @@ def make_ridge_breakpoints(is_ER, *, k, Z, eps, V,
         harness drops any that fall outside the bin's (ymin, ymax).
     """
     if is_ER:
-        y_tab_func = lambda er_tab: np.ones_like(er_tab)
+        y_tab_func = lambda erecoil_tab: np.ones_like(erecoil_tab)
     else:
-        y_tab_func = lambda er_tab: ppq.Y(er_tab, k=k, Z=Z)
+        y_tab_func = lambda erecoil_tab: ppq.Y(erecoil_tab, k=k, Z=Z)
 
-    # Tabulate the noiseless band centroid Er -> (Ep, Eq) and invert by
-    # interpolation (both coordinates are monotone in Er).
-    er_tab = np.geomspace(1e-3, er_max, 4000)
-    y_tab = y_tab_func(er_tab)
-    ep_tab = er_tab * (1.0 + y_tab * V / (1000.0 * eps))
-    eq_tab = y_tab * er_tab
+    # Tabulate the noiseless band centroid Erecoil -> (Ep, Eq) and invert by
+    # interpolation (both coordinates are monotone in Erecoil).
+    erecoil_tab = np.geomspace(1e-3, erecoil_max, 4000)
+    y_tab = y_tab_func(erecoil_tab)
+    ep_tab = erecoil_tab * (1.0 + y_tab * V / (1000.0 * eps))
+    eq_tab = y_tab * erecoil_tab
 
     def eq_ridge(ep):
         return np.interp(ep, ep_tab, eq_tab)
@@ -405,7 +405,7 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
         silently vanish from the observed counts while the expected counts
         below still assume the full n_events -- chi2 comes out inflated no
         matter how good the fit actually is, with no error to flag it.
-        generate_events(ER_frac=0.0 or 1.0, ep_range=..., eq_range=...)
+        generate_events(fraction_ER=0.0 or 1.0, ep_range=..., eq_range=...)
         already crops to the region and is deterministically pure-NR/ER
         at those boundary values -- see docs/goodness-of-fit.md's
         sampler_NR for a worked example (it just unpacks the returned

@@ -40,8 +40,8 @@ def make_gaussian_sum(centers, sigma):
     return g
 
 
-# (name, centers, sigma, er_step) -- Ep = Eq = 5 puts the scan range at
-# [~0, 10]; the scan step is er_step / 2.
+# (name, centers, sigma, erecoil_step) -- Ep = Eq = 5 puts the scan range at
+# [~0, 10]; the scan step is erecoil_step / 2.
 CASES = [
     # two sharp peaks whose padded ranges overlap: the historical
     # pop-the-first-range bug returned ~1 here instead of 2
@@ -56,9 +56,9 @@ CASES = [
 ]
 
 failures = 0
-for name, centers, sigma, er_step in CASES:
+for name, centers, sigma, erecoil_step in CASES:
     g = make_gaussian_sum(centers, sigma)
-    result = integrate_inspect(g, 5.0, 5.0, centers[0], er_step)
+    result = integrate_inspect(g, 5.0, 5.0, centers[0], erecoil_step)
     integral, peaks = result["value"], result["peaks"]
     expected = float(len(centers))
     ok = abs(integral - expected) < 1e-6

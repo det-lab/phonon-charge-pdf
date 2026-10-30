@@ -10,7 +10,7 @@ from . import goodness_of_fit
 from .event_generator import generate_events
 from .Ppq_fort import Ppq_compiled
 from .Ppq_py import __all__ as _Ppq_py_all
-from .Ppq_py import *  # noqa: F401,F403 -- Y, Nbar, sigp, sigq, PEr_NR, PEr_ER, ... ; see Ppq_py.__all__
+from .Ppq_py import *  # noqa: F401,F403 -- Y, Nbar, sigp, sigq, PErecoil_NR, PErecoil_ER, ... ; see Ppq_py.__all__
 
 # run_chisquare_test/expected_counts_from_pdf/debug_bin/make_ridge_breakpoints
 # and make_Ppq_densities_NR/ER are deliberately NOT flattened here -- call
@@ -18,7 +18,7 @@ from .Ppq_py import *  # noqa: F401,F403 -- Y, Nbar, sigp, sigq, PEr_NR, PEr_ER,
 #
 # generate_events_NR/generate_events_ER are deliberately NOT exported either
 # (not even flattened to event_generator's own __all__, see that module's
-# docstring): generate_events(ER_frac=0.0/1.0) does everything they do --
+# docstring): generate_events(fraction_ER=0.0/1.0) does everything they do --
 # a single-species sample, cropped to your ROI, with the same columns
 # (including the latent ERECOIL/N) -- and does it correctly, where calling
 # generate_events_NR/ER directly as a sampler is a real footgun (no ROI
