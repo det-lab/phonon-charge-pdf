@@ -2,30 +2,37 @@
 Private: low-level ctypes bindings to the compiled Fortran
 phonon_charge_pdf library (lib/libphonon_charge_pdf.so).
 
-Leading underscore means what it usually does -- this is not a public API
-and carries no stability promise.  If you're using this library to do a fit
-or MCMC, use PpqPDF in python/ppq_pdf.py instead; that is the one intended
-entrypoint.  PpqPDF combines the pieces here (an UNNORMALIZED PDF and a
+Leading underscore means what it usually does for everything else in this
+module -- not a public API, no stability promise.  make_Ppq_densities_NR/
+make_Ppq_densities_ER are the one exception: they're re-exported as public
+API (phonon_charge_pdf.goodness_of_fit.make_Ppq_densities_NR/ER) for that
+module's own pdf_func and for anyone else who wants the raw band density at
+arbitrary points.  If you're doing a fit or MCMC instead, use Ppq_compiled in
+python/Ppq_fort.py; that is the one intended entrypoint there.  Ppq_compiled
+combines the pieces here (a density over the full physical plane and a
 separate region-normalization integral) correctly, raises instead of
 extrapolating when a precomputed table is used, and is what the rest of
 this file's docstrings assume you already have if you're reading them.
-This module exists for PpqPDF, python/cli/normgrid.py, and the test suite
-(which legitimately need the raw, unnormalized evaluation -- see each
-test's own comment) to build on.
+Everything else here (Ppq_region_NR/ER, the ctypes setup) exists for
+Ppq_compiled, python/cli/normgrid.py, python/goodness_of_fit.py, and the
+test suite to build on.
 
-make_ppqn_pdf_unnormalized / make_ppqg_pdf_unnormalized build vectorized
-pdf_func(Ep_flat, Eq_flat) -> values_flat callables.  The "_unnormalized"
-is not decorative: dividing by ppqn_region/ppqg_region's integral over your
-analysis region is required before these values are a probability density.
+make_Ppq_densities_NR / make_Ppq_densities_ER build vectorized
+pdf_func(Ep_flat, Eq_flat) -> values_flat callables.  These are genuine
+probability densities -- just over the full physical (Ep, Eq) plane, not
+yet renormalized to any one analysis region.  Dividing by
+Ppq_region_NR/Ppq_region_ER's integral over your region renormalizes
+(conditions) the density onto that region -- a much smaller box -- which
+is what a likelihood over data already cropped to it needs.
 
 All physics parameters are required keyword arguments — there are no
 defaults, so the caller must specify the model fully.
 
 The shared library evaluates points sequentially (~3-25 ms per point,
-scaling with max(Ep, Eq) because the internal Er integration range grows
+scaling with max(Ep, Eq) because the internal Erecoil integration range grows
 with energy).  Since ctypes releases the GIL during foreign calls, this
 wrapper parallelizes large requests by splitting them into chunks and
-dispatching PpqN_vector calls across a thread pool.  Points are
+dispatching Ppq_vector_NR calls across a thread pool.  Points are
 interleaved across chunks after sorting by max(Ep, Eq) so each chunk
 carries a similar share of expensive (high-energy) points.
 """
@@ -96,45 +103,45 @@ def _load_library():
             f"e.g.: LD_LIBRARY_PATH=lib python your_script.py"
         )
 
-    _api.PpqN_vector.argtypes = [
+    _api.Ppq_vector_NR.argtypes = [
         _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int,
         ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double,
         _DOUBLE_ARR,
     ]
-    _api.PpqN_vector.restype = None
+    _api.Ppq_vector_NR.restype = None
 
-    _api.PpqG_vector.argtypes = [
+    _api.Ppq_vector_ER.argtypes = [
         _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int,
         ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
         _DOUBLE_ARR,
     ]
-    _api.PpqG_vector.restype = None
+    _api.Ppq_vector_ER.restype = None
 
     _api.PpqFort_version.argtypes = [
         ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
     ]
     _api.PpqFort_version.restype = None
 
-    _api.PpqN_region.argtypes = [
+    _api.Ppq_region_NR.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # ep_min, ep_max, eq_min, eq_max
         ctypes.c_double, ctypes.c_double,                                    # epsrel, epsabs
         ctypes.c_double, ctypes.c_double, ctypes.c_double,                   # k, Z, F0
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
         ctypes.c_double, ctypes.c_double,                                    # q0, q10
     ]
-    _api.PpqN_region.restype = ctypes.c_double
+    _api.Ppq_region_NR.restype = ctypes.c_double
 
-    _api.PpqG_region.argtypes = [
+    _api.Ppq_region_ER.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # ep_min, ep_max, eq_min, eq_max
         ctypes.c_double, ctypes.c_double,                                    # epsrel, epsabs
         ctypes.c_double,                                                     # F0
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
         ctypes.c_double, ctypes.c_double,                                    # q0, q10
     ]
-    _api.PpqG_region.restype = ctypes.c_double
+    _api.Ppq_region_ER.restype = ctypes.c_double
 
     return _api
 
@@ -147,12 +154,15 @@ def version():
     return (major.value, minor.value, patch.value)
 
 
-def make_ppqn_pdf_unnormalized(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None):
     """
     Build pdf_func(Ep_flat, Eq_flat) -> values_flat backed by the Fortran
-    PpqN (nuclear recoil band PDF).  NOT a probability density on its own --
-    divide by ppqn_region's integral over your region first.  For a fit or
-    MCMC, use PpqPDF (python/ppq_pdf.py) instead, which does that for you.
+    Ppq_NR (nuclear recoil band PDF).  A genuine probability density, just
+    over the full physical (Ep, Eq) plane rather than your analysis region
+    -- a much bigger box.  Divide by Ppq_region_NR's integral over your
+    region to renormalize (condition) it onto that region, which is what a
+    likelihood over cropped data needs.  For a fit or MCMC, use Ppq_compiled
+    (python/Ppq_fort.py) instead, which does that for you.
 
     All physics parameters are required:
       k, Z           : Lindhard ionization yield calibration constant and
@@ -167,6 +177,13 @@ def make_ppqn_pdf_unnormalized(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=
         Threads used for large requests.  Defaults to os.cpu_count().
         Requests of <= 16 points bypass the pool (e.g. scalar calls from
         scipy quadrature).
+
+    Invalid physics parameters (e.g. p10 < p0) surface as NaN in the
+    returned array rather than being silently zeroed -- Ppq_NR's own
+    validation is limited (see Ppq_region_NR for the fuller guard a
+    fit/MCMC's Ppq_compiled always runs behind this), so a NaN here is a
+    sign the parameters themselves are wrong, not that the density is
+    genuinely tiny.
     """
     api = _load_library()
     if n_workers is None:
@@ -174,34 +191,35 @@ def make_ppqn_pdf_unnormalized(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=
     scalars = (k, Z, F0, eps, V, p0, p10, q0, q10)
 
     def _eval_chunk(ep, eq, out):
-        api.PpqN_vector(ep, eq, ep.size, *scalars, out)
+        api.Ppq_vector_NR(ep, eq, ep.size, *scalars, out)
 
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
 
-def make_ppqg_pdf_unnormalized(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
-    """Same as make_ppqn_pdf_unnormalized but for the Fortran PpqG (gamma /
+def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+    """Same as make_Ppq_densities_NR but for the Fortran Ppq_ER (gamma /
     ER band).  The yield is fixed at Y = 1 internally, so k and Z are not
-    taken.  Also NOT normalized on its own -- see that function's docstring."""
+    taken.  Also a full-plane density, not yet renormalized to a region --
+    see that function's docstring."""
     api = _load_library()
     if n_workers is None:
         n_workers = os.cpu_count()
     scalars = (F0, eps, V, p0, p10, q0, q10)
 
     def _eval_chunk(ep, eq, out):
-        api.PpqG_vector(ep, eq, ep.size, *scalars, out)
+        api.Ppq_vector_ER(ep, eq, ep.size, *scalars, out)
 
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
 
-def ppqn_region(ep_min, ep_max, eq_min, eq_max, *,
+def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
                  epsrel, epsabs,
                  k, Z, F0, eps, V, p0, p10, q0, q10):
     """
-    Integral of PpqN over [ep_min,ep_max] x [eq_min,eq_max], computed
+    Integral of Ppq_NR over [ep_min,ep_max] x [eq_min,eq_max], computed
     entirely in Fortran (a single call, no per-point ctypes round trips)
     with a doubling-verified nested Gauss-Legendre quadrature (see
-    PpqFort_s.f90's region_integral_gl) -- the ridge location/width is
+    Ppq_fort_s.f90's region_integral_gl) -- the ridge location/width is
     already known exactly (ridge_eq_and_width), so this needs far fewer
     points than a naive grid or generic adaptive cubature for the same
     accuracy, and is much faster than nested scipy.integrate.quad.
@@ -214,17 +232,17 @@ def ppqn_region(ep_min, ep_max, eq_min, eq_max, *,
     order.
     """
     api = _load_library()
-    return api.PpqN_region(ep_min, ep_max, eq_min, eq_max,
+    return api.Ppq_region_NR(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
                             k, Z, F0, eps, V, p0, p10, q0, q10)
 
 
-def ppqg_region(ep_min, ep_max, eq_min, eq_max, *,
+def Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, *,
                  epsrel, epsabs,
                  F0, eps, V, p0, p10, q0, q10):
-    """Same as ppqn_region but for PpqG (electron-recoil band, Y=1)."""
+    """Same as Ppq_region_NR but for Ppq_ER (electron-recoil band, Y=1)."""
     api = _load_library()
-    return api.PpqG_region(ep_min, ep_max, eq_min, eq_max,
+    return api.Ppq_region_ER(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
                             F0, eps, V, p0, p10, q0, q10)
 
@@ -255,6 +273,6 @@ def _make_threaded_pdf(eval_chunk, n_workers):
             with ThreadPoolExecutor(max_workers=n_workers) as pool:
                 list(pool.map(run, chunks))
 
-        return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+        return out
 
     return pdf

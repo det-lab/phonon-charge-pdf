@@ -15,7 +15,7 @@ of the code). Build and install the shared library first (see
 LD_LIBRARY_PATH=lib python test/python/test_PpqFort.py
 ```
 
-or if you just want to test the vectorized functions `PpqN_vector` and `PpqG_vector`
+or if you just want to test the vectorized functions `Ppq_vector_NR` and `Ppq_vector_ER`
 
 ```bash
 LD_LIBRARY_PATH=lib python test/python/test_PpqFort_vectorFuncs.py
@@ -27,7 +27,7 @@ in their environment.)
 `test/python/test_pip_packaging.py` is the one test here that's meant to run *without* the
 compiled library: against a `pip install -e ".[test]"` of this repository and before the
 library is built, it checks that `import phonon_charge_pdf` and `event_generator.py`'s
-functions still work, and that `PpqPDF` fails clearly at construction instead of silently
+functions still work, and that `Ppq_compiled` fails clearly at construction instead of silently
 succeeding.
 
 See `test/python/README.md` for a map of the test scripts and their supporting modules,
@@ -41,7 +41,7 @@ follow the theoretical chi2(n_bins - 1) distribution. Reference plots are commit
 
 ```bash
 python test/python/verify_sample_from_pdf.py                       # sampler moment checks (~2 s)
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_ppqn.py      # Fortran PpqN PDF (~2 min first run)
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_ppqn.py      # Fortran Ppq_NR PDF (~2 min first run)
 ```
 
 `test_chisquare_ppqn.py` takes the same two optional positional arguments as the
@@ -52,7 +52,7 @@ smoke test with fewer throws, run
 LD_LIBRARY_PATH=lib python test/python/test_chisquare_ppqn.py 2000 64
 ```
 
-It caches its PDF grid evaluation in `ppqn_vertex_grid.npz` (not committed) and reuses it
+It caches its PDF grid evaluation in `ppq_nr_vertex_grid.npz` (not committed) and reuses it
 on later runs.
 
 The `test_chisquare_ppqn.py` timing assumes an ifx or flang build; gfortran builds run the
@@ -64,28 +64,28 @@ band integrals serially (see the compiler notes under
 The tests above only check that the PDFs are *self-consistent* (samples drawn from a PDF
 match that same PDF). The two tests below are the stronger check: they generate events
 from an independent physics simulator ([`event_generator.py`](python-events.md), which
-draws Er from the recoil spectrum, N from a truncated normal, and applies detector
+draws Erecoil from the recoil spectrum, N from a truncated normal, and applies detector
 resolution) and compare the binned counts against the Fortran PDFs. A pass means the
-Fortran `PpqN`/`PpqG` implementations correctly describe the physics.
+Fortran `Ppq_NR`/`Ppq_ER` implementations correctly describe the physics.
 
 ```bash
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws] [n_bins]   # NR band vs PpqN
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py [n_throws] [n_bins]   # ER band vs PpqG
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py [n_throws] [n_bins]   # NR band vs Ppq_NR
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py [n_throws] [n_bins]   # ER band vs Ppq_ER
 ```
 
-Both write their chi-square histograms to `test/figures/chisquare_nr_simulator.png` and
-`test/figures/chisquare_er_simulator.png`. `n_throws` defaults to 1000 and `n_bins` to 400. The
+Both write their chi-square histograms to `test/figures/chisquare_simulator_nr.png` and
+`test/figures/chisquare_simulator_er.png`. `n_throws` defaults to 1000 and `n_bins` to 400. The
 one-time integration of the PDF over the bins dominates the wall time, so reducing
 `n_bins` is the way to get a fast smoke test:
 
 ```bash
 # smoke test: 100 throws, 64 bins
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py 100 64   # ~1 min
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 100 64   # ~1 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py 100 64   # ~1 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py 100 64   # ~1 min
 
 # full validation: 10,000 throws, 400 bins
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py 10000    # ~4 min
-LD_LIBRARY_PATH=lib python test/python/test_chisquare_er_simulator.py 10000    # ~5 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py 10000    # ~4 min
+LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_er.py 10000    # ~5 min
 ```
 
 (Timings measured with the ifx build, 18 workers, under x86 emulation on an Apple Silicon
@@ -98,5 +98,5 @@ repository's `test/figures/` directory so the plot survives the container:
 
 ```bash
 docker run --rm -v $(pwd)/test/figures:/app/test/figures pdf \
-    bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_nr_simulator.py 100 64"
+    bash --login -c "conda activate pdf && python /app/test/python/test_chisquare_simulator_nr.py 100 64"
 ```

@@ -3,7 +3,7 @@ Example: inspect the integration of a single bin in isolation.
 
 Use this when expected_counts_from_pdf reports a ~0 (or suspiciously
 small) expected count for some bin and you need to see why -- run
-chisquare_harness.debug_bin on just that bin instead of the full
+goodness_of_fit.debug_bin on just that bin instead of the full
 n_bins loop. See debug_bin's docstring for what each of the three
 reported numbers means.
 
@@ -17,15 +17,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(REPO_ROOT / "python"))
 
-from band_breakpoints import make_ridge_breakpoints
+from goodness_of_fit import make_ridge_breakpoints_ER, debug_bin
 # Unnormalized: debug_bin inspects the PDF's shape over one bin, not an
-# absolute probability.  For a fit or MCMC, use PpqPDF (python/ppq_pdf.py).
-from _ppqfort_bindings import make_ppqg_pdf_unnormalized
-from chisquare_harness import debug_bin
+# absolute probability.  For a fit or MCMC, use Ppq_compiled (python/Ppq_fort.py).
+from _Ppq_fort_bindings import make_Ppq_densities_ER
 
-# Same ER/PpqG parameters as test_chisquare_er_simulator.py.
+# Same ER/Ppq_ER parameters as test_chisquare_simulator_er.py.
 PARAMS = dict(
     F0  = 0.122,
     eps = 3.0e-3,
@@ -43,12 +42,12 @@ BIN = (64.17183111582968, 66.41909324688707, 33.49076000562251, 184.461887092046
 # (debug_bin's brute-force reference calls it with tens of thousands of
 # points at once); the quad-driven calls are all single points and are
 # unaffected, so this doesn't change what debug_bin demonstrates.
-pdf_fort = make_ppqg_pdf_unnormalized(**PARAMS, n_workers=os.cpu_count())
-ridge_breakpoints = make_ridge_breakpoints(
-    "ER", k=None, Z=None, eps=PARAMS["eps"], V=PARAMS["V"],
+pdf_fort = make_Ppq_densities_ER(**PARAMS, n_workers=os.cpu_count())
+ridge_breakpoints = make_ridge_breakpoints_ER(
+    eps=PARAMS["eps"], V=PARAMS["V"],
     p0=PARAMS["p0"], p10=PARAMS["p10"],
     q0=PARAMS["q0"], q10=PARAMS["q10"],
-    er_max=700.0, n_window_widths=10.0,
+    erecoil_max=700.0, n_window_widths=10.0,
 )
 
 result = debug_bin(pdf_fort, BIN, ridge_breakpoints)

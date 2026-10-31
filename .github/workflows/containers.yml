@@ -98,3 +98,49 @@ jobs:
             org.opencontainers.image.source=https://github.com/det-lab/phonon-charge-pdf
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.meta.outputs.ref }}
+
+  bump-pull-default:
+    name: Bump pull_container.job's default tag
+    needs: publish
+    # Only a real tag push, never workflow_dispatch: that path explicitly
+    # backfills images for *old* historical releases (see the comment on
+    # `on:` above), and must not move this default forward.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Bump the default IMAGE tag
+        id: bump
+        run: |
+          NEW_TAG="${{ github.ref_name }}"
+          OLD="$(grep -o 'phonon-charge-pdf-llvm:v[0-9][0-9A-Za-z.+-]*' slurm/pull_container.job)"
+          sed -i "s|$OLD|phonon-charge-pdf-llvm:$NEW_TAG|" slurm/pull_container.job
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR into develop
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="chore/bump-pull-container-${{ steps.bump.outputs.new_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "slurm: bump pull_container.job's default image to ${{ steps.bump.outputs.new_tag }}"
+          git push origin "$BRANCH"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base develop --head "$BRANCH" \
+            --title "Bump pull_container.job's default image to ${{ steps.bump.outputs.new_tag }}" \
+            --body "Auto-opened after publishing ${{ steps.bump.outputs.new_tag }} to GHCR. The smoke test itself is already name-agnostic (container_smoke_test.py) -- this one-line default-tag bump is the only thing a release still needs here."

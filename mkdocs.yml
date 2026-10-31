@@ -30,22 +30,26 @@ nav:
   - Home: index.md
   - Two ways to use this: two-ways.md
   - Generating simulated events: python-events.md
-  - Resolution/yield model (ppq_dist): ppq-dist.md
-  - Fortran-backed PDF (PpqPDF): fortran-pdf.md
-  - Precomputed normalization tables: normalization-tables.md
-  - Building from source: building-from-source.md
-  - Verification and validation: testing.md
-  - Profiling: PROFILING.md
-  - API reference:
-      - event_generator: api/event_generator.md
-      - ppq_dist: api/ppq_dist.md
-      - ppq_pdf: api/ppq_pdf.md
+  - Fitting: fitting.md
+  - Using MCMC to get errors: mcmc.md
+  - Testing goodness of fit: goodness-of-fit.md
+  - Computing new normalization tables: normalization-tables.md
+  - Python API reference: api/index.md
+  - Fortran API reference: https://det-lab.github.io/phonon-charge-pdf/fortran-api/
+  - For the cautious:
+      - Verification and validation: testing.md
+      - Inspecting the integrand: inspecting-the-integrand.md
+  - For developers:
+      - Building from source: building-from-source.md
+      - Profiling: PROFILING.md
+      - Decision records (ADRs): decision-records.md
 
 markdown_extensions:
   - admonition
   - tables
   - toc:
       permalink: true
+      toc_depth: 4
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.superfences
@@ -58,5 +62,9 @@ plugins:
           options:
             show_source: true
             show_root_heading: true
+            show_root_full_path: false
+            docstring_style: numpy
             docstring_section_style: list
             merge_init_into_class: true
+            separate_signature: true
+            line_length: 60

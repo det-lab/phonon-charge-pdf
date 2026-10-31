@@ -78,7 +78,8 @@ SBATCH_ARGS=()
 
 NG=("$PYTHON" python/cli/normgrid.py)
 NP=("$PYTHON" python/cli/normplan.py)
-REGION=("$EP_MIN" "$EP_MAX" "$EQ_MIN" "$EQ_MAX")
+EP_RANGE=("$EP_MIN" "$EP_MAX")
+EQ_RANGE=("$EQ_MIN" "$EQ_MAX")
 BOXOPT=(); [[ ${#BOX_ARGS[@]} -gt 0 ]] && BOXOPT=(--box "${BOX_ARGS[@]}")
 
 array() {   # array SPEC CHUNK_SIZE RESULTS_DIR: an sbatch array over the spec's chunks, waited for
@@ -112,7 +113,7 @@ check_tasks() {   # check_tasks JOB N: fail unless all N tasks of array JOB are 
 }
 
 echo "== 1. study: how many nodes does each axis need? ($TAG)"
-"${NP[@]}" points --band "$BAND" --region "${REGION[@]}" --epsrel "$EPSREL" ${BOXOPT[@]+"${BOXOPT[@]}"} \
+"${NP[@]}" points --band "$BAND" --ep-range "${EP_RANGE[@]}" --eq-range "${EQ_RANGE[@]}" --epsrel "$EPSREL" ${BOXOPT[@]+"${BOXOPT[@]}"} \
     --out "$WORK/study.json"
 [[ -n "${BOX:-}" ]] && echo "   box: $BOX"
 array "$WORK/study.json" "$STUDY_CHUNK" "$WORK/study_results"
@@ -122,7 +123,7 @@ echo "== 2. plan: node counts for tol $TOL"
     --tol "$TOL" --max-points "$MAX_POINTS" --out-spec "$PLAN/spec.json" --report "$PLAN/plan.json"
 
 echo "== 3. grid and held-out points"
-"${NG[@]}" make-random-spec --band "$BAND" --n "$HELDOUT" --region "${REGION[@]}" --epsrel "$EPSREL" \
+"${NG[@]}" make-random-spec --band "$BAND" --n "$HELDOUT" --ep-range "${EP_RANGE[@]}" --eq-range "${EQ_RANGE[@]}" --epsrel "$EPSREL" \
     ${BOXOPT[@]+"${BOXOPT[@]}"} \
     --out "$WORK/held.json"
 array "$WORK/held.json" "$HELD_CHUNK" "$WORK/held_results" &

@@ -3,10 +3,10 @@ event_generator is the public entrypoint for generating simulated (Ep, Eq)
 detector events -- an independent physics simulator, not a second way to
 evaluate the PDF (see "Physical picture" below for why that independence
 matters). If you want normalized PDF values or a likelihood instead, use
-PpqPDF (python/ppq_pdf.py).
+Ppq_compiled (python/Ppq_fort.py).
 
-Unlike PpqPDF, this module has no Fortran dependency at all -- it is pure
-Python/numpy built on python/ppq_dist.py's Y/Nbar/sigp/sigq (itself a
+Unlike Ppq_compiled, this module has no Fortran dependency at all -- it is pure
+Python/numpy built on python/Ppq_py.py's Y/Nbar_NR/Nbar_ER/sigp/sigq (itself a
 public entrypoint; see its module docstring), so it works in any
 environment that can `pip install` this package, compiled library or not.
 
@@ -14,54 +14,59 @@ Quickstart
 ----------
     from event_generator import generate_events
     events = generate_events(
-        target_size=20_000, ER_frac=0.6, seed_value=8,
-        ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
-        k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
+        target_size=20_000, fraction_ER=0.6, seed=8,
+        ep_range=(2.5, 350.0), eq_range=(0.75, 200.0),
+        k=0.18, Z=32.0, F0_NR=0.122, F0_ER=0.2, eps=3.0e-3, V=3.0,
         p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
-        PNa=0.53693208, PNb=6.41515782, PNd=23.71789286,
-        PGa=0.573211975, PGb=0.169520023, PGd=279.552394,
+        mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
+        mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
     )
     Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 All physics parameters are required keyword arguments -- there are no
-defaults, matching the rest of this library (PpqPDF, _ppqfort_bindings.py,
-ppq_dist.py). ER_frac=1.0 generates ER-only, ER_frac=0.0 generates NR-only,
+defaults, matching the rest of this library (Ppq_compiled, _Ppq_fort_bindings.py,
+Ppq_py.py). fraction_ER=1.0 generates ER-only, fraction_ER=0.0 generates NR-only,
 and anything in between generates a mix.
 
 Physical picture
 -----------------
-Each event starts from a true recoil energy Er, drawn from the species'
-biexponential spectrum (PErG for electron recoils, PErN for nuclear
-recoils). Er then produces a Fano-broadened number of e/h pairs N, which
+Each event starts from a true recoil energy Erecoil, drawn from the species'
+biexponential spectrum (PErecoil_ER for electron recoils, PErecoil_NR for nuclear
+recoils). Erecoil then produces a Fano-broadened number of e/h pairs N, which
 in turn sets the phonon energy Ep (recoil + Neganov-Luke) and charge
 energy Eq (N * eps), each further smeared by its own detector resolution:
 
-    Er ~ PErN or PErG        (biexponential true-recoil-energy spectrum)
-    N  | Er ~ TruncNormal     (Fano-factor fluctuation, truncated at N >= 0)
-    Ep | Er, N ~ Normal       (phonon detector: Neganov-Luke + thermal)
+    Erecoil ~ PErecoil_NR or PErecoil_ER        (biexponential true-recoil-energy spectrum)
+    N  | Erecoil ~ TruncNormal     (Fano-factor fluctuation, truncated at N >= 0)
+    Ep | Erecoil, N ~ Normal       (phonon detector: Neganov-Luke + thermal)
     Eq | N ~ Normal           (charge detector)
 
-The analytic PDFs PpqN/PpqG are obtained by marginalizing this same chain
-analytically over N and numerically over Er -- so agreement between events
-generated here and PpqN/PpqG (see test/python/test_chisquare_{nr,er}_simulator.py)
-is a real physics check, not a tautology: this module never touches PpqN/PpqG.
+The analytic PDFs Ppq_NR/Ppq_ER are obtained by marginalizing this same chain
+analytically over N and numerically over Erecoil -- so agreement between events
+generated here and Ppq_NR/Ppq_ER (see test/python/test_chisquare_{nr,er}_simulator.py)
+is a real physics check, not a tautology: this module never touches Ppq_NR/Ppq_ER.
 
 Returned DataFrame
 -------------------
-generate_events() returns columns EP, EQ, N0, is_ER, seed_value, is_bkg
+generate_events() returns columns EP, EQ, ERECOIL, N, is_ER, seed, is_bkg
 (is_bkg is always False here -- it exists only so these rows line up with
 a separate zero-charge/surface-background generator, e.g. the KDE-based
 one in nrFanoII_paper2022's ba_bknd_lines.py, which can be concatenated
-directly as long as it produces the same columns).
+directly as long as it produces the same columns -- note that N was
+previously named N0, misleadingly, since it's the same Fano-fluctuated N
+generate_events_NR/generate_events_ER return, not a distinct quantity;
+anything consuming the old N0 name needs updating). ERECOIL is the
+latent true recoil energy Erecoil -- named to avoid reading as is_ER (is this
+event an electron recoil?), a completely different thing.
 
 Reproducibility
 ----------------
 Every retry batch (see _species_in_roi below) needs its own independent
-random stream, but "independent" from a single seed_value has to be done
+random stream, but "independent" from a single seed has to be done
 carefully. np.random.SeedSequence.spawn() deterministically derives any
 number of child streams from one seed via a proper hash-based mix,
 guaranteeing (for practical purposes) no correlation between them or with
-streams spawned from a different seed_value.
+streams spawned from a different seed.
 """
 
 import warnings
@@ -75,12 +80,18 @@ import sys
 
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PYTHON_DIR)
-import ppq_dist as ppq
+import Ppq_py as ppq
+
+# generate_events_NR/generate_events_ER are deliberately not here (see the
+# module docstring's "Returned DataFrame" section and generate_events()'s
+# own docstring for why calling them directly is a footgun) -- still
+# importable by name if you genuinely want them.
+__all__ = ["generate_events"]
 
 
 def _sample_biexponential(n, rng, *, mix_frac, scale_fast, scale_slow):
     """n draws from a two-component exponential mixture -- the shared shape
-    of both PErN (nuclear recoils) and PErG (electron recoils)."""
+    of both PErecoil_NR (nuclear recoils) and PErecoil_ER (electron recoils)."""
     is_fast = rng.random(n) < mix_frac
     return np.where(is_fast, rng.exponential(scale_fast, n), rng.exponential(scale_slow, n))
 
@@ -115,23 +126,23 @@ def _generate_species_events(n_events, *, Nbar_func,
                               mix_frac, scale_fast, scale_slow,
                               seed):
     """
-    Shared generator: draws Er from the biexponential mix_frac/scale_fast/
-    scale_slow spectrum and mean e/h pair count Nbar_func(Er), then
+    Shared generator: draws Erecoil from the biexponential mix_frac/scale_fast/
+    scale_slow spectrum and mean e/h pair count Nbar_func(Erecoil), then
     simulates the rest of the detector chain. NR/ER differ only in
     Nbar_func and which spectrum parameters they pass (see
-    generate_NR_events/generate_ER_events).
+    generate_events_NR/generate_events_ER).
     """
     rng = np.random.default_rng(seed)
 
-    Er = _sample_biexponential(n_events, rng, mix_frac=mix_frac,
+    Erecoil = _sample_biexponential(n_events, rng, mix_frac=mix_frac,
                                 scale_fast=scale_fast, scale_slow=scale_slow)
 
-    Nbar = Nbar_func(Er)                              # mean e/h pairs
-    F_val = np.full_like(Er, F0)                      # Fano factor (constant)
+    Nbar = Nbar_func(Erecoil)                              # mean e/h pairs
+    F_val = np.full_like(Erecoil, F0)                      # Fano factor (constant)
 
     N = _sample_N(Nbar, F_val, rng)
 
-    Ep_true = Er + N * (V / 1e3)                      # Neganov-Luke + recoil
+    Ep_true = Erecoil + N * (V / 1e3)                      # Neganov-Luke + recoil
     Eq_true = N * eps                                 # ionization
 
     # Detector smearing: evaluate resolution at the true (noise-free) signal.
@@ -143,56 +154,70 @@ def _generate_species_events(n_events, *, Nbar_func,
     Ep = rng.normal(Ep_true, sigp_val)
     Eq = rng.normal(Eq_true, sigq_val)
 
-    return Ep, Eq, Er, N
+    return Ep, Eq, Erecoil, N
 
 
-def generate_NR_events(n_events, *,
+def generate_events_NR(n_events, *,
                         k, Z,
                         F0,
                         eps, V,
                         p0, p10,
                         q0, q10,
-                        PNa, PNb, PNd,
+                        mix_frac, scale_fast, scale_slow,
                         seed):
     """
-    Generate (Ep, Eq) pairs distributed according to PpqN -- no ROI
-    cropping, no species mixing; see generate_events() for that.
+    Generate (Ep, Eq) pairs distributed according to Ppq_NR -- no ROI
+    cropping, no species mixing. Not exported: generate_events(fraction_ER=0.0)
+    gives you a pure-NR sample with the same columns, already cropped to
+    your ROI, for every normal use (including as a chi-square sampler_func
+    -- calling this directly there is a real footgun, see
+    run_chisquare_test's docstring). Reach for this directly only if you
+    genuinely want the uncropped full physical model.
+
+    mix_frac, scale_fast, scale_slow are PErecoil_NR's biexponential
+    true-recoil-energy spectrum parameters (see Ppq_py.py's PErecoil_NR).
 
     Returns
     -------
     Ep, Eq : ndarray, shape (n_events,)
-    Er : ndarray, shape (n_events,)   -- latent true recoil energies
+    Erecoil : ndarray, shape (n_events,)   -- latent true recoil energies
     N  : ndarray, shape (n_events,)   -- latent e/h pair counts
     """
     return _generate_species_events(
-        n_events, Nbar_func=lambda Er: ppq.Y(Er, k=k, Z=Z) * Er / eps,
+        n_events, Nbar_func=lambda Erecoil: ppq.Nbar_NR(Erecoil, k=k, Z=Z, eps=eps),
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-        mix_frac=PNa, scale_fast=PNb, scale_slow=PNd, seed=seed)
+        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 
 
-def generate_ER_events(n_events, *,
+def generate_events_ER(n_events, *,
                         F0,
                         eps, V,
                         p0, p10,
                         q0, q10,
-                        PGa, PGb, PGd,
+                        mix_frac, scale_fast, scale_slow,
                         seed):
     """
-    Generate (Ep, Eq) pairs distributed according to PpqG -- no ROI
-    cropping, no species mixing; see generate_events() for that.
+    Generate (Ep, Eq) pairs distributed according to Ppq_ER -- no ROI
+    cropping, no species mixing. Not exported: generate_events(fraction_ER=1.0)
+    gives you a pure-ER sample with the same columns, already cropped to
+    your ROI, for every normal use (see generate_events_NR's docstring for
+    why calling this directly, e.g. as a chi-square sampler_func, is a
+    footgun).
 
-    Gamma / electron-recoil events have ionization yield Y = 1.
+    Gamma / electron-recoil events have ionization yield Y = 1. mix_frac,
+    scale_fast, scale_slow are PErecoil_ER's biexponential true-recoil-energy
+    spectrum parameters (see Ppq_py.py's PErecoil_ER).
 
     Returns
     -------
     Ep, Eq : ndarray, shape (n_events,)
-    Er : ndarray, shape (n_events,)
+    Erecoil : ndarray, shape (n_events,)
     N  : ndarray, shape (n_events,)
     """
     return _generate_species_events(
-        n_events, Nbar_func=lambda Er: Er / eps,
+        n_events, Nbar_func=lambda Erecoil: ppq.Nbar_ER(Erecoil, eps=eps),
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-        mix_frac=PGa, scale_fast=PGb, scale_slow=PGd, seed=seed)
+        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 
 
 # Initial guess for each species' ROI acceptance rate, refined from batch 1
@@ -204,12 +229,12 @@ _DEFAULT_PASS_RATE = {"ER": 0.08, "NR": 0.20}
 
 
 def _species_in_roi(n_target, species, seed_sequence, *,
-                     ep_min, ep_max, eq_min, eq_max, max_retries,
+                     ep_range, eq_range, max_retries,
                      sampler, sampler_kwargs):
     """
-    Generate exactly n_target ROI-passing (Ep, Eq, Er, N) events of one
+    Generate exactly n_target ROI-passing (Ep, Eq, Erecoil, N) events of one
     species, by calling sampler(n, seed=..., **sampler_kwargs) in retry
-    batches (generate_NR_events or generate_ER_events).
+    batches (generate_events_NR or generate_events_ER).
 
     Each retry batch draws a fresh set of events (sized from a running
     estimate of the ROI acceptance rate) using its own independent seed
@@ -220,8 +245,10 @@ def _species_in_roi(n_target, species, seed_sequence, *,
         return empty, empty, empty, empty
 
     child_seeds = iter(seed_sequence.spawn(max_retries))
+    ep_min, ep_max = ep_range
+    eq_min, eq_max = eq_range
 
-    ep_parts, eq_parts, er_parts, n_parts = [], [], [], []
+    ep_parts, eq_parts, erecoil_parts, n_parts = [], [], [], []
     n_have = 0
     pass_rate = _DEFAULT_PASS_RATE[species]
 
@@ -233,7 +260,7 @@ def _species_in_roi(n_target, species, seed_sequence, *,
         remaining = n_target - n_have
         want = int(remaining / pass_rate * 1.3) + 2000
 
-        Ep, Eq, Er, N = sampler(want, seed=seed, **sampler_kwargs)
+        Ep, Eq, Erecoil, N = sampler(want, seed=seed, **sampler_kwargs)
 
         mask = (Ep >= ep_min) & (Ep <= ep_max) & (Eq >= eq_min) & (Eq <= eq_max)
         passed = int(mask.sum())
@@ -243,7 +270,7 @@ def _species_in_roi(n_target, species, seed_sequence, *,
         idx = np.flatnonzero(mask)[:keep]
         ep_parts.append(Ep[idx])
         eq_parts.append(Eq[idx])
-        er_parts.append(Er[idx])
+        erecoil_parts.append(Erecoil[idx])
         n_parts.append(N[idx])
         n_have += keep
 
@@ -252,103 +279,106 @@ def _species_in_roi(n_target, species, seed_sequence, *,
                       f"within {max_retries} retry batches -- raise max_retries.")
 
     return (np.concatenate(ep_parts), np.concatenate(eq_parts),
-            np.concatenate(er_parts), np.concatenate(n_parts))
+            np.concatenate(erecoil_parts), np.concatenate(n_parts))
 
 
-def generate_events(target_size, ER_frac, seed_value, *,
-                     ep_min, ep_max, eq_min, eq_max,
-                     k, Z, F0_ER, F0_NR, eps, V, p0, p10, q0, q10,
-                     PNa, PNb, PNd, PGa, PGb, PGd,
+def generate_events(target_size, fraction_ER, seed, *,
+                     ep_range, eq_range,
+                     k, Z, F0_NR, F0_ER, eps, V, p0, p10, q0, q10,
+                     mix_frac_NR, scale_fast_NR, scale_slow_NR,
+                     mix_frac_ER, scale_fast_ER, scale_slow_ER,
                      max_retries=40):
     """
-    Generate target_size (Ep, Eq) events, ER_frac of them (in expectation)
-    electron recoils and the rest nuclear recoils, cropped to [ep_min,
-    ep_max] x [eq_min, eq_max].
+    Generate target_size (Ep, Eq) events, fraction_ER of them (in expectation)
+    electron recoils and the rest nuclear recoils, cropped to ep_range x
+    eq_range.
 
-    ER_frac=1.0 / 0.0 generate pure ER / pure NR samples.
+    fraction_ER=1.0 / 0.0 generate pure ER / pure NR samples.
 
     Parameters
     ----------
     target_size : int
         Total number of ROI-passing events to generate.
-    ER_frac : float
+    fraction_ER : float
         Probability that a given event is an electron recoil; the actual
-        ER count is Binomial(target_size, ER_frac), not a fixed split.
+        ER count is Binomial(target_size, fraction_ER), not a fixed split.
         Var(Binomial(n, p)) = n*p*(1-p) is exactly zero at p=0 or p=1, so
-        ER_frac=1.0 / 0.0 are still fully deterministic (ER count = exactly
+        fraction_ER=1.0 / 0.0 are still fully deterministic (ER count = exactly
         target_size / 0, every seed) -- no separate ER_only/NR_only flag
         is needed to get a pure sample with zero chance of a stray event
         from the other species.
-    seed_value : int
-        Seed for the whole call. Reproducible: the same seed_value always
-        produces the same events, independent of what other seed_values
-        are used elsewhere in the same run.
-    ep_min, ep_max, eq_min, eq_max : float
+    seed : int
+        Seed for the whole call. Reproducible: the same seed always
+        produces the same events, independent of what other seeds are
+        used elsewhere in the same run.
+    ep_range, eq_range : (float, float)
         ROI bounds, keV -- required, no default: this must be your real
         analysis region, not an arbitrary wide range.
     k, Z : float
         Lindhard ionization yield calibration constant and target atomic
         number (nuclear recoils only; unused but still required when
-        ER_frac=1.0, for the same reason PpqPDF always requires them).
-    F0_ER, F0_NR : float
+        fraction_ER=1.0, for the same reason Ppq_compiled always requires them).
+    F0_NR, F0_ER : float
         Fano factor (constant), one per species -- ER and NR generally
         have different Fano factors even at the same operating point.
     eps, V, p0, p10, q0, q10 : float
         Shared detector parameters (energy per e/h pair, bias voltage,
-        phonon/charge resolution parameters) -- see ppq_dist.py's
+        phonon/charge resolution parameters) -- see Ppq_py.py's
         sigp/sigq.
-    PNa, PNb, PNd : float
-        NR true-recoil-energy (PErN) biexponential spectrum parameters.
-    PGa, PGb, PGd : float
-        ER true-recoil-energy (PErG) biexponential spectrum parameters.
+    mix_frac_NR, scale_fast_NR, scale_slow_NR : float
+        NR true-recoil-energy (PErecoil_NR) biexponential spectrum parameters.
+    mix_frac_ER, scale_fast_ER, scale_slow_ER : float
+        ER true-recoil-energy (PErecoil_ER) biexponential spectrum parameters.
     max_retries : int
         Cap on retry batches per species before giving up with a warning.
 
     Returns
     -------
-    pandas.DataFrame with columns EP, EQ, N0, is_ER, seed_value, is_bkg --
+    pandas.DataFrame with columns EP, EQ, ERECOIL, N, is_ER, seed, is_bkg --
     shuffled, so downstream code doesn't need to worry about ER/NR
     ordering. is_bkg is always False; see the module docstring.
     """
-    if not 0.0 <= ER_frac <= 1.0:
-        raise ValueError(f"ER_frac must be in [0, 1], got {ER_frac}")
+    if not 0.0 <= fraction_ER <= 1.0:
+        raise ValueError(f"fraction_ER must be in [0, 1], got {fraction_ER}")
 
-    ss = np.random.SeedSequence(seed_value)
-    split_seed, er_seed, nr_seed, shuffle_seed = ss.spawn(4)
+    ss = np.random.SeedSequence(seed)
+    seed_split, seed_ER, seed_NR, seed_shuffle = ss.spawn(4)
 
-    # deterministic (no fluctuation) at ER_frac=0.0/1.0 -- see docstring
-    n_ER = int(np.random.default_rng(split_seed).binomial(target_size, ER_frac))
+    # deterministic (no fluctuation) at fraction_ER=0.0/1.0 -- see docstring
+    n_ER = int(np.random.default_rng(seed_split).binomial(target_size, fraction_ER))
     n_NR = target_size - n_ER
 
-    roi = dict(ep_min=ep_min, ep_max=ep_max, eq_min=eq_min, eq_max=eq_max)
+    roi = dict(ep_range=ep_range, eq_range=eq_range)
 
-    Ep_er, Eq_er, _, N_er = _species_in_roi(
-        n_ER, "ER", er_seed, max_retries=max_retries, **roi,
-        sampler=generate_ER_events,
+    Ep_er, Eq_er, Erecoil_er, N_er = _species_in_roi(
+        n_ER, "ER", seed_ER, max_retries=max_retries, **roi,
+        sampler=generate_events_ER,
         sampler_kwargs=dict(F0=F0_ER, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-                            PGa=PGa, PGb=PGb, PGd=PGd))
-    Ep_nr, Eq_nr, _, N_nr = _species_in_roi(
-        n_NR, "NR", nr_seed, max_retries=max_retries, **roi,
-        sampler=generate_NR_events,
+                            mix_frac=mix_frac_ER, scale_fast=scale_fast_ER, scale_slow=scale_slow_ER))
+    Ep_nr, Eq_nr, Erecoil_nr, N_nr = _species_in_roi(
+        n_NR, "NR", seed_NR, max_retries=max_retries, **roi,
+        sampler=generate_events_NR,
         sampler_kwargs=dict(k=k, Z=Z, F0=F0_NR, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-                            PNa=PNa, PNb=PNb, PNd=PNd))
+                            mix_frac=mix_frac_NR, scale_fast=scale_fast_NR, scale_slow=scale_slow_NR))
 
     Ep = np.concatenate([Ep_er, Ep_nr])
     Eq = np.concatenate([Eq_er, Eq_nr])
-    N0 = np.concatenate([N_er, N_nr])
+    Erecoil = np.concatenate([Erecoil_er, Erecoil_nr])
+    N = np.concatenate([N_er, N_nr])
     is_ER = np.concatenate([np.ones(len(Ep_er), dtype=bool), np.zeros(len(Ep_nr), dtype=bool)])
 
-    order = np.random.default_rng(shuffle_seed).permutation(len(Ep))
+    order = np.random.default_rng(seed_shuffle).permutation(len(Ep))
     df = pd.DataFrame({
-        "EP": Ep[order], "EQ": Eq[order], "N0": N0[order], "is_ER": is_ER[order],
+        "EP": Ep[order], "EQ": Eq[order], "ERECOIL": Erecoil[order],
+        "N": N[order], "is_ER": is_ER[order],
     })
-    df["seed_value"] = seed_value
+    df["seed"] = seed
     df["is_bkg"] = False
 
     n_ok = len(df)
     print(f"Generated {n_ok}/{target_size} events "
           f"(ER {int(df['is_ER'].sum())}, NR {n_ok - int(df['is_ER'].sum())}; "
-          f"target ER count was {n_ER} of {target_size} via Binomial(ER_frac={ER_frac})); "
-          f"EP:[{ep_min},{ep_max}], EQ:[{eq_min},{eq_max}] keV")
+          f"target ER count was {n_ER} of {target_size} via Binomial(fraction_ER={fraction_ER})); "
+          f"EP:[{ep_range[0]},{ep_range[1]}], EQ:[{eq_range[0]},{eq_range[1]}] keV")
 
     return df

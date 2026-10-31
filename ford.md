@@ -1,5 +1,4 @@
 project: phonon-charge-pdf
-summary: A total phonon energy and total photon energy calculator for dark matter searches
 src_dir: src
 exclude_dir: doc
 output_dir: doc/html
@@ -9,17 +8,13 @@ preprocessor: gfortran -E
 display: public
          protected
          private
-source: true
+source: false
 graph: true
 md_extensions: markdown.extensions.toc
 coloured_edges: true
-sort: permission-alpha
+sort: src
 extra_mods: iso_fortran_env:https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html
             iso_c_binding:https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fC_005fBINDING.html#ISO_005fC_005fBINDING
-project_github: https://github.com/det-lab/phonon-charge-pdf
-project_download: https://github.com/det-lab/phonon-charge-pdf/releases
-author: Amy Roberts
-github: https://github.com/pibion
 print_creation_date: true
 creation_date: %Y-%m-%d %H:%M %z
 predocmark_alt: >
@@ -27,4 +22,7 @@ predocmark: <
 docmark_alt:
 docmark: !
 
-{!README.md!}
+This is the auto-generated API reference for the Fortran source (`src/`) --
+the fast, compiled path behind `Ppq_compiled`. For the full guide, tutorials,
+and the Python API reference, see the
+[main documentation site](https://det-lab.github.io/phonon-charge-pdf/).

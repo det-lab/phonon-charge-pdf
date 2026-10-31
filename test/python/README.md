@@ -3,14 +3,17 @@
 Everything in this directory validates the phonon-charge-pdf PDFs; the code
 that *computes* the PDFs lives in `python/` at the repository root.  If
 you're looking for how to *use* the library (a fit or MCMC), that's
-`PpqPDF` in `python/ppq_pdf.py`; if you want simulated events instead, that's
+`Ppq_compiled` in `python/Ppq_fort.py`; if you want simulated events instead, that's
 `event_generator.py` in `python/event_generator.py`; if you want the pure-
-Python reference implementation directly, that's `python/ppq_dist.py` —
-these tests validate `PpqPDF`/`event_generator.py` against `ppq_dist.py`,
-and `ppq_dist.py` against the raw, unnormalized Fortran PDF
-(`python/internal/_ppqfort_bindings.py`, private); each test that needs the
-raw PDF says why in a comment at its import.  Run all scripts from the
-repository root; see the main README for expected timings and for how to
+Python reference implementation directly, that's `python/Ppq_py.py`; if you
+want to check the goodness of fit of your own result, that's
+`python/goodness_of_fit.py` (see the "Testing goodness of fit" docs page) --
+these tests validate `Ppq_compiled`/`event_generator.py` against `Ppq_py.py`,
+and `Ppq_py.py` against the raw, unnormalized Fortran PDF
+(`python/internal/_Ppq_fort_bindings.py`, private), using
+`goodness_of_fit.py`'s own chi-square machinery to do it; each test that
+needs the raw PDF says why in a comment at its import.  Run all scripts from
+the repository root; see the main README for expected timings and for how to
 build `lib/libphonon_charge_pdf.so` first.
 
 ## Test scripts
@@ -18,35 +21,42 @@ build `lib/libphonon_charge_pdf.so` first.
 | Script | What it checks |
 |--------|----------------|
 | `test_PpqFort.py` | Fortran functions against the python reference implementation, one value at a time (machine-precision parity). |
-| `test_PpqFort_vectorFuncs.py` | The vectorized `PpqN_vector` / `PpqG_vector` entry points. |
+| `test_PpqFort_vectorFuncs.py` | The vectorized `Ppq_vector_NR` / `Ppq_vector_ER` entry points. |
 | `verify_sample_from_pdf.py` | Moments of the grid sampler used by the self-consistency tests. |
-| `test_chisquare_ppqn.py` | Self-consistency: events sampled *from* the Fortran `PpqN` follow `PpqN`. |
-| `test_chisquare_nr_simulator.py` | Physics: events from the independent NR simulator follow the Fortran `PpqN`. |
-| `test_chisquare_er_simulator.py` | Physics: events from the independent ER simulator follow the Fortran `PpqG`. |
-| `test_region_integral.py` | The region-normalization integral (`ppqn_region`/`ppqg_region`) against nested `scipy.integrate.quad`, timing, the non-convergence safety net, and the fast error-out on invalid parameters (p10 < p0 etc.). |
+| `test_chisquare_ppqn.py` | Self-consistency: events sampled *from* the Fortran `Ppq_NR` follow `Ppq_NR`. |
+| `test_chisquare_simulator_nr.py` | Physics: events from the independent NR simulator follow the Fortran `Ppq_NR`. |
+| `test_chisquare_simulator_er.py` | Physics: events from the independent ER simulator follow the Fortran `Ppq_ER`. |
+| `test_region_integral.py` | The region-normalization integral (`Ppq_region_NR`/`Ppq_region_ER`) against nested `scipy.integrate.quad`, timing, the non-convergence safety net, and the fast error-out on invalid parameters (p10 < p0 etc.). |
 | `test_normgrid.py` | The precomputed-table pipeline (`python/cli/normgrid.py`): interpolant exactness, no-extrapolation, crash-tolerant worker, HDF5 round trip. No Fortran needed. |
 | `test_normplan.py` | The node-count planner (`python/cli/normplan.py`): study layout, the coefficient-tail criterion on functions of known smoothness, the study → analyze path with analytic stand-in evaluators, and that a rough axis stops the plan.  `table_building/test/test_build_table.sh` runs `table_building/slurm/build_table.sh` end to end against a mock `sbatch` (needs h5py). |
 | `test_normtables.py` | Published tables fetched by name (`python/cli/normtables.py`): register/fetch round trip, hash verification, cache reuse, a bad-hash cached file is not trusted. Needs `pooch`. |
-| `test_ppq_pdf_tables.py` | `PpqPDF`'s MCMC setup checks against tables: `prior_bounds` (shared and band-specific keys), `check_points`, `table_bounds`, and an unregistered table name. |
+| `test_Ppq_fort_tables.py` | `Ppq_compiled`'s MCMC setup checks against tables: `prior_bounds` (shared and band-specific keys), `check_points`, `table_bounds`, and an unregistered table name. |
 | `test_version.py` | The compiled library's reported version (`PpqFort_version()`) matches `fpm.toml`'s `version` field — the regression guard for `scripts/generate_version_include.py` (see the main README's fpm section). |
-| `test_pip_packaging.py` | Runs against a `pip install -e ".[test]"` of this repository, before the Fortran library is built: `import phonon_charge_pdf` and `event_generator.py`'s functions work with no compiled library anywhere, and `PpqPDF` fails clearly at construction instead of silently succeeding. |
+| `test_pip_packaging.py` | Runs against a `pip install -e ".[test]"` of this repository, before the Fortran library is built: `import phonon_charge_pdf` and `event_generator.py`'s functions work with no compiled library anywhere, and `Ppq_compiled` fails clearly at construction instead of silently succeeding. |
 
 The two simulator tests are the strongest statement: the event generator
 (`python/event_generator.py`, the public module -- see the main README's
 "Generating simulated events" section) knows nothing about the PDF's
-integrals — it draws Er from the recoil spectrum, N from a truncated
+integrals — it draws Erecoil from the recoil spectrum, N from a truncated
 normal, and applies the detector response — so agreement means the PDFs
 describe the physics.
 
 ## Supporting modules
 
+`chisquare_harness.py`/`band_breakpoints.py` used to live here, but the
+machinery they held (equibin binning, expected counts by per-bin quadrature,
+batched chi-square throws, `debug_bin`, and the band-specific breakpoints
+that per-bin quadrature requires) is genuinely useful to anyone checking the
+goodness of fit of their own result, not just this repo's own tests -- it's
+now the public `python/goodness_of_fit.py` (see "Testing goodness of fit" in
+the docs). These tests import it from there, the same way they import
+`Ppq_fort`/`Ppq_py`.
+
 | Module | Role |
 |--------|------|
-| `chisquare_harness.py` | PDF-agnostic machinery: equibin binning, expected counts by per-bin quadrature, batched chi-square throws, and a `debug_bin` helper for inspecting one bin's integration in isolation.  Every band PDF here is a narrow ridge, so the per-bin quadrature requires an `inner_points_func` (breakpoints). |
-| `band_breakpoints.py` | Band physics for the per-bin quadrature: where the band ridge is and how wide it is, packaged as breakpoints for the harness. |
 | `sample_from_pdf.py` | Grid-based sampling from an arbitrary PDF (lintsampler), used by the self-consistency tests. |
 | `quad_breakpoints_demo.py` | Self-contained demonstration (no repo dependencies) of why adaptive quadrature silently misses narrow peaks and how `points=` fixes it. |
-| `debug_bin_example.py` | Example driver for `chisquare_harness.debug_bin`: point it at one (Ep, Eq) bin and a parameter set to see why that bin's expected count looks the way it does. |
+| `debug_bin_example.py` | Example driver for `goodness_of_fit.debug_bin`: point it at one (Ep, Eq) bin and a parameter set to see why that bin's expected count looks the way it does. |
 
 ## Integrating the PDF over bins
 
@@ -60,20 +70,20 @@ Suggested reading order:
 
 1. `quad_breakpoints_demo.py` — run it and watch plain `quad` return ~0 for
    a narrow peak, then fix it with the `points=` argument.
-2. `band_breakpoints.py` — where the ridge is physically: the noiseless
-   band centroid Er → (Ep, Eq) from the yield model and Neganov-Luke
-   amplification, inverted to give the most probable Eq at each Ep, plus
-   the local band width setting the breakpoint window.
-3. `chisquare_harness.py`, `expected_counts_from_pdf` — the nested
-   quadrature that requires those breakpoints (`inner_points_func`) and
-   normalizes the per-bin integrals into expected counts.
+2. `goodness_of_fit.make_ridge_breakpoints_NR`/`ER` — where the ridge is physically:
+   the noiseless band centroid Erecoil → (Ep, Eq) from the yield model and
+   Neganov-Luke amplification, inverted to give the most probable Eq at
+   each Ep, plus the local band width setting the breakpoint window.
+3. `goodness_of_fit.expected_counts_from_pdf` — the nested quadrature that
+   requires those breakpoints (`inner_points_func`) and normalizes the
+   per-bin integrals into expected counts.
 
 ## Debugging a single bin
 
 When a bin's expected count comes out at 0 or suspiciously small, it isn't
 automatically a quadrature bug: a wide tail bin can genuinely sit mostly (or
 entirely) off the band, in which case a tiny expected count is the correct
-answer. `chisquare_harness.debug_bin(pdf_func, bin_rect, inner_points_func)`
+answer. `goodness_of_fit.debug_bin(pdf_func, bin_rect, inner_points_func)`
 tells the two cases apart by computing the same bin three independent ways:
 
 - **naive** — nested quad with no breakpoints (what you'd get without

@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/det-lab/phonon-charge-pdf.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23049123.svg)](https://doi.org/10.5281/zenodo.23049123)
 
-This code is useful for dark matter searches where detector output is Ep (total phonon energy) and Eq (total charge energy).  The point of the code is to provide the probability of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`PpqG`, where the G is for gamma because gammas are the cause of most electron recoils) and neutron recoils (`PpqN`, where the N is for neutron).
+This code is useful for dark matter searches where detector output is Ep (total phonon energy) and Eq (total charge energy).  The point of the code is to provide the probability of an (Ep, Eq) pair given a set of detector parameters for both electron recoils (`Ppq_ER`) and nuclear recoils (`Ppq_NR`).
 
 **Full documentation, including an API reference, is at <https://det-lab.github.io/phonon-charge-pdf/>.** This README covers the quickstart and a map of where everything lives.
 
@@ -20,18 +20,18 @@ pip install phonon-charge-pdf
 import phonon_charge_pdf as pdf
 
 events = pdf.generate_events(
-    target_size=1000, ER_frac=0.6, seed_value=1,
-    ep_min=2.5, ep_max=350.0, eq_min=0.75, eq_max=200.0,
-    k=0.18, Z=32.0, F0_ER=0.2, F0_NR=0.122, eps=3.0e-3, V=3.0,
+    target_size=1000, fraction_ER=0.6, seed=1,
+    ep_range=(2.5, 350.0), eq_range=(0.75, 200.0),
+    k=0.18, Z=32.0, F0_NR=0.122, F0_ER=0.2, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
-    PNa=0.53693208, PNb=6.41515782, PNd=23.71789286,
-    PGa=0.573211975, PGb=0.169520023, PGd=279.552394,
+    mix_frac_NR=0.53693208, scale_fast_NR=6.41515782, scale_slow_NR=23.71789286,
+    mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
 )
 Ep, Eq = events["EP"].to_numpy(), events["EQ"].to_numpy()
 ```
 
 This works with **no Fortran build** — pure Python. For a fit/MCMC you need the compiled
-library and `PpqPDF` — see [Two ways to use this](#two-ways-to-use-this) below.
+library and `Ppq_compiled` — see [Two ways to use this](#two-ways-to-use-this) below.
 
 Published on PyPI as `phonon-charge-pdf`; `import phonon_charge_pdf` (hyphen becomes
 underscore, the usual PyPI convention). For local development instead of a pinned release,
@@ -49,11 +49,12 @@ dependencies.
 
 **1. Pure Python — no Fortran, no container needed.** `pip install phonon-charge-pdf` is
 enough. This covers generating simulated events ([`generate_events`](docs/python-events.md))
-and the resolution/yield model ([`sigp`, `sigq`, `Y`, `Nbar`, ...](docs/ppq-dist.md)).
+and the resolution/yield functions (`sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, ...), listed in the
+[API reference](https://det-lab.github.io/phonon-charge-pdf/api/).
 
 **2. The Fortran-backed PDF — needs the compiled library.** If you want normalized PDF
 values or a likelihood — a fit, an MCMC, anything beyond generating or describing
-simulated events — you need [`PpqPDF`](docs/fortran-pdf.md), and it always needs the
+simulated events — you need [`Ppq_compiled`](docs/fitting.md), and it always needs the
 compiled library. Easiest first:
 
 | Option | Command |
@@ -84,10 +85,10 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](docs/python-events.md) |
-| Use the resolution/yield model functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Resolution/yield model (ppq_dist)](docs/ppq-dist.md) |
-| Get normalized PDF values or a likelihood for a fit/MCMC | [Fortran-backed PDF (PpqPDF)](docs/fortran-pdf.md) |
+| Use the resolution/yield functions directly (`sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, ...) | [Python API reference](https://det-lab.github.io/phonon-charge-pdf/api/) |
+| Get normalized PDF values or a likelihood for a fit/MCMC | [Fitting](docs/fitting.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](docs/normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |
 | Check that the physics is actually correct | [Verification and validation](docs/testing.md) |
 | Profile the Fortran library itself (maintainer workflow) | [Profiling with TAU](docs/PROFILING.md) |
-| Browse the auto-generated API reference | <https://det-lab.github.io/phonon-charge-pdf/api/event_generator/> (and `ppq_dist`, `ppq_pdf`) |
+| Browse the auto-generated API reference, grouped by what you'd call, not by file | <https://det-lab.github.io/phonon-charge-pdf/api/> |

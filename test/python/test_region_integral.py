@@ -1,10 +1,10 @@
 """
 Validates the rectangular-region normalization integral
-(_ppqfort_bindings.ppqn_region/ppqg_region -> Fortran PpqN_region/PpqG_region,
+(_Ppq_fort_bindings.Ppq_region_NR/Ppq_region_ER -> Fortran Ppq_region_NR/Ppq_region_ER,
 a doubling-verified nested Gauss-Legendre quadrature) against the
 existing, algorithmically independent nested-quad reference
-(chisquare_harness.debug_bin, treating the whole region as one "bin",
-via band_breakpoints.make_ridge_breakpoints for the required ridge
+(goodness_of_fit.debug_bin, treating the whole region as one "bin",
+via goodness_of_fit.make_ridge_breakpoints_NR/ER for the required ridge
 breakpoints) -- ground truth -- plus timing, across a few representative
 regions including the user's actual MCMC target region, for both the NR
 and ER bands.
@@ -26,12 +26,11 @@ from contextlib import redirect_stdout
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "internal"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 
-from _ppqfort_bindings import (make_ppqg_pdf_unnormalized, make_ppqn_pdf_unnormalized,
-                               ppqg_region, ppqn_region)
-from band_breakpoints import make_ridge_breakpoints
-from chisquare_harness import debug_bin
+from _Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
+                               Ppq_region_ER, Ppq_region_NR)
+from goodness_of_fit import make_ridge_breakpoints_NR, make_ridge_breakpoints_ER, debug_bin
 
 PARAMS_NR = dict(k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
                   p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)
@@ -55,21 +54,20 @@ REGIONS = [
 
 def quad_reference(band, ep_min, ep_max, eq_min, eq_max, params):
     """The user's original method: nested scipy.integrate.quad with ridge
-    breakpoints (chisquare_harness.debug_bin's "fixed" value -- the same
+    breakpoints (goodness_of_fit.debug_bin's "fixed" value -- the same
     computation expected_counts_from_pdf does, but unnormalized so it's
     the raw integral).  Also cross-checks against debug_bin's independent
     brute-force Simpson grid_ref."""
     if band == "NR":
-        pdf_func = make_ppqn_pdf_unnormalized(**params, n_workers=os.cpu_count())
-        ridge = make_ridge_breakpoints("NR", **{k: params[k] for k in
-                                                 ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
-                                        er_max=700.0, n_window_widths=10.0)
+        pdf_func = make_Ppq_densities_NR(**params, n_workers=os.cpu_count())
+        ridge = make_ridge_breakpoints_NR(**{k: params[k] for k in
+                                             ("k", "Z", "eps", "V", "p0", "p10", "q0", "q10")},
+                                        erecoil_max=700.0, n_window_widths=10.0)
     else:
-        pdf_func = make_ppqg_pdf_unnormalized(**params, n_workers=os.cpu_count())
-        ridge = make_ridge_breakpoints("ER", k=None, Z=None,
-                                        **{k: params[k] for k in
+        pdf_func = make_Ppq_densities_ER(**params, n_workers=os.cpu_count())
+        ridge = make_ridge_breakpoints_ER(**{k: params[k] for k in
                                            ("eps", "V", "p0", "p10", "q0", "q10")},
-                                        er_max=700.0, n_window_widths=10.0)
+                                        erecoil_max=700.0, n_window_widths=10.0)
     with redirect_stdout(io.StringIO()):
         result = debug_bin(pdf_func, (ep_min, ep_max, eq_min, eq_max), ridge)
     rel_fixed_grid = abs(result["fixed"] - result["grid_ref"]) / max(abs(result["grid_ref"]), 1e-300)
@@ -119,8 +117,8 @@ def run_nonconvergence_check():
     print(f"{'='*70}")
     script = (
         "import sys; sys.path.insert(0, 'python/internal'); "
-        "from _ppqfort_bindings import ppqn_region; "
-        "ppqn_region(2.0, 200.0, 4.0, 100.0, epsrel=1e-300, epsabs=0.0, "
+        "from _Ppq_fort_bindings import Ppq_region_NR; "
+        "Ppq_region_NR(2.0, 200.0, 4.0, 100.0, epsrel=1e-300, epsabs=0.0, "
         "k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0, "
         "p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151)"
     )
@@ -156,8 +154,8 @@ def run_invalid_input_check():
     for label, override, expect in cases:
         params = dict(base, **override)
         script = ("import sys; sys.path.insert(0, 'python/internal'); nan = float('nan'); "
-                  "from _ppqfort_bindings import ppqn_region; "
-                  f"ppqn_region(2.0, 200.0, 4.0, 100.0, epsrel=1e-4, epsabs=1e-10, **{params!r})")
+                  "from _Ppq_fort_bindings import Ppq_region_NR; "
+                  f"Ppq_region_NR(2.0, 200.0, 4.0, 100.0, epsrel=1e-4, epsabs=1e-10, **{params!r})")
         t0 = time.time()
         try:
             proc = subprocess.run([sys.executable, "-c", script], cwd=REPO_ROOT, capture_output=True,
@@ -175,8 +173,8 @@ def run_invalid_input_check():
 
 
 if __name__ == "__main__":
-    ok_nr = run("NR", PARAMS_NR, ppqn_region)
-    ok_er = run("ER", PARAMS_ER, ppqg_region)
+    ok_nr = run("NR", PARAMS_NR, Ppq_region_NR)
+    ok_er = run("ER", PARAMS_ER, Ppq_region_ER)
     ok_safety_net = run_nonconvergence_check()
     ok_guard = run_invalid_input_check()
 

@@ -39,8 +39,8 @@ Eq_arr = np.array([100.0, 100.0, 100.0], dtype=np.float64)
 Ep_arr = np.array([347.0, 346.0, 348.0], dtype=np.float64)
 n = Ep_arr.size
 
-# Set argtypes and restype for the function PpqN_vector
-api.PpqN_vector.argtypes = [
+# Set argtypes and restype for the function Ppq_vector_NR
+api.Ppq_vector_NR.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),  # Ep_arr
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),  # Eq_arr
     ctypes.c_int,              # n
@@ -49,32 +49,32 @@ api.PpqN_vector.argtypes = [
     ctypes.c_double, ctypes.c_double,  # scalar params
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")   # res_arr (output)
 ]
-api.PpqN_vector.restype = None
+api.Ppq_vector_NR.restype = None
 
 # Output array
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.PpqN_vector(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr)
 
-print("Vectorized result of PpqN_vector:", res_arr)
+print("Vectorized result of Ppq_vector_NR:", res_arr)
 
-# Check each vectorized point against the scalar PpqN entrypoint for the
+# Check each vectorized point against the scalar Ppq_NR entrypoint for the
 # same (Ep, Eq) -- the vectorized call must agree exactly with calling the
 # scalar function once per point, since it's the same underlying evaluation
 # just batched.
-api.PpqN.argtypes = [ctypes.c_double] * 11
-api.PpqN.restype = ctypes.c_double
+api.Ppq_NR.argtypes = [ctypes.c_double] * 11
+api.Ppq_NR.restype = ctypes.c_double
 for i in range(n):
-    scalar_val = api.PpqN(ctypes.c_double(Ep_arr[i]), ctypes.c_double(Eq_arr[i]),
+    scalar_val = api.Ppq_NR(ctypes.c_double(Ep_arr[i]), ctypes.c_double(Eq_arr[i]),
                           ctypes.c_double(k), ctypes.c_double(Z),
                           ctypes.c_double(F0), ctypes.c_double(eps),
                           ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                           ctypes.c_double(q0), ctypes.c_double(q10))
-    check(f"PpqN_vector[{i}] vs PpqN", res_arr[i], scalar_val)
+    check(f"Ppq_vector_NR[{i}] vs Ppq_NR", res_arr[i], scalar_val)
 
-# Set argtypes and restype for the function PpqG_vector
-api.PpqG_vector.argtypes = [
+# Set argtypes and restype for the function Ppq_vector_ER
+api.Ppq_vector_ER.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),      # Ep_arr
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),      # Eq_arr
     ctypes.c_int,                                                        # n
@@ -82,7 +82,7 @@ api.PpqG_vector.argtypes = [
     ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # scalar params
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")       # res_arr (output)
 ]
-api.PpqG_vector.restype = None
+api.Ppq_vector_ER.restype = None
 
 # Inputs
 Eq_arr = np.array([100.0, 100.0, 100.0], dtype=np.float64)
@@ -93,18 +93,18 @@ n = Ep_arr.size
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.PpqG_vector(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr)
 
-print("Vectorized result of PpqG_vector:", res_arr)
+print("Vectorized result of Ppq_vector_ER:", res_arr)
 
-api.PpqG.argtypes = [ctypes.c_double] * 9
-api.PpqG.restype = ctypes.c_double
+api.Ppq_ER.argtypes = [ctypes.c_double] * 9
+api.Ppq_ER.restype = ctypes.c_double
 for i in range(n):
-    scalar_val = api.PpqG(ctypes.c_double(Ep_arr[i]), ctypes.c_double(Eq_arr[i]),
+    scalar_val = api.Ppq_ER(ctypes.c_double(Ep_arr[i]), ctypes.c_double(Eq_arr[i]),
                           ctypes.c_double(F0), ctypes.c_double(eps),
                           ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
                           ctypes.c_double(q0), ctypes.c_double(q10))
-    check(f"PpqG_vector[{i}] vs PpqG", res_arr[i], scalar_val)
+    check(f"Ppq_vector_ER[{i}] vs Ppq_ER", res_arr[i], scalar_val)
 
 print("Parameters Are ####################")
 print("Ep: ", Ep_arr)

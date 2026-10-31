@@ -11,8 +11,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 # that exact revision from GitHub, ignoring the local checkout.
 ARG GIT_REF=""
 
-# python3-numpy/python3-scipy provide the packages needed by the python
-# test scripts; python-is-python3 lets them be invoked as `python`
+# python3-numpy/python3-scipy/python3-pandas are this project's core
+# runtime dependencies (see pyproject.toml's `dependencies`) -- pandas in
+# particular is a hard import in event_generator.py, not just a test
+# dependency; python-is-python3 lets them be invoked as `python`.
+# equibin is also core now (goodness_of_fit.py), installed below with
+# the pip-only packages since it has no apt package.
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -23,17 +27,18 @@ RUN apt-get update && apt-get install -y \
     python-is-python3 \
     python3-numpy \
     python3-scipy \
+    python3-pandas \
     python3-pip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# matplotlib/equibin/lintsampler are needed by the chi-square validation
-# scripts under test/python/ (test_chisquare_*.py, chisquare_harness.py,
-# sample_from_pdf.py); not available via apt, unlike numpy/scipy above.
-# Matches the same three packages environment.yaml installs for the
-# ifx/flang containers.  h5py is for the precomputed normalization
-# tables (python/cli/normgrid.py), pooch for fetching the published ones
-# (python/cli/normtables.py).
+# equibin (core, goodness_of_fit.py) and matplotlib/lintsampler (needed
+# only by the chi-square validation scripts under test/python/:
+# test_chisquare_*.py, sample_from_pdf.py) aren't available via apt,
+# unlike numpy/scipy/pandas above. Matches the same packages
+# environment.yaml installs for the ifx/flang containers. h5py is for
+# the precomputed normalization tables (python/cli/normgrid.py), pooch
+# for fetching the published ones (python/cli/normtables.py).
 RUN pip install --break-system-packages --no-cache-dir \
     matplotlib equibin lintsampler h5py pooch
 
@@ -81,7 +86,7 @@ RUN mkdir -p /app/src /app/test /app/python /app/scripts \
     && rm -rf /tmp/pdf_src
 
 # version.f90.inc (PpqFort_version(); not committed, see the script) must
-# exist before fpm build/test -- it is a plain `include` in src/PpqFort_m.f90
+# exist before fpm build/test -- it is a plain `include` in src/Ppq_fort_m.f90
 RUN python scripts/generate_version_include.py
 
 # Now compile the fortran code
@@ -93,6 +98,6 @@ ENV LD_LIBRARY_PATH=/app/lib
 
 # Published normalization tables (python/cli/table_registry.json), fetched and
 # hash-checked at build time -- HPC compute nodes often have no internet.
-# python/cli/normtables.py (and so PpqPDF(ppqn_table=NAME)) finds them here.
+# python/cli/normtables.py (and so Ppq(Ppq_table_NR=NAME)) finds them here.
 ENV PDF_TABLES_DIR=/app/tables
 RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all

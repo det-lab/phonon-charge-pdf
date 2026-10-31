@@ -3,13 +3,13 @@
   "tables": {
     "ER_ep2.5-350_eq0.75-200": {
       "file": "norm_ER_ep2.5-350_eq0.75-200.h5",
-      "url": "https://zenodo.org/records/23048216/files/norm_ER_ep2.5-350_eq0.75-200.h5?download=1",
-      "sha256": "d34afbcbd17ad5228d6363a81f44bb9b0f18b0ee62b09bf3a087d59bcf4b10f8"
+      "url": "https://zenodo.org/records/23782728/files/norm_ER_ep2.5-350_eq0.75-200.h5?download=1",
+      "sha256": "51b74b81ce873bea263dae57298a8eaac329f96eca5a5ff3a48b0f0f26d57e66"
     },
     "NR_ep2.5-350_eq0.75-200": {
       "file": "norm_NR_ep2.5-350_eq0.75-200.h5",
-      "url": "https://zenodo.org/records/23048216/files/norm_NR_ep2.5-350_eq0.75-200.h5?download=1",
-      "sha256": "e8d7d1e37c6e5a1c464835761ea4c96f47c95e09c79759f9b83c13350363dd69"
+      "url": "https://zenodo.org/records/23782728/files/norm_NR_ep2.5-350_eq0.75-200.h5?download=1",
+      "sha256": "48f5af7c2e6d86b57a8aec166b97128390c8c7374f7f46cec1c781a758d2f723"
     }
   }
 }

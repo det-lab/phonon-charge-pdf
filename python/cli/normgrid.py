@@ -1,7 +1,7 @@
 """
 Precomputed, interpolated region-normalization tables for MCMC.
 
-The region-normalization integral (_ppqfort_bindings.ppqn_region/ppqg_region) is
+The region-normalization integral (_Ppq_fort_bindings.Ppq_region_NR/Ppq_region_ER) is
 ~2 s per call -- fine for one fit, hopeless inside an MCMC.  But the region
 is fixed for a whole run and the integral is a very smooth function of the
 handful of physics parameters the MCMC varies, so it can be evaluated once
@@ -53,7 +53,7 @@ import time
 import numpy as np
 from numpy.polynomial import chebyshev as cheb
 
-# _ppqfort_bindings.py is a sibling package, not a sibling file, now that the
+# _Ppq_fort_bindings.py is a sibling package, not a sibling file, now that the
 # CLI tools and the private ctypes layer live in their own subdirectories.
 _INTERNAL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "internal")
 
@@ -125,7 +125,15 @@ RECOMMENDED_NODES = {
     "NR": {"k": 8, "F0": 3, "V": 4, "p0": 4, "dp": 3, "q0": 16, "dq": 4},     # 73,728 points
     "ER": {"F0": 3, "V": 9, "p0": 4, "dp": 6, "q0": 11, "dq": 9},             # 64,152 points
 }
-DEFAULT_REGION = (2.0, 200.0, 4.0, 100.0)
+DEFAULT_EP_RANGE = (2.0, 200.0)
+DEFAULT_EQ_RANGE = (4.0, 100.0)
+
+# Bump on any breaking change to the HDF5 attrs merge() writes/from_hdf5()
+# reads (e.g. 1 -> 2: flat "region" attr -> separate ep_range/eq_range).
+# from_hdf5() refuses a table below this rather than guess at its shape --
+# migrate it with migrate_table() (NormInterpolator.from_hdf5 of the old
+# file, re-merge of its own spec) or rebuild it.
+TABLE_FORMAT_VERSION = 2
 
 
 class OutOfBoxError(ValueError):
@@ -147,22 +155,22 @@ class PriorNotCoveredError(ValueError):
 # Specs: a grid, or a set of random held-out points, as plain JSON-able dicts
 # ---------------------------------------------------------------------------
 
-def _base_spec(kind, band, region, fixed, box, epsrel, epsabs):
+def _base_spec(kind, band, ep_range, eq_range, fixed, box, epsrel, epsabs):
     if band not in BAND_AXES:
         raise ValueError(f"band must be 'NR' or 'ER', got {band!r}")
     box = {a: list(box[a]) for a in BAND_AXES[band]}
     fixed = dict(fixed)
     if band == "ER":
         fixed.pop("Z", None)
-    return {"kind": kind, "band": band, "region": list(region), "fixed": fixed,
-            "box": box, "epsrel": epsrel, "epsabs": epsabs}
+    return {"kind": kind, "band": band, "ep_range": list(ep_range), "eq_range": list(eq_range),
+            "fixed": fixed, "box": box, "epsrel": epsrel, "epsabs": epsabs}
 
 
-def make_grid_spec(band, n_nodes, *, region=DEFAULT_REGION, fixed=DEFAULT_FIXED,
-                   box=None, epsrel=1e-7, epsabs=1e-13):
+def make_grid_spec(band, n_nodes, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT_EQ_RANGE,
+                   fixed=DEFAULT_FIXED, box=None, epsrel=1e-7, epsabs=1e-13):
     """n_nodes: {axis: number of Chebyshev-Lobatto nodes} for every axis of
     the band (1 pins an axis at its midpoint).  box: None = default_box(band)."""
-    spec = _base_spec("grid", band, region, fixed, default_box(band) if box is None else box,
+    spec = _base_spec("grid", band, ep_range, eq_range, fixed, default_box(band) if box is None else box,
                       epsrel, epsabs)
     axes = BAND_AXES[band]
     if set(n_nodes) != set(axes):
@@ -173,7 +181,8 @@ def make_grid_spec(band, n_nodes, *, region=DEFAULT_REGION, fixed=DEFAULT_FIXED,
     return spec
 
 
-def make_random_spec(band, n, seed, *, region=DEFAULT_REGION, fixed=DEFAULT_FIXED,
+def make_random_spec(band, n, seed, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT_EQ_RANGE,
+                     fixed=DEFAULT_FIXED,
                      box=None, p10_range=(0.3, 0.6), q10_range=(0.2, 0.4),
                      epsrel=1e-7, epsabs=1e-13):
     """n held-out points, uniform over the axis box except F0, which
@@ -182,7 +191,7 @@ def make_random_spec(band, n, seed, *, region=DEFAULT_REGION, fixed=DEFAULT_FIXE
     strongest), restricted to the prior's p10 and q10 ranges (None = whole box).
     Point i depends only on (seed, i), so any subset can be computed
     independently."""
-    spec = _base_spec("random", band, region, fixed, default_box(band) if box is None else box,
+    spec = _base_spec("random", band, ep_range, eq_range, fixed, default_box(band) if box is None else box,
                       epsrel, epsabs)
     spec.update(n=int(n), seed=int(seed),
                 p10_range=None if p10_range is None else list(p10_range),
@@ -256,7 +265,7 @@ def coords_at(spec, i):
 
 
 def physical_params(spec, coords):
-    """Axis coordinates -> the keyword arguments of ppqn_region/ppqg_region
+    """Axis coordinates -> the keyword arguments of Ppq_region_NR/Ppq_region_ER
     (minus the region and tolerances)."""
     p = {"F0": coords["F0"], "eps": spec["fixed"]["eps"], "V": coords["V"],
          "p0": coords["p0"], "p10": coords["p0"] + coords["dp"],
@@ -283,9 +292,9 @@ def _evaluate(spec, params, epsrel):
     if fake:
         return 1.0 + sum(params[k] * (i + 1) for i, k in enumerate(sorted(params))) * 1e-3
     sys.path.insert(0, _INTERNAL_DIR)
-    from _ppqfort_bindings import ppqg_region, ppqn_region
-    fn = ppqn_region if spec["band"] == "NR" else ppqg_region
-    return fn(*spec["region"], epsrel=epsrel, epsabs=spec["epsabs"], **params)
+    from _Ppq_fort_bindings import Ppq_region_ER, Ppq_region_NR
+    fn = Ppq_region_NR if spec["band"] == "NR" else Ppq_region_ER
+    return fn(*spec["ep_range"], *spec["eq_range"], epsrel=epsrel, epsabs=spec["epsabs"], **params)
 
 
 # ---------------------------------------------------------------------------
@@ -408,8 +417,8 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
     lib_version = ""
     try:
         sys.path.insert(0, _INTERNAL_DIR)
-        import _ppqfort_bindings
-        lib_version = ".".join(map(str, _ppqfort_bindings.version()))
+        import _Ppq_fort_bindings
+        lib_version = ".".join(map(str, _Ppq_fort_bindings.version()))
     except Exception:
         pass
     with h5py.File(out_path, "w") as f:
@@ -418,16 +427,59 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
         g = f.create_group("nodes")
         for a, n in nodes_of(spec).items():
             g.create_dataset(a, data=n)
+        f.attrs["format_version"] = TABLE_FORMAT_VERSION
         f.attrs["spec_json"] = json.dumps(spec)
         f.attrs["axes"] = json.dumps(list(axes_of(spec)))
         f.attrs["band"] = spec["band"]
-        f.attrs["region"] = np.array(spec["region"])
+        f.attrs["ep_range"] = np.array(spec["ep_range"])
+        f.attrs["eq_range"] = np.array(spec["eq_range"])
         f.attrs["fixed_json"] = json.dumps(spec["fixed"])
         f.attrs["library_version"] = lib_version
         f.attrs["git_commit"] = _git_commit()
         f.attrs["created"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         f.attrs["n_missing"] = len(missing)
     print(f"wrote {out_path}: shape {shape}, {len(missing)} missing")
+
+
+def migrate_table(in_path, out_path):
+    """Rewrite an old-format table (format_version < TABLE_FORMAT_VERSION,
+    e.g. the flat "region" attr before ep_range/eq_range) at the current
+    format, bit-for-bit identical otherwise: same values/nodes/epsrel_used,
+    same spec other than the migrated field(s).  in_path == out_path
+    rewrites in place (via a temp file, so a crash mid-write cannot corrupt
+    the original)."""
+    h5py = _h5py()
+    with h5py.File(in_path, "r") as f:
+        version = f.attrs.get("format_version", 1)
+        if version >= TABLE_FORMAT_VERSION:
+            raise ValueError(f"{in_path}: already format_version={version}, nothing to migrate")
+        if version != 1:
+            raise ValueError(f"{in_path}: no migration path from format_version={version}")
+        spec = json.loads(f.attrs["spec_json"])
+        region = spec.pop("region")
+        spec["ep_range"], spec["eq_range"] = region[:2], region[2:]
+        attrs = {
+            "format_version": TABLE_FORMAT_VERSION, "spec_json": json.dumps(spec),
+            "axes": f.attrs["axes"], "band": f.attrs["band"],
+            "ep_range": np.array(spec["ep_range"]), "eq_range": np.array(spec["eq_range"]),
+            "fixed_json": f.attrs["fixed_json"], "library_version": f.attrs["library_version"],
+            "git_commit": f.attrs["git_commit"], "created": f.attrs["created"],
+            "n_missing": f.attrs["n_missing"],
+        }
+        values, epsrel_used = f["values"][:], f["epsrel_used"][:]
+        nodes = {a: f["nodes"][a][:] for a in json.loads(f.attrs["axes"])}
+
+    tmp_path = out_path + ".migrating"
+    with h5py.File(tmp_path, "w") as f:
+        f.create_dataset("values", data=values, compression="gzip")
+        f.create_dataset("epsrel_used", data=epsrel_used, compression="gzip")
+        g = f.create_group("nodes")
+        for a, n in nodes.items():
+            g.create_dataset(a, data=n)
+        for k, v in attrs.items():
+            f.attrs[k] = v
+    os.replace(tmp_path, out_path)
+    print(f"migrated {in_path} -> {out_path}: format_version {version} -> {TABLE_FORMAT_VERSION}")
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +499,7 @@ class NormInterpolator:
     Z/eps may be passed too, but must match what the table was built with.
     Raises OutOfBoxError rather than ever extrapolating."""
 
-    def __init__(self, axes, nodes, values, *, band, region, fixed, source=""):
+    def __init__(self, axes, nodes, values, *, band, ep_range, eq_range, fixed, source=""):
         self.axes = tuple(axes)
         self.nodes = [np.asarray(nodes[a], dtype=float) for a in self.axes]
         values = np.asarray(values, dtype=float)
@@ -455,7 +507,8 @@ class NormInterpolator:
             raise ValueError("values shape does not match node counts")
         if not np.all(np.isfinite(values)):
             raise ValueError("table contains missing/failed points; refusing to build an interpolant")
-        self.band, self.region, self.fixed, self.source = band, tuple(region), dict(fixed), source
+        self.band, self.fixed, self.source = band, dict(fixed), source
+        self.ep_range, self.eq_range = tuple(ep_range), tuple(eq_range)
         self.box = {a: (n[0], n[-1]) for a, n in zip(self.axes, self.nodes)}
         # values at nodes -> Chebyshev coefficients, one axis at a time
         coef = values
@@ -474,12 +527,19 @@ class NormInterpolator:
     def from_hdf5(cls, path):
         h5py = _h5py()
         with h5py.File(path, "r") as f:
+            version = f.attrs.get("format_version", 1)
+            if version < TABLE_FORMAT_VERSION:
+                raise ValueError(
+                    f"{path}: table format_version={version}, this code reads "
+                    f"{TABLE_FORMAT_VERSION} -- migrate it (normgrid.migrate_table) "
+                    f"or rebuild it")
             axes = json.loads(f.attrs["axes"])
             nodes = {a: f["nodes"][a][:] for a in axes}
             return cls(axes, nodes, f["values"][:], band=str(f.attrs["band"]),
-                       region=f.attrs["region"], fixed=json.loads(f.attrs["fixed_json"]), source=path)
+                       ep_range=f.attrs["ep_range"], eq_range=f.attrs["eq_range"],
+                       fixed=json.loads(f.attrs["fixed_json"]), source=path)
 
-    def _coords(self, k, F0, V, p0, p10, q0, q10, Z, eps):
+    def _coords(self, k, Z, F0, eps, V, p0, p10, q0, q10):
         for name, given in (("Z", Z), ("eps", eps)):
             if given is not None and name in self.fixed and abs(given - self.fixed[name]) > 1e-12 * max(1.0, abs(given)):
                 raise ValueError(f"{name}={given} differs from the {self.fixed[name]} this table was built for")
@@ -492,8 +552,8 @@ class NormInterpolator:
             raise ValueError("ER table does not depend on k; do not pass it")
         return c
 
-    def __call__(self, *, F0, V, p0, p10, q0, q10, k=None, Z=None, eps=None):
-        c = self._coords(k, F0, V, p0, p10, q0, q10, Z, eps)
+    def __call__(self, *, k=None, Z=None, F0, eps=None, V, p0, p10, q0, q10):
+        c = self._coords(k, Z, F0, eps, V, p0, p10, q0, q10)
         coef = self._coef
         for d, a in enumerate(self.axes):
             x = c[a]
@@ -508,7 +568,7 @@ class NormInterpolator:
                     + " ".join(f"{n}={v:.6g}" for n, v in query.items())
                     + "\n  The table covers the prior it was built for, so a query outside it means the "
                       "MCMC prior does not match the table, or a NaN/bug.  Check the prior at setup "
-                      "(PpqPDF(prior_bounds=...) or table.check_prior), and have log_prob return -inf "
+                      "(Ppq_compiled(prior_bounds=...) or table.check_prior), and have log_prob return -inf "
                       "for points outside the prior BEFORE calling the likelihood.",
                     axis=a, value=x, box=(lo, hi), query=query, source=self.source)
             coef = cheb.chebval(self._to_unit(d, np.float64(min(max(x, lo), hi))), coef)   # contracts the first remaining axis
@@ -517,7 +577,7 @@ class NormInterpolator:
     # ---- MCMC setup checks: is the prior (are the starting points) inside the box? ----
 
     def params(self):
-        """The physical parameters this table varies, in PpqPDF's keyword names."""
+        """The physical parameters this table varies, in Ppq_compiled's keyword names."""
         return (("k",) if self.band == "NR" else ()) + ("F0", "V", "p0", "p10", "q0", "q10")
 
     def table_bounds(self):
@@ -641,7 +701,7 @@ class NormInterpolator:
         default = default_box(self.band)
         spec = " ".join(f"{a}={format_box_range(*box[a])}" for a in self.axes
                         if not np.allclose(box[a], default[a], rtol=1e-9, atol=0))
-        region = " ".join(f"{r:g}" for r in self.region)
+        region = " ".join(f"{r:g}" for r in self.ep_range + self.eq_range)
         return f'BOX="{spec}" sbatch table_building/slurm/build_table.job {self.band} {region}'
 
 
@@ -723,16 +783,19 @@ def main(argv=None):
     p.add_argument("--band", required=True, choices=["NR", "ER"])
     p.add_argument("--nodes", nargs="+", default=None, metavar="AXIS=N",
                    help="nodes per axis, e.g. k=7 F0=3 V=4 p0=2 dp=3 q0=3 dq=3 (ER: no k); default: RECOMMENDED_NODES")
-    # --region and --epsrel are required, not defaulted, for the same reason
-    # ppqn_region takes no default epsrel/epsabs: a wrong value here produces a
-    # table that is complete, internally consistent and wrong.  Neither merge
-    # nor validate can see it -- they only ever compare a table against points
-    # computed from the same spec -- so it would surface at the earliest in
-    # PpqPDF's region check, and only if the fit gets that far.  (--nodes and
-    # the box do default: validate measures node adequacy directly, and a bad
-    # box raises OutOfBoxError at query time.  Both fail loudly.)
-    p.add_argument("--region", nargs=4, type=float, required=True, metavar=("EP_MIN", "EP_MAX", "EQ_MIN", "EQ_MAX"),
-                   help="fit region the table normalizes over; must match the region PpqPDF is built with")
+    # --ep-range/--eq-range and --epsrel are required, not defaulted, for the
+    # same reason Ppq_region_NR takes no default epsrel/epsabs: a wrong value
+    # here produces a table that is complete, internally consistent and
+    # wrong.  Neither merge nor validate can see it -- they only ever compare
+    # a table against points computed from the same spec -- so it would
+    # surface at the earliest in Ppq_compiled's region check, and only if
+    # the fit gets that far.  (--nodes and the box do default: validate
+    # measures node adequacy directly, and a bad box raises OutOfBoxError at
+    # query time.  Both fail loudly.)
+    p.add_argument("--ep-range", nargs=2, type=float, required=True, metavar=("EP_MIN", "EP_MAX"),
+                   help="fit region the table normalizes over; must match the region Ppq_compiled is built with")
+    p.add_argument("--eq-range", nargs=2, type=float, required=True, metavar=("EQ_MIN", "EQ_MAX"),
+                   help="fit region the table normalizes over; must match the region Ppq_compiled is built with")
     p.add_argument("--epsrel", type=float, required=True,
                    help="quadrature convergence tolerance per point, e.g. 1e-7")
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
@@ -743,7 +806,9 @@ def main(argv=None):
     p.add_argument("--band", required=True, choices=["NR", "ER"])
     p.add_argument("--n", type=int, required=True)
     p.add_argument("--seed", type=int, default=12345)
-    p.add_argument("--region", nargs=4, type=float, required=True, metavar=("EP_MIN", "EP_MAX", "EQ_MIN", "EQ_MAX"),
+    p.add_argument("--ep-range", nargs=2, type=float, required=True, metavar=("EP_MIN", "EP_MAX"),
+                   help="must match the region of the table these points validate")
+    p.add_argument("--eq-range", nargs=2, type=float, required=True, metavar=("EQ_MIN", "EQ_MAX"),
                    help="must match the region of the table these points validate")
     p.add_argument("--epsrel", type=float, required=True)
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
@@ -777,12 +842,16 @@ def main(argv=None):
     p.add_argument("--accept", type=float, default=None, metavar="REL_ERR",
                    help="exit status 1 if the worst held-out relative error exceeds this")
 
+    p = sub.add_parser("migrate", help="rewrite an old-format table at the current TABLE_FORMAT_VERSION")
+    p.add_argument("table")
+    p.add_argument("--out", default=None, help="default: overwrite TABLE in place")
+
     a = ap.parse_args(argv)
     expand = lambda pats: sorted({f for pat in pats for f in (glob.glob(pat) or [pat])})
 
     if a.cmd == "make-spec":
         nodes = _parse_kv_ints(a.nodes) if a.nodes else RECOMMENDED_NODES[a.band]
-        spec = make_grid_spec(a.band, nodes, region=tuple(a.region), epsrel=a.epsrel,
+        spec = make_grid_spec(a.band, nodes, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel,
                               box=parse_box(a.box, a.band) if a.box else None)
         save_spec(spec, a.out)
         print(f"{a.out}: {n_points(spec)} points, shape {grid_shape(spec)}")
@@ -790,10 +859,10 @@ def main(argv=None):
         if a.box:
             box = parse_box(a.box, a.band)
             p10, q10 = x10_ranges(box)
-            spec = make_random_spec(a.band, a.n, a.seed, region=tuple(a.region), epsrel=a.epsrel,
+            spec = make_random_spec(a.band, a.n, a.seed, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel,
                                     box=box, p10_range=p10, q10_range=q10)
         else:
-            spec = make_random_spec(a.band, a.n, a.seed, region=tuple(a.region), epsrel=a.epsrel)
+            spec = make_random_spec(a.band, a.n, a.seed, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel)
         save_spec(spec, a.out)
         print(f"{a.out}: {a.n} held-out points")
     elif a.cmd == "info":
@@ -815,6 +884,8 @@ def main(argv=None):
         errs = validate(a.table, a.heldout_spec, expand(a.results), accept=a.accept)
         if a.accept is not None and errs.max() > a.accept:
             sys.exit(1)
+    elif a.cmd == "migrate":
+        migrate_table(a.table, a.out or a.table)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ below remain the source of truth for the flags and are what you want for anythin
 non-default (a one-off flag override, a compiler the Makefile doesn't cover).
 
 Before `fpm build`/`fpm test`, generate `src/version.f90.inc` (not committed —
-`src/PpqFort_m.f90` `include`s it, so the build fails loudly if you skip this rather than
+`src/Ppq_fort_m.f90` `include`s it, so the build fails loudly if you skip this rather than
 silently reporting a stale version):
 
 ```bash

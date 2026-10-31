@@ -1,4 +1,4 @@
-# Precomputed normalization tables for MCMC: `python/cli/normgrid.py`
+# Computing new normalization tables: `python/cli/normgrid.py`
 
 Even at ~1-2 s, computing the normalization integral at every MCMC step is out of the
 question. But the region is fixed for a whole run and the integral is a very smooth
@@ -16,7 +16,7 @@ inside a table and checked on every call.
   for `p10 >= p0` (likewise `q10 >= q0`), so a plain `(p0, p10)` or `(q0, q10)` box would
   contain unphysical corners (the `q0` and `q10` ranges overlap); `dp >= 0` and `dq >= 0`
   keep the box rectangular. Query the table with the physical `p10`/`q10`; it converts.
-  `PpqN_region`/`PpqG_region` now error out in ~0.3 s on such inputs (and on
+  `Ppq_region_NR`/`Ppq_region_ER` now error out in ~0.3 s on such inputs (and on
   `F0, eps, p0, q0, k, Z <= 0`, an empty region, or NaN) instead of grinding for minutes.
 - **Interpolant.** Tensor-product Chebyshev series through Chebyshev–Lobatto nodes, built
   and evaluated with `numpy.polynomial.chebyshev` (`chebfit`/`chebval`; exact at the nodes,
@@ -44,10 +44,11 @@ inside a table and checked on every call.
 ## Building a table by hand
 
 ```bash
-# describe the grid (region and epsrel are required; nodes default to RECOMMENDED_NODES
-# and the box to the one above -- a wrong region makes a table that looks fine and isn't)
-python python/cli/normgrid.py make-spec --band NR --region 2.5 350 0.75 200 --epsrel 1e-7 --out spec_NR.json
-python python/cli/normgrid.py make-random-spec --band NR --n 200 --region 2.5 350 0.75 200 --epsrel 1e-7 --out held_NR.json
+# describe the grid (ep-range/eq-range and epsrel are required; nodes default to
+# RECOMMENDED_NODES and the box to the one above -- a wrong region makes a table
+# that looks fine and isn't)
+python python/cli/normgrid.py make-spec --band NR --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 --out spec_NR.json
+python python/cli/normgrid.py make-random-spec --band NR --n 200 --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 --out held_NR.json
 
 # run it: on one machine, or as batch jobs (table_building/osg/normgrid.sub + table_building/osg/normgrid_job.sh are an HTCondor template)
 python python/cli/normgrid.py chunks spec_NR.json --size 100        # "start stop" ranges, one per job
@@ -103,18 +104,18 @@ an analytic stand-in for the integrals.
 certifying `epsrel=1e-7`) kills the process, so a supervisor records that point as `nan`
 and restarts past it; re-run failures with a looser tolerance via
 `run --retry-failed --epsrel 1e-6`. `merge` refuses to build a table with missing points.
-The HDF5 file records the region, fixed parameters, library version and git commit it was
-built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
-the tables to `PpqPDF`; nothing else in the fit changes:
+The HDF5 file records the `ep_range`/`eq_range`, fixed parameters, library version and git
+commit it was built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
+the tables to `Ppq_compiled`; nothing else in the fit changes:
 
 ```python
 # define the data region: must match what the tables were built for exactly
-ep_min, ep_max = 2.5, 350.0
-eq_min, eq_max = 0.75, 200.0
+ep_range = (2.5, 350.0)
+eq_range = (0.75, 200.0)
 
-band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
-                      ppqn_table="norm_NR.h5", ppqg_table="norm_ER.h5")
-# band_pdf.ppqn_integral(...) / band_pdf.ppqg_integral(...) now interpolate instead of integrating
+fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
+                      Ppq_table_NR="norm_NR.h5", Ppq_table_ER="norm_ER.h5")
+# fit_pdf.Ppq_integral_NR(...) / fit_pdf.Ppq_integral_ER(...) now interpolate instead of integrating
 ```
 
 **Published tables** are listed in `python/cli/table_registry.json` and can be passed by
@@ -124,73 +125,23 @@ caches them (`$PDF_TABLES_DIR`, else `~/.cache/phonon_charge_pdf`; the container
 with every registered table in `/app/tables`). `python python/cli/normtables.py list` shows
 what is available.
 
+**Building your own table for your own region/box?** Just pass its file path to
+`Ppq_table_NR=`/`Ppq_table_ER=`, as above — `fetch()` (the registry/Zenodo/Pooch machinery)
+only runs when the argument *isn't* an existing file, so a local `.h5` never touches it.
+The registry is specifically for *this project's* own published, standard-region tables;
+getting a table listed there (`normtables.py register`) means a PR against this repo's
+`table_registry.json`, and `--doi` uploads to det-lab's own Zenodo record specifically
+(`--url-base` works for any other host, but the registry entry itself still has to land in
+this repo). There's no self-service way to register a table without that — if you're not
+on this project, your own table stays a local (or self-hosted) file path, not a name.
+
 ## Fits and MCMC with the tables
 
 A table covers a fixed box of parameters and never extrapolates, so the rule for a fit or
 an MCMC is the same: **keep every parameter inside the tables' box, with `p10 >= p0` and
-`q10 >= q0`** (the PDF is undefined otherwise). The library checks this and says what to
-change; the fit or MCMC code has to enforce it.
-
-- `PpqPDF(..., prior_bounds=BOUNDS)` checks hard bounds against every table given, at
-  construction. If they reach outside a table it raises `PriorNotCoveredError`, listing
-  each short axis and the `BOX=` rebuild command that would cover them.
-- `band_pdf.table_bounds()` gives, per band, the widest bounds each table covers: a
-  ready-made set of hard bounds. Take bounds from it, or round inward: the box edges are
-  not round numbers (`p0` starts at 0.0128438), and bounds rounded outward fail the check.
-- `band_pdf.check_points(points)` checks a set of points, e.g. an MCMC's starting walkers.
-- At run time, a query outside a table raises `OutOfBoxError` naming the axis, the value,
-  the box and the table file. After the setup checks pass, that means a bug or a NaN.
-
-Bounds are physical parameters, `{name: (lo, hi)}`. Parameters the two bands share go at
-the top level; each band's own (NR's `k`, and the Fano factor `F0`, which differs between
-the bands) go under `"NR"` and `"ER"`. `Z` and `eps` are fixed inside a table; pass them as
-their fixed values or leave them out.
-
-### MCMC
-
-```python
-BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
-          "q0": (0.0475, 0.4), "q10": (0.2, 0.4),
-          "NR": {"k": (0.13, 0.22), "F0": (1e-5, 1.0)},
-          "ER": {"F0": (0.1, 0.35)}}
-
-# define the data region: must match the named tables below exactly
-ep_min, ep_max = 2.5, 350.0
-eq_min, eq_max = 0.75, 200.0
-
-band_pdf = pdf.PpqPDF(ep_min, ep_max, eq_min, eq_max, ep_data, eq_data,
-                      ppqn_table="NR_ep2.5-350_eq0.75-200", ppqg_table="ER_ep2.5-350_eq0.75-200",
-                      prior_bounds=BOUNDS)                  # 1. fails now, not hours into the run
-
-def log_prior(theta):                             # 2. -inf outside the hard bounds and the ordering
-    p = unpack(theta)
-    if not within(p, BOUNDS) or p["p10"] < p["p0"] or p["q10"] < p["q0"]:
-        return -np.inf
-    return soft_terms(p)                          # e.g. Gaussians on p0, q0 -- truncated by BOUNDS
-
-def log_prob(theta):                              # 3. the prior first: the table never sees
-    lp = log_prior(theta)                         #    a point outside it
-    if not np.isfinite(lp):
-        return -np.inf
-    return lp + log_likelihood(theta, band_pdf)
-
-band_pdf.check_points(as_params(start))          # 4. starting walkers inside, before sampling
-                                                  #    ({param: array}, laid out like BOUNDS)
-```
-
-A Gaussian prior (on `p0` or `q0`, say) must be truncated by the hard bounds:
-`prior_bounds` rejects a parameter without finite bounds, since no table can cover it.
-Walkers started in a small ball around a best fit can still land outside near an edge,
-which is what step 4 catches.
-
-### Fits (maximum likelihood / MAP)
-
-- Give the optimizer bounds inside the tables (e.g. `bounds=` for `scipy.optimize.minimize`
-  with L-BFGS-B, Powell or trust-constr), and check them once with `prior_bounds` or
-  `table_bounds()`.
-- Box bounds cannot express `p10 >= p0`. Either fit `dp = p10 - p0` and `dq = q10 - q0`
-  directly, bounded by the tables' own `dp`/`dq` axes (`band_pdf.ppqn_table.box["dp"]`,
-  0.18–0.59 by default; `dq` 0–0.353), and convert back when calling the PDF, or add the
-  inequalities as constraints (trust-constr, SLSQP).
-- A fit that ends on a bound is being limited by the box, not the data: widen it with
-  `BOX=` and rebuild the tables.
+`q10 >= q0`**. See [Fitting](fitting.md#the-parameter-box-step-2) for the full rules
+(`prior_bounds`, `check_points()`, `table_bounds()`, `OutOfBoxError`/`PriorNotCoveredError`,
+and the `dp`/`dq` reparameterization for an optimizer) and
+[Using MCMC to get errors](mcmc.md) for the walkthrough that uses them with emcee instead —
+both use the same flat `BOUNDS` shape, `F0_NR`/`F0_ER` for the one parameter that differs
+per band.

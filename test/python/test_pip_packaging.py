@@ -1,7 +1,7 @@
 """
 Validates the pip-installable package's graceful-degradation promise:
 pure-Python functionality (event_generator.py) works with no compiled
-Fortran library anywhere on the system, while PpqPDF -- which always
+Fortran library anywhere on the system, while Ppq_compiled -- which always
 needs it, even with a precomputed normalization table -- fails clearly
 and immediately at construction rather than deep into a fit.
 
@@ -28,47 +28,62 @@ def check(name, condition, detail=""):
 import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of what's tested
 
 check("import phonon_charge_pdf with no compiled library present", True)
-check("PpqPDF is exported", hasattr(bd, "PpqPDF"))
+check("Ppq_compiled is exported", hasattr(bd, "Ppq_compiled"))
 check("generate_events is exported", hasattr(bd, "generate_events"))
-check("generate_NR_events is exported", hasattr(bd, "generate_NR_events"))
-check("generate_ER_events is exported", hasattr(bd, "generate_ER_events"))
+# Deliberately NOT exported (see python/__init__.py): generate_events(fraction_ER=0.0/1.0)
+# covers every normal use, and calling these directly as a sampler is a
+# real footgun (no ROI cropping of their own).
+check("generate_events_NR is not exported at the top level", not hasattr(bd, "generate_events_NR"))
+check("generate_events_ER is not exported at the top level", not hasattr(bd, "generate_events_ER"))
 
-# ppq_dist.py's public API (pure Python, no Fortran -- see its module
+# goodness_of_fit is a namespaced submodule (pdf.goodness_of_fit.<name>),
+# deliberately not flattened to the top level -- see its module docstring.
+check("goodness_of_fit is exported as a submodule", hasattr(bd, "goodness_of_fit"))
+check("run_chisquare_test is namespaced, not flattened",
+      hasattr(bd.goodness_of_fit, "run_chisquare_test") and not hasattr(bd, "run_chisquare_test"))
+check("make_Ppq_densities_NR is namespaced, not flattened",
+      hasattr(bd.goodness_of_fit, "make_Ppq_densities_NR") and not hasattr(bd, "make_Ppq_densities_NR"))
+
+# Ppq_py.py's public API (pure Python, no Fortran -- see its module
 # docstring): every name in its own __all__ must also be re-exported here.
-from phonon_charge_pdf.ppq_dist import __all__ as _ppq_dist_all  # noqa: E402
+from phonon_charge_pdf.Ppq_py import __all__ as _Ppq_py_all  # noqa: E402
 
-check("every ppq_dist.__all__ name is re-exported on phonon_charge_pdf",
-      all(hasattr(bd, name) for name in _ppq_dist_all),
-      [name for name in _ppq_dist_all if not hasattr(bd, name)])
+check("every Ppq_py.__all__ name is re-exported on phonon_charge_pdf",
+      all(hasattr(bd, name) for name in _Ppq_py_all),
+      [name for name in _Ppq_py_all if not hasattr(bd, name)])
 
 PARAMS = dict(
     k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
 )
-SPECTRUM = dict(PNa=0.53693208, PNb=6.41515782, PNd=23.71789286)
+SPECTRUM = dict(mix_frac=0.53693208, scale_fast=6.41515782, scale_slow=23.71789286)
 
 try:
-    Ep, Eq, N0, seeds = bd.generate_NR_events(50, seed=1, **PARAMS, **SPECTRUM)
-    check("generate_NR_events runs with no Fortran library",
-          Ep.shape == Eq.shape == N0.shape == seeds.shape == (50,))
+    # Not top-level exported (see above), but still importable directly --
+    # confirms the underlying generator still works with no Fortran library.
+    from phonon_charge_pdf.event_generator import generate_events_NR  # noqa: E402
+    Ep, Eq, Erecoil, N = generate_events_NR(50, seed=1, **PARAMS, **SPECTRUM)
+    check("generate_events_NR (imported directly) runs with no Fortran library",
+          Ep.shape == Eq.shape == Erecoil.shape == N.shape == (50,))
 except Exception as e:
-    check("generate_NR_events runs with no Fortran library", False, repr(e))
+    check("generate_events_NR (imported directly) runs with no Fortran library", False, repr(e))
 
 try:
-    (val, err), _, peaks = bd.PpqN_safe_inspect(10.0, 5.0, **PARAMS, res=0.1)
-    check("PpqN_safe_inspect runs with no Fortran library",
-          val > 0 and len(peaks) >= 1, (val, len(peaks)))
+    result = bd.Ppq_inspect_NR(10.0, 5.0, **PARAMS, erecoil_step=0.1)
+    check("Ppq_inspect_NR runs with no Fortran library",
+          result["value"] > 0 and len(result["peaks"]) >= 1,
+          (result["value"], len(result["peaks"])))
 except Exception as e:
-    check("PpqN_safe_inspect runs with no Fortran library", False, repr(e))
+    check("Ppq_inspect_NR runs with no Fortran library", False, repr(e))
 
 try:
-    bd.PpqPDF(0, 1, 0, 1, [], [], norm_epsrel=0.1, norm_epsabs=0.1)
-    check("PpqPDF() raises at construction without the Fortran library", False,
+    bd.Ppq_compiled((0, 1), (0, 1), [], [], norm_epsrel=0.1, norm_epsabs=0.1)
+    check("Ppq_compiled() raises at construction without the Fortran library", False,
           "construction succeeded -- it should have failed fast instead")
 except RuntimeError as e:
-    check("PpqPDF() raises at construction without the Fortran library", True, str(e)[:80])
+    check("Ppq_compiled() raises at construction without the Fortran library", True, str(e)[:80])
 except Exception as e:
-    check("PpqPDF() raises at construction without the Fortran library", False,
+    check("Ppq_compiled() raises at construction without the Fortran library", False,
           f"wrong exception type: {e!r}")
 
 print()

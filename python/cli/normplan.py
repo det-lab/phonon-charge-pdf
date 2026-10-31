@@ -57,11 +57,11 @@ def baseline_fractions(axes, n_baselines):
     return fr[:n_baselines]
 
 
-def make_study_spec(band, region, epsrel, *, box=None, fixed=ng.DEFAULT_FIXED, n_baselines=3):
+def make_study_spec(band, ep_range, eq_range, epsrel, *, box=None, fixed=ng.DEFAULT_FIXED, n_baselines=3):
     """A spec of kind "points": for axis i, baseline b, node j the point with
     axis i at its j-th node and every other axis at the baseline.  Point
     index = (i * n_baselines + b) * STUDY_NODES + j."""
-    spec = ng._base_spec("points", band, region, fixed, ng.default_box(band) if box is None else box,
+    spec = ng._base_spec("points", band, ep_range, eq_range, fixed, ng.default_box(band) if box is None else box,
                          epsrel, 1e-13)
     axes = ng.BAND_AXES[band]
     fractions = baseline_fractions(axes, n_baselines)
@@ -129,12 +129,13 @@ def analyze(study, result_paths, tol, safety=2.0, min_nodes=3, max_points=500_00
                              "(integration noise sets a floor near epsrel)")
     total = int(np.prod(list(per_axis.values())))
     report = {"tol": tol, "safety": safety, "min_nodes": min_nodes, "band": study["band"],
-              "region": study["region"], "box": study["box"], "epsrel": study["epsrel"],
-              "points": total, "axes": report_axes}
+              "ep_range": study["ep_range"], "eq_range": study["eq_range"], "box": study["box"],
+              "epsrel": study["epsrel"], "points": total, "axes": report_axes}
     if total > max_points:
         raise RuntimeError(f"the grid would have {total:,} points (> --max-points {max_points:,}): "
                            + ", ".join(f"{a}={n}" for a, n in per_axis.items()))
-    spec = ng.make_grid_spec(study["band"], per_axis, region=tuple(study["region"]), fixed=study["fixed"],
+    spec = ng.make_grid_spec(study["band"], per_axis, ep_range=tuple(study["ep_range"]),
+                             eq_range=tuple(study["eq_range"]), fixed=study["fixed"],
                              box={a: tuple(v) for a, v in study["box"].items()}, epsrel=study["epsrel"],
                              epsabs=study["epsabs"])
     return spec, report
@@ -146,7 +147,8 @@ def main(argv=None):
 
     p = sub.add_parser("points", help="write the study spec")
     p.add_argument("--band", required=True, choices=["NR", "ER"])
-    p.add_argument("--region", nargs=4, type=float, required=True, metavar=("EP_MIN", "EP_MAX", "EQ_MIN", "EQ_MAX"))
+    p.add_argument("--ep-range", nargs=2, type=float, required=True, metavar=("EP_MIN", "EP_MAX"))
+    p.add_argument("--eq-range", nargs=2, type=float, required=True, metavar=("EQ_MIN", "EQ_MAX"))
     p.add_argument("--epsrel", type=float, required=True, help="per-point quadrature tolerance, e.g. 1e-7")
     p.add_argument("--baselines", type=int, default=3)
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
@@ -167,7 +169,7 @@ def main(argv=None):
 
     a = ap.parse_args(argv)
     if a.cmd == "points":
-        spec = make_study_spec(a.band, tuple(a.region), a.epsrel, n_baselines=a.baselines,
+        spec = make_study_spec(a.band, tuple(a.ep_range), tuple(a.eq_range), a.epsrel, n_baselines=a.baselines,
                                box=ng.parse_box(a.box, a.band) if a.box else None)
         ng.save_spec(spec, a.out)
         print(f"{a.out}: {ng.n_points(spec)} study points ({len(spec['study']['axes'])} axes x "
@@ -178,7 +180,8 @@ def main(argv=None):
         ng.save_spec(spec, a.out_spec)
         with open(a.report, "w") as f:
             json.dump(report, f, indent=2)
-        print(f"{spec['band']} region {spec['region']}: tol {a.tol:.0e} (tail <= tol/{a.safety:g}) -> "
+        print(f"{spec['band']} ep_range={spec['ep_range']} eq_range={spec['eq_range']}: "
+              f"tol {a.tol:.0e} (tail <= tol/{a.safety:g}) -> "
               f"{report['points']:,} grid points")
         for ax, r in report["axes"].items():
             print(f"  {ax:3s} {r['n']:3d} nodes   (per baseline {r['per_baseline']}, tail at n "

@@ -40,12 +40,12 @@ The module and submodule must be compiled before the driver (the `-c` step gener
 ```
 cd /tmp
 
-tau_f90.sh -O3 -g -qopenmp -fpp -I/app/include -c /app/src/PpqFort_m.f90
-tau_f90.sh -O3 -g -qopenmp -fpp -I/app/include -c /app/src/PpqFort_s.f90
+tau_f90.sh -O3 -g -qopenmp -fpp -I/app/include -c /app/src/Ppq_fort_m.f90
+tau_f90.sh -O3 -g -qopenmp -fpp -I/app/include -c /app/src/Ppq_fort_s.f90
 
 tau_f90.sh -O3 -g -qopenmp -fpp \
     -I/app/include \
-    PpqFort_m.o PpqFort_s.o /repo/app/profile_driver.f90 \
+    Ppq_fort_m.o Ppq_fort_s.o /repo/app/profile_driver.f90 \
     -L/app/lib -lphonon_charge_pdf \
     -Wl,-rpath,/app/lib \
     -o /repo/profile_driver
@@ -82,12 +82,12 @@ export LD_LIBRARY_PATH=$(find /repo/build -name "libjulienne.so" -printf "%h\n" 
 ```
 cd /tmp
 
-tau_f90.sh -O3 -g -qopenmp -fpp -I/tmp/band_new/include -c /repo/src/PpqFort_m.f90
-tau_f90.sh -O3 -g -qopenmp -fpp -I/tmp/band_new/include -c /repo/src/PpqFort_s.f90
+tau_f90.sh -O3 -g -qopenmp -fpp -I/tmp/band_new/include -c /repo/src/Ppq_fort_m.f90
+tau_f90.sh -O3 -g -qopenmp -fpp -I/tmp/band_new/include -c /repo/src/Ppq_fort_s.f90
 
 tau_f90.sh -O3 -g -qopenmp -fpp \
     -I/tmp/band_new/include \
-    PpqFort_m.o PpqFort_s.o /repo/app/profile_driver.f90 \
+    Ppq_fort_m.o Ppq_fort_s.o /repo/app/profile_driver.f90 \
     -L/tmp/band_new/lib -lphonon_charge_pdf \
     -Wl,-rpath,/tmp/band_new/lib \
     -o /repo/profile_driver

@@ -1,25 +1,28 @@
 # Two ways to use this
 
 Everything in this library falls into one of two buckets, and they have different
-dependencies:
+dependencies — but the same single `import phonon_charge_pdf as pdf` gets you both; the
+buckets differ in which pieces need the compiled Fortran library, not in how you import
+them.
 
 ## 1. Pure Python — no Fortran, no container needed
 
 `pip install phonon-charge-pdf` is enough. This covers:
 
-- **Generating simulated events** — [`generate_events`/`generate_NR_events`/`generate_ER_events`](python-events.md), built on `event_generator.py`.
-- **The resolution/yield model** — [`sigp`, `sigq`, `Y`, `Nbar`, and friends](ppq-dist.md), built on `ppq_dist.py`, the pure-Python reference implementation.
+- **Generating simulated events** — [`generate_events`](python-events.md), built on `event_generator.py`.
+- **Resolution/yield functions** — `sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, and `PErecoil_NR`/`PErecoil_ER`, all in `Ppq_py.py`
+  (the pure-Python reference implementation) and listed in the [API reference](api/index.md).
 
-Use this bucket to generate or describe simulated data, or to get resolution/yield model
+Use the pure-Python library to generate or describe simulated data, or to get those
 values directly. It works in any environment the package installs into — no container,
 no compiler.
 
 ## 2. The Fortran-backed PDF — needs the compiled library
 
 **If you want normalized PDF values or a likelihood** — a fit, an MCMC, anything beyond
-generating or describing simulated events — you need [`PpqPDF`](fortran-pdf.md), and it
-always needs the compiled Fortran library (`PpqN`/`PpqG`). Three ways to get it, easiest
-first:
+generating or describing simulated events — you need `Ppq_compiled` (see
+[Fitting](fitting.md)), and it always needs the compiled Fortran library (`Ppq_NR`/`Ppq_ER`).
+Three ways to get it, easiest first:
 
 | Option | Command |
 |---|---|
@@ -35,8 +38,8 @@ an exact uncommitted state.
 
 ```text
 Do you need normalized PDF values or a likelihood (a fit, an MCMC)?
-├── No  → pure Python is enough: event_generator.py / ppq_dist.py
-└── Yes → you need PpqPDF, so you need the compiled library:
+├── No  → pure Python is enough: generate_events / sigp, Y, Nbar_NR, Nbar_ER, ...
+└── Yes → you need Ppq_compiled, so you need the compiled library:
           ├── pip install phonon-charge-pdf   (simplest)
           ├── a published container           (HPC / Jupyter)
           └── build from source                (only if you have a specific reason)

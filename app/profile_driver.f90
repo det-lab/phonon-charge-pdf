@@ -1,6 +1,6 @@
 program profile_driver
   use iso_c_binding, only : c_double, c_int
-  use PpqFort_m, only : PpqN_vector, PpqG_vector
+  use Ppq_fort_m, only : Ppq_vector_NR, Ppq_vector_ER
   implicit none
 
   ! Parameters from test suite
@@ -30,30 +30,30 @@ program profile_driver
     Eq_arr(i) =  50.0d0 + (100.0d0 * (i - 1)) / (npts - 1)  !  50 to 150 eV
   end do
 
-  ! --- PpqN timing ---
+  ! --- Ppq_NR timing ---
   call system_clock(t_start, t_rate)
   do iter = 1, n_iter
-    call PpqN_vector(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, resN)
+    call Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, resN)
   end do
   call system_clock(t_end)
   dummy    = sum(resN)
   t_total  = real(t_end - t_start, c_double) / real(t_rate, c_double)
   t_per_ms = t_total / real(npts * n_iter, c_double) * 1.0d3
   print '(a,f8.3,a,i0,a,f8.4,a)', &
-      "PpqN: ", t_total, " s for ", npts*n_iter, " evals => ", t_per_ms, " ms/eval"
+      "Ppq_NR: ", t_total, " s for ", npts*n_iter, " evals => ", t_per_ms, " ms/eval"
   print '(a,es14.6)', "  checksum: ", dummy
 
-  ! --- PpqG timing ---
+  ! --- Ppq_ER timing ---
   call system_clock(t_start, t_rate)
   do iter = 1, n_iter
-    call PpqG_vector(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, resG)
+    call Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, resG)
   end do
   call system_clock(t_end)
   dummy    = sum(resG)
   t_total  = real(t_end - t_start, c_double) / real(t_rate, c_double)
   t_per_ms = t_total / real(npts * n_iter, c_double) * 1.0d3
   print '(a,f8.3,a,i0,a,f8.4,a)', &
-      "PpqG: ", t_total, " s for ", npts*n_iter, " evals => ", t_per_ms, " ms/eval"
+      "Ppq_ER: ", t_total, " s for ", npts*n_iter, " evals => ", t_per_ms, " ms/eval"
   print '(a,es14.6)', "  checksum: ", dummy
 
 end program profile_driver

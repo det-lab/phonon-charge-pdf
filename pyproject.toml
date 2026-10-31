@@ -14,11 +14,24 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
+    "equibin",
 ]
 
 [project.optional-dependencies]
-test = ["matplotlib", "equibin"]
-docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
+test = ["matplotlib"]
+
+# pymdown-extensions pinned below 12: mkdocstrings 1.0.6 (latest as of this
+# writing) calls pymdownx.highlight.Highlight.__init__() without its `md`
+# argument, which pymdown-extensions made required starting in some 12.x
+# release -- "TypeError: Highlight.__init__() missing 1 required positional
+# argument: 'md'" building any mkdocstrings page. 11.0.2 is confirmed
+# working; revisit this pin once mkdocstrings ships a fix.
+
+# black: mkdocstrings' separate_signature option (see mkdocs.yml) formats
+# each rendered signature with Black if it's installed, falling back to an
+# unformatted one-liner otherwise -- installed here so signatures in the
+# published API reference are always nicely wrapped one-argument-per-line.
+docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "pymdown-extensions<12", "black"]
 
 [project.urls]
 Repository = "https://github.com/det-lab/phonon-charge-pdf"

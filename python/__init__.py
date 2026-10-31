@@ -1,36 +1,33 @@
-"""phonon_charge_pdf: Neganov-Luke phonon / ionization-charge band PDF and
-event simulator for cryogenic detector nuclear-recoil (NR) and
-electron-recoil (ER) bands.
+"""Neganov-Luke phonon / ionization-charge band PDF and event simulator for
+cryogenic detector nuclear-recoil (NR) and electron-recoil (ER) bands.
 
-Three public entrypoints -- see their own docstrings:
-* PpqPDF and generate_events/generate_NR_events/generate_ER_events
-  (ppq_pdf.py, event_generator.py).
-* ppq_dist.py's functions (Y, Nbar, sigp, sigq, PErN, PErG, aN, bN, cN,
-  PpqExp, PpqFullN, PpqFullG, PpqN_safe_inspect(_vec),
-  PpqG_safe_inspect(_vec), integrate_g_safe_inspect, consecutive,
-  gaussian): the pure-Python reference implementation the other two are
-  cross-checked against -- also re-exported here, but see ppq_dist.py's
-  own docstring before using these for anything beyond a cross-check:
-  they're a slow, brute-force grid scan, not meant for a fit/MCMC loop.
-
-Everything under internal/ and cli/ is either what the above are built
-from or infrastructure for maintaining this library, and carries no
-stability promise.
-
-PpqPDF has a hard, unconditional dependency on the compiled Fortran
-library; event_generator.py and ppq_dist.py have none. Importing this
-package never touches the library -- PpqPDF only requires it be loadable
-(see LD_LIBRARY_PATH/DYLD_LIBRARY_PATH in internal/_ppqfort_bindings.py)
-once you construct one, and fails there, not on the first likelihood call
-deep into a fit.
+See the "Two ways to use this" page for which functions need the compiled
+Fortran library (usually via a published container) and which are pure
+Python.
 """
 
-from .event_generator import generate_ER_events, generate_events, generate_NR_events
-from .ppq_dist import __all__ as _ppq_dist_all
-from .ppq_dist import *  # noqa: F401,F403 -- Y, Nbar, sigp, sigq, PErN, PErG, ... ; see ppq_dist.__all__
-from .ppq_pdf import PpqPDF
+from . import goodness_of_fit
+from .event_generator import generate_events
+from .Ppq_fort import Ppq_compiled
+from .Ppq_py import __all__ as _Ppq_py_all
+from .Ppq_py import *  # noqa: F401,F403 -- Y, Nbar_NR, Nbar_ER, sigp, sigq, PErecoil_NR, PErecoil_ER, ... ; see Ppq_py.__all__
 
-__all__ = ["PpqPDF", "generate_events", "generate_NR_events", "generate_ER_events"] + _ppq_dist_all
+# run_chisquare_test/expected_counts_from_pdf/debug_bin/make_ridge_breakpoints_NR/ER
+# and make_Ppq_densities_NR/ER are deliberately NOT flattened here -- call
+# them as goodness_of_fit.<name>, not pdf.<name> (see that module's docstring).
+#
+# generate_events_NR/generate_events_ER are deliberately NOT exported either
+# (not even flattened to event_generator's own __all__, see that module's
+# docstring): generate_events(fraction_ER=0.0/1.0) does everything they do --
+# a single-species sample, cropped to your ROI, with the same columns
+# (including the latent ERECOIL/N) -- and does it correctly, where calling
+# generate_events_NR/ER directly as a sampler is a real footgun (no ROI
+# cropping of their own; see run_chisquare_test's docstring for exactly how
+# that silently breaks a chi-square test). Still importable directly from
+# event_generator by name if you genuinely want the uncropped full physical
+# model (e.g. studying the spectrum itself, not a detector's cut of it).
+__all__ = (["Ppq_compiled", "generate_events"] + _Ppq_py_all
+           + ["goodness_of_fit"])
 
 try:
     from importlib.metadata import PackageNotFoundError, version

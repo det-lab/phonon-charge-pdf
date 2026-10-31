@@ -1,10 +1,10 @@
 """
-Chi-square distribution test: nuclear-recoil physics simulator vs Fortran PpqN.
+Chi-square distribution test: nuclear-recoil physics simulator vs Fortran Ppq_NR.
 
 Generates (Ep, Eq) pairs from the physics model
-(Er ~ PErN, N | Er ~ TruncNormal float, Ep/Eq | Er,N ~ Normal) and checks
-that chi-square values against the Fortran PpqN PDF follow chi2(dof).  This
-validates that PpqN correctly describes the physics — unlike
+(Erecoil ~ PErecoil_NR, N | Erecoil ~ TruncNormal float, Ep/Eq | Erecoil,N ~ Normal) and checks
+that chi-square values against the Fortran Ppq_NR PDF follow chi2(dof).  This
+validates that Ppq_NR correctly describes the physics — unlike
 test_chisquare_ppqn.py, which only checks internal self-consistency.
 
 Observable range
@@ -13,18 +13,18 @@ Observable range
                              trigger threshold to ensure full coverage.
   EQ_RANGE = (0.5, 100) keV — charge channel; lower bound ~2 sigma above
                               zero (q0 = 0.237 keV).  Using 3 keV here would
-                              exclude ~60% of NR events whose low-Er true Eq
+                              exclude ~60% of NR events whose low-Erecoil true Eq
                               sits near 1-2 keV.
 
 Usage
 -----
-    LD_LIBRARY_PATH=lib python test/python/test_chisquare_nr_simulator.py [n_throws] [n_bins]
+    LD_LIBRARY_PATH=lib python test/python/test_chisquare_simulator_nr.py [n_throws] [n_bins]
 
 n_throws defaults to 1000 for a quick check; use 10000 for a thorough test.
 n_bins defaults to 400; use a smaller value (e.g. 64) for a fast smoke test
 of the wiring, since the one-time bin integration dominates the wall time.
 
-The chi-square histogram is written to test/figures/chisquare_nr_simulator.png.
+The chi-square histogram is written to test/figures/chisquare_simulator_nr.png.
 
 Approximate wall times (18 workers, x86 emulation on an Apple Silicon Mac;
 native x86 hardware should be faster):
@@ -48,13 +48,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "python"))
 sys.path.insert(0, str(REPO_ROOT / "python" / "internal"))
 
-from band_breakpoints import make_ridge_breakpoints
-from event_generator import generate_NR_events
+from event_generator import generate_events
 # Unnormalized is fine: this test only compares the PDF's *shape* against
 # simulated events (chi-square binning), not absolute probability.  For a
-# fit or MCMC, use PpqPDF (python/ppq_pdf.py) instead.
-from _ppqfort_bindings import make_ppqn_pdf_unnormalized
-from chisquare_harness import run_chisquare_test
+# fit or MCMC, use Ppq_compiled (python/Ppq_fort.py) instead.
+from _Ppq_fort_bindings import make_Ppq_densities_NR
+from goodness_of_fit import make_ridge_breakpoints_NR, run_chisquare_test
 
 # ---------------------------------------------------------------------------
 # Physics parameters (from nrFanoII_paper2022/python/detector_params.txt)
@@ -72,9 +71,9 @@ PARAMS = dict(
 )
 
 SPECTRUM_PARAMS = dict(
-    PNa = 0.53693208,
-    PNb = 6.41515782,
-    PNd = 23.71789286,
+    mix_frac   = 0.53693208,
+    scale_fast = 6.41515782,
+    scale_slow = 23.71789286,
 )
 
 EP_RANGE = (3.0,   250.0)   # keV — phonon channel
@@ -91,45 +90,38 @@ N_WORKERS = os.cpu_count()
 # ---------------------------------------------------------------------------
 # Sampler: generate exactly n in-range NR events from the physics simulator.
 #
-# Events with Ep < EP_RANGE[0] (roughly Er < 2.5 keV) or Eq < EQ_RANGE[0]
-# fall outside the observable region; oversample and keep the first n that
-# pass the range cut.  The oversampling factor of 2 is conservative; a while
-# loop handles the rare cases where a second pass is needed.
-# ---------------------------------------------------------------------------
-def nr_sampler(n, seed=None):
-    rng = np.random.default_rng(seed)
-    ep_acc, eq_acc = [], []
-    n_acc = 0
-    attempt_seed = int(rng.integers(0, 2**31))
-
-    while n_acc < n:
-        n_gen = max((n - n_acc) * 2, 1000)
-        Ep, Eq, _, _ = generate_NR_events(
-            n_gen, seed=attempt_seed, **PARAMS, **SPECTRUM_PARAMS
-        )
-        mask = (
-            (Ep >= EP_RANGE[0]) & (Ep <= EP_RANGE[1]) &
-            (Eq >= EQ_RANGE[0]) & (Eq <= EQ_RANGE[1])
-        )
-        ep_acc.append(Ep[mask])
-        eq_acc.append(Eq[mask])
-        n_acc += int(mask.sum())
-        attempt_seed += 1
-
-    Ep_all = np.concatenate(ep_acc)[:n]
-    Eq_all = np.concatenate(eq_acc)[:n]
-    return Ep_all, Eq_all
+# generate_events_NR has no ROI cropping of its own (events with
+# Ep < EP_RANGE[0], roughly Erecoil < 2.5 keV, or Eq < EQ_RANGE[0] fall outside
+# the observable region), so this uses the top-level generate_events
+# instead: fraction_ER=0.0 is deterministically pure-NR (Var(Binomial(n, p))
+# is exactly zero at p=0 -- see that function's docstring), and it already
+# crops to ep_range/eq_range. F0_ER/mix_frac_ER/scale_fast_ER/
+# scale_slow_ER are still required (generate_events() always needs both
+# bands' parameters) but never actually used here, since zero ER events
+# are ever generated.
+def sampler_NR(n, seed=None):
+    events = generate_events(
+        n, fraction_ER=0.0, seed=seed, ep_range=EP_RANGE, eq_range=EQ_RANGE,
+        k=PARAMS["k"], Z=PARAMS["Z"], F0_NR=PARAMS["F0"], F0_ER=0.2,
+        eps=PARAMS["eps"], V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
+        q0=PARAMS["q0"], q10=PARAMS["q10"],
+        mix_frac_NR=SPECTRUM_PARAMS["mix_frac"],
+        scale_fast_NR=SPECTRUM_PARAMS["scale_fast"],
+        scale_slow_NR=SPECTRUM_PARAMS["scale_slow"],
+        mix_frac_ER=0.573211975, scale_fast_ER=0.169520023, scale_slow_ER=279.552394,
+    )
+    return events["EP"].to_numpy(), events["EQ"].to_numpy()
 
 # ---------------------------------------------------------------------------
 # Build the Fortran PDF wrapper
 # ---------------------------------------------------------------------------
-print(f"Loading Fortran PpqN PDF ({N_WORKERS} workers)...")
-pdf_fort = make_ppqn_pdf_unnormalized(**PARAMS, n_workers=N_WORKERS)
+print(f"Loading Fortran Ppq_NR PDF ({N_WORKERS} workers)...")
+pdf_fort = make_Ppq_densities_NR(**PARAMS, n_workers=N_WORKERS)
 
 # Quick sanity check on the sampler
 print("Spot-checking sampler output range...")
 t0 = time.time()
-Ep_chk, Eq_chk = nr_sampler(500)
+Ep_chk, Eq_chk = sampler_NR(500)
 print(f"  Generated 500 events in {time.time()-t0:.2f} s")
 print(f"  Ep: [{Ep_chk.min():.2f}, {Ep_chk.max():.2f}] keV")
 print(f"  Eq: [{Eq_chk.min():.4f}, {Eq_chk.max():.2f}] keV")
@@ -139,17 +131,17 @@ print(f"  Eq: [{Eq_chk.min():.4f}, {Eq_chk.max():.2f}] keV")
 # ---------------------------------------------------------------------------
 t_start = time.time()
 chi2_vals, dof, bins, expected = run_chisquare_test(
-    pdf_fort, nr_sampler, EP_RANGE, EQ_RANGE,
+    pdf_fort, sampler_NR, EP_RANGE, EQ_RANGE,
     n_events   = N_EVENTS,
     n_throws   = N_THROWS,
     n_bins     = N_BINS,
     # band-ridge breakpoints keep the per-bin quadrature from missing
-    # the narrow band inside wide (tail) bins; see band_breakpoints.py
-    inner_points_func = make_ridge_breakpoints(
-        "NR", k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
+    # the narrow band inside wide (tail) bins; see goodness_of_fit.py
+    inner_points_func = make_ridge_breakpoints_NR(
+        k=PARAMS["k"], Z=PARAMS["Z"], eps=PARAMS["eps"],
         V=PARAMS["V"], p0=PARAMS["p0"], p10=PARAMS["p10"],
         q0=PARAMS["q0"], q10=PARAMS["q10"],
-        er_max=700.0, n_window_widths=10.0),
+        erecoil_max=700.0, n_window_widths=10.0),
     n_workers  = N_WORKERS,
     batch_size = 50,
     seed       = 42,
@@ -162,7 +154,7 @@ elapsed = time.time() - t_start
 ks_stat, ks_p = kstest(chi2_vals, chi2_dist(dof).cdf)
 
 print(f"\n{'='*60}")
-print(f"Chi-square test: NR simulator vs Fortran PpqN  (dof = {dof})")
+print(f"Chi-square test: NR simulator vs Fortran Ppq_NR  (dof = {dof})")
 print(f"{'='*60}")
 print(f"  n_events per throw : {N_EVENTS:,}")
 print(f"  n_throws           : {N_THROWS:,}")
@@ -184,7 +176,7 @@ print("PASS" if passed else "FAIL",
 # ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
-os.makedirs(REPO_ROOT / "figures", exist_ok=True)
+os.makedirs(REPO_ROOT / "test" / "figures", exist_ok=True)
 fig, ax = plt.subplots(figsize=(7, 5))
 x = np.linspace(chi2_dist(dof).ppf(1e-4), chi2_dist(dof).ppf(1 - 1e-4), 500)
 ax.plot(x, chi2_dist(dof).pdf(x), color="C1", lw=2, label=rf"$\chi^2({dof})$ theory")
@@ -192,7 +184,7 @@ ax.hist(chi2_vals, bins=80, density=True, alpha=0.6, color="C0",
         label=f"{N_THROWS:,} throws")
 ax.set_xlabel(r"$\chi^2$")
 ax.set_ylabel("Probability density")
-ax.set_title("Chi-square: NR simulator vs Fortran PpqN")
+ax.set_title("Chi-square: NR simulator vs Fortran Ppq_NR")
 stats_text = (
     f"mean = {chi2_vals.mean():.2f}  (expect {dof})\n"
     f"var  = {chi2_vals.var():.1f}  (expect {2*dof:.0f})\n"
@@ -203,6 +195,6 @@ ax.text(0.97, 0.97, stats_text, transform=ax.transAxes,
         bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
 ax.legend()
 fig.tight_layout()
-outfile = REPO_ROOT / "test" / "figures" / "chisquare_nr_simulator.png"
+outfile = REPO_ROOT / "test" / "figures" / "chisquare_simulator_nr.png"
 fig.savefig(outfile, dpi=150)
 print(f"\nPlot saved to {outfile}")
