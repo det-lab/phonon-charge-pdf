@@ -177,6 +177,13 @@ def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None)
         Threads used for large requests.  Defaults to os.cpu_count().
         Requests of <= 16 points bypass the pool (e.g. scalar calls from
         scipy quadrature).
+
+    Invalid physics parameters (e.g. p10 < p0) surface as NaN in the
+    returned array rather than being silently zeroed -- Ppq_NR's own
+    validation is limited (see Ppq_region_NR for the fuller guard a
+    fit/MCMC's Ppq_compiled always runs behind this), so a NaN here is a
+    sign the parameters themselves are wrong, not that the density is
+    genuinely tiny.
     """
     api = _load_library()
     if n_workers is None:
@@ -266,6 +273,6 @@ def _make_threaded_pdf(eval_chunk, n_workers):
             with ThreadPoolExecutor(max_workers=n_workers) as pool:
                 list(pool.map(run, chunks))
 
-        return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+        return out
 
     return pdf

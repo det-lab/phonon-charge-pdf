@@ -46,6 +46,7 @@ from scipy.integrate import quad, simpson
 
 import os
 import sys
+import warnings
 
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PYTHON_DIR)
@@ -461,9 +462,16 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
     -------
     chi2_values : ndarray, shape (n_throws,)
     dof : int
-        Degrees of freedom (n_bins - 1).
+        Degrees of freedom (len(bins) - 1). len(bins) can be less than the
+        n_bins parameter above -- equibin.bin_2d can't always split the
+        reference data into exactly n_bins bins (e.g. too few reference
+        events, or duplicate/degenerate values on one axis) -- so this is
+        always the actual bin count used below, not the request. A warning
+        is raised if the two differ.
     bins : list of (xmin, xmax, ymin, ymax)
-    expected : ndarray, shape (n_bins,)
+        The actual bins used; len(bins) may be less than n_bins (see dof
+        above).
+    expected : ndarray, shape (len(bins),)
         Expected counts per throw in each bin.
     """
     rng = np.random.default_rng(seed)
@@ -491,6 +499,10 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
     bins_arr[bins_arr[:, 3] == bins_arr[:, 3].max(), 3] = eq_range[1]
     bins = [tuple(row) for row in bins_arr]
     n_bins_actual = len(bins)
+    if n_bins_actual != n_bins:
+        warnings.warn(f"equibin produced {n_bins_actual} bins, not the requested "
+                      f"n_bins={n_bins} (too few reference events, or duplicate/degenerate "
+                      f"values on one axis) -- dof below is {n_bins_actual - 1}, not n_bins - 1.")
 
     # --- step 2: expected counts from PDF ---
     print(f"Integrating PDF over {n_bins_actual} bins "

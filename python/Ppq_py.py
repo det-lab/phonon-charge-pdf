@@ -295,6 +295,14 @@ def Ppq_inspect_NR(Ep, Eq,
     test/python/test_chisquare_ppqn.py, test_PpqFort.py). Never use this
     in a fit/MCMC inner loop; use Ppq_compiled for that.
 
+    `erecoil_step` sets both this function's own scan (above, a rough
+    starting guess for where the peak is) and the finer scan integrate_inspect
+    runs next to locate the integration windows handed to quad (see its
+    docstring) -- pick it well under your narrowest expected peak width, the
+    same reasoning behind quad's own `points=` argument (see
+    test/python/quad_breakpoints_demo.py): a peak narrower than erecoil_step
+    can fall entirely between grid points and be missed.
+
     Returns a dict:
       value, value_err : the PDF value and its quadrature error.
       erecoil_scan_grid, erecoil_scan_integrand : the Erecoil scan arrays.
@@ -327,16 +335,24 @@ def Ppq_inspect_NR(Ep, Eq,
             # here, since a real peak is never isolated to a single
             # sample on a grid this fine.
             pass
-    if not np.any(f_arr > 0):
-        if np.all(f_arr == 0):
-            return {"value": 0, "value_err": 0, "erecoil_scan_grid": erecoil_arr,
-                    "erecoil_scan_integrand": f_arr, "peaks": []}
-        elif np.all(np.isnan(f_arr)):
-            return {"value": np.nan, "value_err": np.nan, "erecoil_scan_grid": erecoil_arr,
-                    "erecoil_scan_integrand": f_arr, "peaks": []}
-    else:
-        min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
-        Erecoil_peak = erecoil_arr[min_idx]
+    # valid: scan points that didn't over/underflow above. If none did,
+    # there's nothing to locate a peak from. If every valid point is
+    # exactly 0 (the untouched np.zeros default), every one of them hit
+    # the except branch above, so there's no real peak in this window
+    # either -- a value of 0, not an attempt at a Gaussian fit.
+    valid = ~np.isnan(f_arr)
+    if not valid.any():
+        return {"value": np.nan, "value_err": np.nan, "erecoil_scan_grid": erecoil_arr,
+                "erecoil_scan_integrand": f_arr, "peaks": []}
+    if np.all(f_arr[valid] == 0):
+        return {"value": 0, "value_err": 0, "erecoil_scan_grid": erecoil_arr,
+                "erecoil_scan_integrand": f_arr, "peaks": []}
+    # argmin over the valid subset, then map back through its own indices
+    # to erecoil_arr's -- argmin's return index is only valid within the
+    # filtered subset, not the original array, whenever any point above
+    # overflowed to NaN.
+    valid_idx = np.flatnonzero(valid)
+    Erecoil_peak = erecoil_arr[valid_idx[np.argmin(f_arr[valid_idx])]]
 
     g = lambda erecoil, ep, eq: pq_given_Erecoil_NR(erecoil, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
 
@@ -377,7 +393,7 @@ def gaussian_profile(x, A, mu, sigma):
 
 def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step):
     """Integrate g(Erecoil, Ep, Eq) over Erecoil by locating its peak(s) on a
-    uniform scan grid (step `erecoil_step/2`, in keV, starting from an
+    uniform scan grid (step `erecoil_step`, in keV, starting from an
     approximate peak location Erecoil_peak) and integrating each located peak
     with scipy.integrate.quad. This is the engine Ppq_inspect_NR and
     Ppq_inspect_ER are built on. Not part of the public API (not in
@@ -412,7 +428,7 @@ def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step):
     # consistent array.
     scan_min = minx
     while True:
-        erecoil_arr = np.arange(scan_min, maxx, erecoil_step / 2)
+        erecoil_arr = np.arange(scan_min, maxx, erecoil_step)
         erecoil_integrand_arr = np.zeros(np.size(erecoil_arr))
         for idx, erecoil in enumerate(erecoil_arr):
             erecoil_integrand_arr[idx] = g(erecoil, Ep, Eq)
@@ -551,7 +567,7 @@ def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step):
     # find the overall minimum and maximum and evaluate erecoil_integrand_arr over that range
     min_minx = min(d["minx"] for d in peak_info_array)
     max_maxx = max(d["maxx"] for d in peak_info_array)
-    erecoil_arr = np.arange(min_minx, max_maxx, erecoil_step / 2)
+    erecoil_arr = np.arange(min_minx, max_maxx, erecoil_step)
     erecoil_integrand_arr = np.zeros(np.size(erecoil_arr))
     for idx, erecoil in enumerate(erecoil_arr):
         val = g(erecoil, Ep, Eq)
@@ -575,9 +591,9 @@ def Ppq_inspect_ER(Ep, Eq,
     the "never use this in a fit/MCMC loop" caveat). `erecoil_step` (keV)
     should be scanned finer than the narrowest expected peak: ER peaks
     can be as narrow as the zero-energy ionization resolution q0 (~0.06
-    keV for typical CDMS parameters), so e.g. erecoil_step=0.01 (a 0.005 keV
-    scan step) is finer than the 0.01 keV grid the Fortran Ppq_ER
-    integrates on. Usage to just get the value:
+    keV for typical CDMS parameters), so e.g. erecoil_step=0.005 is finer
+    than the 0.01 keV grid the Fortran Ppq_ER integrates on. Usage to
+    just get the value:
     Ppq_inspect_ER(...)["value"].
     """
     if F0 == 0:
@@ -605,15 +621,24 @@ def Ppq_inspect_ER(Ep, Eq,
             # Ppq_inspect_NR.)
             pass
 
-    if not np.any(f_arr > 0):
-        if np.all(f_arr == 0):
-            return {"value": 0, "value_err": 0, "erecoil_scan_grid": erecoil_arr,
-                    "erecoil_scan_integrand": f_arr, "peaks": []}
-        elif np.all(np.isnan(f_arr)):
-            return {"value": np.nan, "value_err": np.nan, "erecoil_scan_grid": erecoil_arr,
-                    "erecoil_scan_integrand": f_arr, "peaks": []}
-    else:
-        min_idx = np.argmin(f_arr[~np.isnan(f_arr)])
-        Erecoil_peak = erecoil_arr[min_idx]
+    # valid: scan points that didn't over/underflow above. If none did,
+    # there's nothing to locate a peak from. If every valid point is
+    # exactly 0 (the untouched np.zeros default), every one of them hit
+    # the except branch above, so there's no real peak in this window
+    # either -- a value of 0, not an attempt at a Gaussian fit. (See the
+    # matching guard in Ppq_inspect_NR.)
+    valid = ~np.isnan(f_arr)
+    if not valid.any():
+        return {"value": np.nan, "value_err": np.nan, "erecoil_scan_grid": erecoil_arr,
+                "erecoil_scan_integrand": f_arr, "peaks": []}
+    if np.all(f_arr[valid] == 0):
+        return {"value": 0, "value_err": 0, "erecoil_scan_grid": erecoil_arr,
+                "erecoil_scan_integrand": f_arr, "peaks": []}
+    # argmin over the valid subset, then map back through its own indices
+    # to erecoil_arr's -- argmin's return index is only valid within the
+    # filtered subset, not the original array, whenever any point above
+    # overflowed to NaN.
+    valid_idx = np.flatnonzero(valid)
+    Erecoil_peak = erecoil_arr[valid_idx[np.argmin(f_arr[valid_idx])]]
 
     return integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step)

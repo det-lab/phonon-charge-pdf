@@ -41,7 +41,7 @@ def make_gaussian_sum(centers, sigma):
 
 
 # (name, centers, sigma, erecoil_step) -- Ep = Eq = 5 puts the scan range at
-# [~0, 10]; the scan step is erecoil_step / 2.
+# [~0, 10]; the scan step is erecoil_step.
 CASES = [
     # two sharp peaks whose padded ranges overlap: the historical
     # pop-the-first-range bug returned ~1 here instead of 2

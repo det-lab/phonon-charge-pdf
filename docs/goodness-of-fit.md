@@ -71,7 +71,11 @@ expected = pdf.goodness_of_fit.expected_counts_from_pdf(
 )
 
 chi2_stat = float(((result.counts - expected) ** 2 / expected).sum())
-dof = n_bins - 1 - len(FIT)          # subtract fitted parameters, not just bins - 1
+# len(result.bins), not n_bins: equibin.bin_2d can't always split the data into
+# exactly n_bins bins (e.g. too few events, or duplicate/degenerate values on
+# one axis) -- result.bins/result.counts/expected above are already sized to
+# whatever it actually produced, so dof has to match that, not the request.
+dof = len(result.bins) - 1 - len(FIT)          # subtract fitted parameters, not just bins - 1
 p_value = chi2_dist.sf(chi2_stat, dof)
 print(f"chi2 = {chi2_stat:.1f}, dof = {dof}, p = {p_value:.3f}")
 ```

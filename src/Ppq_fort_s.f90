@@ -136,20 +136,18 @@ contains
   module procedure Ppq_NR
       type(detector_params_t) :: pars
 
-      if (F0 == 0.0d0) &
-          error stop "Fano factor F(Erecoil) = F0 is zero for all Erecoil"
       pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
+      call validate_params(pars, .false.)
       res = integrate_Ppq(Ep, Eq, pars, .false.)
   end procedure Ppq_NR
 
   module procedure Ppq_ER
       type(detector_params_t) :: pars
 
-      if (F0 == 0.0d0) &
-          error stop "Fano factor F(Erecoil) = F0 is zero for all Erecoil"
       ! k, Z are unused when is_ER is .true. (electron-recoil yield is
       ! always 1); the placeholders below are never read.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      call validate_params(pars, .true.)
       res = integrate_Ppq(Ep, Eq, pars, .true.)
   end procedure Ppq_ER
 
@@ -1077,7 +1075,37 @@ contains
   ! slowest fallback paths -- minutes per call instead of a fast failure --
   ! which is intolerable inside an MCMC where a bad proposal must just be
   ! rejected.  All checks are written as .not. (x > ...) so NaN inputs
-  ! fail them too.
+  ! fail them too.  Shared by every entry point that builds a
+  ! detector_params_t (Ppq_NR/Ppq_ER directly; Ppq_region_NR/Ppq_region_ER
+  ! via validate_region_inputs below) -- Ppq_NR/Ppq_ER used to only check
+  ! F0 == 0.0d0, so e.g. a negative F0 or p10 < p0 reached the integrator
+  ! and came back as a silent NaN instead of failing here.
+  pure subroutine validate_params(pars, is_ER)
+      type(detector_params_t), intent(in) :: pars
+      logical, intent(in) :: is_ER
+
+      if (.not. (pars%F0 > 0.0d0)) &
+          error stop "invalid parameters: Fano factor F0 must be > 0"
+      if (.not. (pars%eps > 0.0d0)) &
+          error stop "invalid parameters: eps must be > 0"
+      if (.not. (1.0d0 + pars%V / (pars%eps * 1.0d3) > 0.0d0)) &
+          error stop "invalid parameters: need 1 + V/(1000*eps) > 0"
+      if (.not. (pars%p0 > 0.0d0 .and. pars%q0 > 0.0d0)) &
+          error stop "invalid parameters: p0 and q0 must be > 0"
+      if (.not. (pars%p10 >= pars%p0)) &
+          error stop "invalid parameters: p10 < p0 makes the phonon resolution sigp^2 negative at high energy"
+      if (.not. (pars%q10 >= pars%q0)) &
+          error stop "invalid parameters: q10 < q0 makes the charge resolution sigq^2 negative at high energy"
+      if (.not. is_ER) then
+          if (.not. (pars%k > 0.0d0)) &
+              error stop "invalid parameters: k must be > 0"
+          if (.not. (pars%Zfac > 0.0d0 .and. pars%Zfac < huge(1.0d0))) &
+              error stop "invalid parameters: Z must be > 0"
+      end if
+  end subroutine validate_params
+
+  ! Region-bound/tolerance checks specific to Ppq_region_NR/Ppq_region_ER,
+  ! plus the shared physics checks above.
   pure subroutine validate_region_inputs(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
       pars, is_ER)
       real(c_double), intent(in) :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
@@ -1088,24 +1116,7 @@ contains
           error stop "Ppq_region_NR/Ppq_region_ER: invalid region: need ep_max > ep_min and eq_max > eq_min"
       if (.not. (epsrel >= 0.0d0 .and. epsabs >= 0.0d0)) &
           error stop "Ppq_region_NR/Ppq_region_ER: invalid tolerance: epsrel and epsabs must be >= 0"
-      if (.not. (pars%F0 > 0.0d0)) &
-          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: Fano factor F0 must be > 0"
-      if (.not. (pars%eps > 0.0d0)) &
-          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: eps must be > 0"
-      if (.not. (1.0d0 + pars%V / (pars%eps * 1.0d3) > 0.0d0)) &
-          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: need 1 + V/(1000*eps) > 0"
-      if (.not. (pars%p0 > 0.0d0 .and. pars%q0 > 0.0d0)) &
-          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: p0 and q0 must be > 0"
-      if (.not. (pars%p10 >= pars%p0)) &
-          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: p10 < p0 makes the phonon resolution sigp^2 negative at high energy"
-      if (.not. (pars%q10 >= pars%q0)) &
-          error stop "Ppq_region_NR/Ppq_region_ER: invalid parameters: q10 < q0 makes the charge resolution sigq^2 negative at high energy"
-      if (.not. is_ER) then
-          if (.not. (pars%k > 0.0d0)) &
-              error stop "Ppq_region_NR: invalid parameters: k must be > 0"
-          if (.not. (pars%Zfac > 0.0d0 .and. pars%Zfac < huge(1.0d0))) &
-              error stop "Ppq_region_NR: invalid parameters: Z must be > 0"
-      end if
+      call validate_params(pars, is_ER)
   end subroutine validate_region_inputs
 
   ! Doubling-verified driver for Ppq_region_NR/Ppq_region_ER:

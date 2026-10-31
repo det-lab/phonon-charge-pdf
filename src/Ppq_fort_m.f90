@@ -73,13 +73,16 @@ module Ppq_fort_m
   end function PErecoil_ER
 
   pure module function pq_given_Erecoil_NR(Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_NR")
-    ! Input arguments
+    !! An internal bind(c) handle on the per-Erecoil N-integral piece of
+    !! Ppq_NR, exposed only so test_PpqFort.py can cross-check it against
+    !! Python at machine precision -- not a stable public API, no end
+    !! user needs this.
     real(c_double), value :: Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
   end function pq_given_Erecoil_NR
 
   pure module function pq_given_Erecoil_ER(Erecoil, Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_ER")
-    ! Input arguments
+    !! Same as pq_given_Erecoil_NR but for the ER band -- see its comment.
     real(c_double), value :: Erecoil, Ep, Eq, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
   end function pq_given_Erecoil_ER

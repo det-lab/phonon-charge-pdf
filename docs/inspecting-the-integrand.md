@@ -13,7 +13,7 @@ result = pdf.Ppq_inspect_NR(
     Ep=10.0, Eq=5.0,
     k=0.18, Z=32.0, F0=0.122, eps=3.0e-3, V=3.0,
     p0=0.06421907, p10=0.48998486, q0=0.23718488, q10=0.27093151,
-    erecoil_step=0.1,   # Erecoil scan step, keV -- see "choosing erecoil_step" below
+    erecoil_step=0.05,   # Erecoil scan step, keV -- see "choosing erecoil_step" below
 )
 Ppq_NR, quad_error = result["value"], result["value_err"]
 erecoil_scan, integrand_scan = result["erecoil_scan_grid"], result["erecoil_scan_integrand"]
@@ -67,12 +67,11 @@ The left panel's log scale shows just how sharply this integrand falls off away 
 peak — down by hundreds of orders of magnitude within a few keV — which is why the scan has
 to cover the *whole* plausible Erecoil range rather than guessing a narrower one, and why the
 Fortran side's windowed quadrature only integrates near the peak instead of everywhere. The
-right panel confirms `erecoil_step=0.1` (a 0.05 keV scan step, since the peak search scans at
-`erecoil_step / 2`) comfortably resolves this peak's ~0.24 keV width.
+right panel confirms `erecoil_step=0.05` comfortably resolves this peak's ~0.24 keV width.
 
 ## Choosing `erecoil_step`
 
 `erecoil_step` (the Erecoil scan step, in keV) has to be finer than the narrowest peak you expect: ER
 peaks can be as narrow as the zero-energy ionization resolution `q0` (~0.06 keV for typical
-CDMS parameters), so e.g. `erecoil_step=0.01` for `Ppq_inspect_ER` is finer than the 0.01 keV
+CDMS parameters), so e.g. `erecoil_step=0.005` for `Ppq_inspect_ER` is finer than the 0.01 keV
 grid the Fortran `Ppq_ER` itself integrates on.
