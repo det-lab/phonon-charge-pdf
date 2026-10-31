@@ -1,7 +1,7 @@
 """
 Published normalization tables: fetch by name, verified and cached.
 
-The tables (python/cli/normgrid.py, built by slurm/build_table.sh) are data, so
+The tables (python/cli/normgrid.py, built by table_building/slurm/build_table.sh) are data, so
 they live on Zenodo rather than in git; python/cli/table_registry.json maps each
 name to its URL and SHA-256.  fetch() downloads a table the first time with
 pooch (https://www.fatiando.org/pooch/), checks the hash, and caches it;

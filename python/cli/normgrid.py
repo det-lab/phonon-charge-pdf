@@ -118,7 +118,7 @@ def x10_ranges(box):
 # extrapolation -- check it with `validate`.  (For the earlier 2-200 / 4-100
 # region q0 needed only 5 nodes.)  One-axis-at-a-time studies cannot see
 # cross terms, so validate any table against held-out points.  For another
-# region do not reuse these: slurm/build_table.sh (python/cli/normplan.py) measures
+# region do not reuse these: table_building/slurm/build_table.sh (python/cli/normplan.py) measures
 # the counts for the region it is given -- it reproduces the NR counts below
 # and the ER ones to within a node.
 RECOMMENDED_NODES = {
@@ -702,7 +702,7 @@ class NormInterpolator:
         spec = " ".join(f"{a}={format_box_range(*box[a])}" for a in self.axes
                         if not np.allclose(box[a], default[a], rtol=1e-9, atol=0))
         region = " ".join(f"{r:g}" for r in self.ep_range + self.eq_range)
-        return f'BOX="{spec}" sbatch slurm/build_table.job {self.band} {region}'
+        return f'BOX="{spec}" sbatch table_building/slurm/build_table.job {self.band} {region}'
 
 
 def _round_out(x, up, sig=4):

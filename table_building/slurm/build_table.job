@@ -1,10 +1,10 @@
 #!/bin/bash
-# Run slurm/build_table.sh as a Slurm job of its own, the way to build a
+# Run table_building/slurm/build_table.sh as a Slurm job of its own, the way to build a
 # table on the cluster: this single-core job only submits the array stages
 # (sbatch --wait), checks them with sacct, and runs the light Python steps.
 #
-#   sbatch slurm/build_table.job NR 2.5 350 0.75 200
-#   TOL=1e-5 HELDOUT=20 sbatch slurm/build_table.job ER 2.5 350 0.75 200
+#   sbatch table_building/slurm/build_table.job NR 2.5 350 0.75 200
+#   TOL=1e-5 HELDOUT=20 sbatch table_building/slurm/build_table.job ER 2.5 350 0.75 200
 #
 # Submit from the repository root: the environment at submission (TOL,
 # HELDOUT, PDF_SIF, PDF_PYTHON_FROM_REPO, ...) is passed on to
@@ -24,11 +24,11 @@
 set -euo pipefail
 # Slurm runs a spooled copy of this file, so $0 is no guide to the repo
 cd "${SLURM_SUBMIT_DIR:?submit with sbatch, from the repository root}"
-[[ -x slurm/build_table.sh ]] || { echo "submit from the repository root (no slurm/build_table.sh in $PWD)" >&2; exit 2; }
+[[ -x table_building/slurm/build_table.sh ]] || { echo "submit from the repository root (no table_building/slurm/build_table.sh in $PWD)" >&2; exit 2; }
 
 export ACCOUNT=${ACCOUNT:-dark-matter-salting}
 export PARTITION=${PARTITION:-math-alderaan-short}
 export TIME=${TIME:-08:00:00}
 
 echo "[$(date +%T)] build_table $* on $(hostname) at $(git rev-parse --short HEAD 2>/dev/null || echo '?')"
-exec slurm/build_table.sh "$@"
+exec table_building/slurm/build_table.sh "$@"

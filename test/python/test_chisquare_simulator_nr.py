@@ -24,7 +24,7 @@ n_throws defaults to 1000 for a quick check; use 10000 for a thorough test.
 n_bins defaults to 400; use a smaller value (e.g. 64) for a fast smoke test
 of the wiring, since the one-time bin integration dominates the wall time.
 
-The chi-square histogram is written to figures/chisquare_simulator_nr.png.
+The chi-square histogram is written to test/figures/chisquare_simulator_nr.png.
 
 Approximate wall times (18 workers, x86 emulation on an Apple Silicon Mac;
 native x86 hardware should be faster):
@@ -176,7 +176,7 @@ print("PASS" if passed else "FAIL",
 # ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
-os.makedirs(REPO_ROOT / "figures", exist_ok=True)
+os.makedirs(REPO_ROOT / "test" / "figures", exist_ok=True)
 fig, ax = plt.subplots(figsize=(7, 5))
 x = np.linspace(chi2_dist(dof).ppf(1e-4), chi2_dist(dof).ppf(1 - 1e-4), 500)
 ax.plot(x, chi2_dist(dof).pdf(x), color="C1", lw=2, label=rf"$\chi^2({dof})$ theory")
@@ -195,6 +195,6 @@ ax.text(0.97, 0.97, stats_text, transform=ax.transAxes,
         bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
 ax.legend()
 fig.tight_layout()
-outfile = REPO_ROOT / "figures" / "chisquare_simulator_nr.png"
+outfile = REPO_ROOT / "test" / "figures" / "chisquare_simulator_nr.png"
 fig.savefig(outfile, dpi=150)
 print(f"\nPlot saved to {outfile}")

@@ -5,7 +5,7 @@
 #   python python/cli/normgrid.py make-spec --band NR --nodes k=... --ep-range 2 200 --eq-range 4 100 --epsrel 1e-7 --out spec_NR.json
 #   python python/cli/normgrid.py chunks spec_NR.json --size 100 \
 #       | awk '{printf "spec_NR.json, %s, %s, NR_%s\n", $1, $2, $1}' > chunks_NR.txt
-#   condor_submit osg/normgrid.sub          # (edit `queue` below to the right chunks file)
+#   condor_submit table_building/osg/normgrid.sub          # (edit `queue` below to the right chunks file)
 #   ... when done:
 #   python python/cli/normgrid.py merge --spec spec_NR.json --results 'result_NR_*.txt' --out norm_NR.h5
 #
@@ -13,7 +13,7 @@
 # evicted chunk is simply re-run from the start).
 
 universe                = vanilla
-executable              = osg/normgrid_job.sh
+executable              = table_building/osg/normgrid_job.sh
 arguments               = $(spec) $(start) $(stop) $(tag)
 transfer_input_files    = $(spec)
 transfer_output_files   = result_$(tag).txt

@@ -2,19 +2,19 @@
 # Build one normalization table end to end for a fit region: measure how many
 # nodes each axis needs, evaluate the grid, check it against held-out points.
 #
-#   sbatch slurm/build_table.job BAND EP_MIN EP_MAX EQ_MIN EQ_MAX
-#   sbatch slurm/build_table.job NR 2.5 350 0.75 200
+#   sbatch table_building/slurm/build_table.job BAND EP_MIN EP_MAX EQ_MIN EQ_MAX
+#   sbatch table_building/slurm/build_table.job NR 2.5 350 0.75 200
 #
-# Stages (each Slurm stage is `sbatch --wait slurm/normgrid.sbatch ...`, so
+# Stages (each Slurm stage is `sbatch --wait table_building/slurm/normgrid.sbatch ...`, so
 # this script keeps running until the whole chain is done, hence the driver
-# job slurm/build_table.job, which runs it with the arguments above):
+# job table_building/slurm/build_table.job, which runs it with the arguments above):
 #   1. study   normplan.py points   -> ~700 integrals along each axis (array)
 #   2. plan    normplan.py analyze  -> node count per axis, grid spec, report
 #   3. grid    the tensor grid, and HELDOUT random validation points (arrays)
 #   4. check   normgrid.py merge + validate; exit status 1 if the worst
 #              held-out relative error exceeds ACCEPT
 # The light Python steps (plan, merge, validate) run with $PYTHON on the login
-# node, as slurm/submit_alderaan.sh does; the integrals run in the container
+# node, as table_building/slurm/submit_alderaan.sh does; the integrals run in the container
 # via normgrid.sbatch (PDF_SIF etc. are read there; PDF_NATIVE=1 works too).
 # Every array is checked with sacct once it ends: `sbatch --wait` exits 0 on
 # Alderaan even when tasks fail, so a failed task stops the chain here instead.
@@ -43,10 +43,10 @@
 #   WORKDIR=build/<tag>   OUT_TABLE=tables/norm_<tag>.h5   PYTHON=python3
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
-BAND=${1:?usage: slurm/build_table.sh BAND EP_MIN EP_MAX EQ_MIN EQ_MAX}
-[[ $# -eq 5 ]] || { echo "usage: slurm/build_table.sh BAND EP_MIN EP_MAX EQ_MIN EQ_MAX" >&2; exit 2; }
+BAND=${1:?usage: table_building/slurm/build_table.sh BAND EP_MIN EP_MAX EQ_MIN EQ_MAX}
+[[ $# -eq 5 ]] || { echo "usage: table_building/slurm/build_table.sh BAND EP_MIN EP_MAX EQ_MIN EQ_MAX" >&2; exit 2; }
 EP_MIN=$2 EP_MAX=$3 EQ_MIN=$4 EQ_MAX=$5
 
 TOL=${TOL:-1e-7}; EPSREL=${EPSREL:-1e-7}; ACCEPT=${ACCEPT:-1e-6}; HELDOUT=${HELDOUT:-200}
@@ -68,7 +68,7 @@ mkdir -p logs "$WORK/study_results" "$WORK/held_results" "$PLAN/results" "$(dirn
 
 if [[ "${PDF_NATIVE:-0}" != "1" ]]; then
     export PDF_SIF=${PDF_SIF:-/scratch/$USER/containers/pdf.sif}
-    [[ -f "$PDF_SIF" ]] || { echo "no container at $PDF_SIF: set PDF_SIF, or pull one with slurm/pull_container.job" >&2; exit 1; }
+    [[ -f "$PDF_SIF" ]] || { echo "no container at $PDF_SIF: set PDF_SIF, or pull one with table_building/slurm/pull_container.job" >&2; exit 1; }
 fi
 
 SBATCH_ARGS=()
@@ -90,7 +90,7 @@ array() {   # array SPEC CHUNK_SIZE RESULTS_DIR: an sbatch array over the spec's
     # INFO lines first: take the last line that is a job id
     job=$(sbatch --parsable --wait ${SBATCH_ARGS[@]+"${SBATCH_ARGS[@]}"} --array=0-$((n - 1))%"$THROTTLE" \
                  --job-name="ng_${BAND}_$(basename "$spec" .json)" \
-                 slurm/normgrid.sbatch "$spec" "$size" "$out" | grep -E '^[0-9]+(;|$)' | tail -1 | cut -d';' -f1 || true)
+                 table_building/slurm/normgrid.sbatch "$spec" "$size" "$out" | grep -E '^[0-9]+(;|$)' | tail -1 | cut -d';' -f1 || true)
     [[ -n "$job" ]] || { echo "sbatch did not report a job id for $spec" >&2; return 1; }
     check_tasks "$job" "$n"
 }
@@ -140,7 +140,7 @@ else
     NEW_TOL=$("$PYTHON" -c "print(f'{$TOL / 4:.0e}')")
     echo "== FAILED the held-out check (worst error above ACCEPT=$ACCEPT); table kept at $OUT_TABLE" >&2
     echo "   the per-axis study cannot see cross terms; retry with more nodes:" >&2
-    echo "   TOL=$NEW_TOL sbatch slurm/build_table.job $BAND $EP_MIN $EP_MAX $EQ_MIN $EQ_MAX" >&2
+    echo "   TOL=$NEW_TOL sbatch table_building/slurm/build_table.job $BAND $EP_MIN $EP_MAX $EQ_MIN $EQ_MAX" >&2
     echo "   (the study and held-out points are reused)" >&2
     exit 1
 fi

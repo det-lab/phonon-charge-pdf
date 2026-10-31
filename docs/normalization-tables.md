@@ -28,7 +28,7 @@ inside a table and checked on every call.
   `q0` 0.0474–0.4 (the ±4σ range of Gaussian priors centred on 0.0642 and 0.2372 with a 20%
   1σ width, `q0` capped at the maximum `q10`), `dp = p10-p0` 0.18–0.59 and `dq = q10-q0`
   0–0.353 (from `p10` 0.3–0.6, `q10` 0.2–0.4); for a different one, rebuild with `BOX=`,
-  e.g. `BOX="V=2.5:4" sbatch slurm/build_table.job ...`, or change the defaults
+  e.g. `BOX="V=2.5:4" sbatch table_building/slurm/build_table.job ...`, or change the defaults
   `DEFAULT_BOX`/`PDF_BOX_OVERRIDES`).
 - **Node counts** (`RECOMMENDED_NODES`, from per-axis studies against directly computed
   held-out points; region-dependent): NR `k=8 F0=3 V=4 p0=4 dp=3 q0=16 dq=4` (73,728
@@ -50,7 +50,7 @@ inside a table and checked on every call.
 python python/cli/normgrid.py make-spec --band NR --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 --out spec_NR.json
 python python/cli/normgrid.py make-random-spec --band NR --n 200 --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 --out held_NR.json
 
-# run it: on one machine, or as batch jobs (osg/normgrid.sub + osg/normgrid_job.sh are an HTCondor template)
+# run it: on one machine, or as batch jobs (table_building/osg/normgrid.sub + table_building/osg/normgrid_job.sh are an HTCondor template)
 python python/cli/normgrid.py chunks spec_NR.json --size 100        # "start stop" ranges, one per job
 python python/cli/normgrid.py run --spec spec_NR.json --start 0 --stop 100 --out res_0.txt
 python python/cli/normgrid.py run --spec held_NR.json --out res_held.txt
@@ -61,20 +61,20 @@ python python/cli/normgrid.py validate --table norm_NR.h5 --heldout-spec held_NR
 ```
 
 **On a Slurm cluster** use the **ifx (or flang) container, not gfortran** — gfortran runs
-the band integrals ~25x slower — via `slurm/normgrid.sbatch`, a job-array template (one
+the band integrals ~25x slower — via `table_building/slurm/normgrid.sbatch`, a job-array template (one
 single-core task per chunk of grid points; `OMP_NUM_THREADS=1` so an ifx build doesn't
 oversubscribe cores; a header comment gives the exact `sbatch` and `merge`/`validate`
 commands, and resubmitting the same array only redoes unfinished chunks). It runs the
 container `$PDF_SIF` (default `/scratch/$USER/containers/pdf.sif`, as pulled by
-`slurm/pull_container.job`), a `pdf.sif` built from `Dockerfile_intel` or `Dockerfile_llvm`
+`table_building/slurm/pull_container.job`), a `pdf.sif` built from `Dockerfile_intel` or `Dockerfile_llvm`
 (see [Docker/Apptainer images](building-from-source.md#dockerapptainer-images)), or set
-`PDF_NATIVE=1` to use a library you built on the cluster. `osg/` holds a similar HTCondor
+`PDF_NATIVE=1` to use a library you built on the cluster. `table_building/osg/` holds a similar HTCondor
 template.
 
 ## One command for a whole table
 
 How many nodes an axis needs depends on the fit region (the same box needed 5 nodes in
-`q0` for Eq 4–100 and about 16 for Eq 0.75–200), so `slurm/build_table.sh` measures instead
+`q0` for Eq 4–100 and about 16 for Eq 0.75–200), so `table_building/slurm/build_table.sh` measures instead
 of assuming. For a region it (1) evaluates 33 Chebyshev–Lobatto nodes along each axis at
 three baseline points (`python/cli/normplan.py points`, about 700 integrals), (2) reads the
 Chebyshev coefficients of each axis to find the fewest nodes whose truncation error is
@@ -84,20 +84,20 @@ held-out points, and (4) merges and validates, exiting with status 1 if the wors
 error exceeds `ACCEPT`:
 
 ```bash
-sbatch slurm/build_table.job NR 2.5 350 0.75 200              # -> tables/norm_NR_ep2.5-350_eq0.75-200.h5
-TOL=2.5e-8 sbatch slurm/build_table.job NR 2.5 350 0.75 200   # retry with more nodes; earlier results are reused
+sbatch table_building/slurm/build_table.job NR 2.5 350 0.75 200              # -> tables/norm_NR_ep2.5-350_eq0.75-200.h5
+TOL=2.5e-8 sbatch table_building/slurm/build_table.job NR 2.5 350 0.75 200   # retry with more nodes; earlier results are reused
 ```
 
-Each Slurm stage is `sbatch --wait slurm/normgrid.sbatch ...`, so `slurm/build_table.sh`
-runs until the whole chain is done; `slurm/build_table.job` runs it as a single-core driver
+Each Slurm stage is `sbatch --wait table_building/slurm/normgrid.sbatch ...`, so `table_building/slurm/build_table.sh`
+runs until the whole chain is done; `table_building/slurm/build_table.job` runs it as a single-core driver
 job that waits in the queue like any other (the environment at submission, e.g. `TOL`, is
 passed on). Every array is checked with `sacct` when it ends and a failed task stops the
 chain (`sbatch --wait` exits 0 on Alderaan even when tasks fail). The container is
-`PDF_SIF`, by default `/scratch/$USER/containers/pdf.sif` where `slurm/pull_container.job`
+`PDF_SIF`, by default `/scratch/$USER/containers/pdf.sif` where `table_building/slurm/pull_container.job`
 puts it. Options (`TOL`, `EPSREL`, `ACCEPT`, chunk sizes, `ACCOUNT`/`PARTITION`/`TIME`) are
 documented in the script header. The one-axis-at-a-time study cannot see cross terms
 between axes, which is why the held-out check is the gate.
-`test/slurm/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and
+`table_building/test/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and
 an analytic stand-in for the integrals.
 
 `run` is resumable and crash-tolerant: Fortran `error stop` (e.g. the quadrature not
