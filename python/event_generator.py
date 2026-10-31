@@ -6,7 +6,7 @@ matters). If you want normalized PDF values or a likelihood instead, use
 Ppq_compiled (python/Ppq_fort.py).
 
 Unlike Ppq_compiled, this module has no Fortran dependency at all -- it is pure
-Python/numpy built on python/Ppq_py.py's Y/Nbar/sigp/sigq (itself a
+Python/numpy built on python/Ppq_py.py's Y/Nbar_NR/Nbar_ER/sigp/sigq (itself a
 public entrypoint; see its module docstring), so it works in any
 environment that can `pip install` this package, compiled library or not.
 
@@ -184,7 +184,7 @@ def generate_events_NR(n_events, *,
     N  : ndarray, shape (n_events,)   -- latent e/h pair counts
     """
     return _generate_species_events(
-        n_events, Nbar_func=lambda Erecoil: ppq.Y(Erecoil, k=k, Z=Z) * Erecoil / eps,
+        n_events, Nbar_func=lambda Erecoil: ppq.Nbar_NR(Erecoil, k=k, Z=Z, eps=eps),
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
         mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 
@@ -215,7 +215,7 @@ def generate_events_ER(n_events, *,
     N  : ndarray, shape (n_events,)
     """
     return _generate_species_events(
-        n_events, Nbar_func=lambda Erecoil: Erecoil / eps,
+        n_events, Nbar_func=lambda Erecoil: ppq.Nbar_ER(Erecoil, eps=eps),
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
         mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
 

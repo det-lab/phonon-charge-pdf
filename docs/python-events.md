@@ -47,7 +47,7 @@ same columns. They're still importable directly from `phonon_charge_pdf.event_ge
 if you genuinely want the uncropped full physical model (e.g. studying the spectrum
 itself, not a detector's cut of it) — see their docstrings there.
 
-The resolution/yield functions this is built on -- `Y`, `Nbar`, `sigp`, `sigq`,
+The resolution/yield functions this is built on -- `Y`, `Nbar_NR`, `Nbar_ER`, `sigp`, `sigq`,
 `PErecoil_NR`, `PErecoil_ER` -- are also public, for analyzers who want one of them directly rather
 than through `generate_events`; see the
 [API reference](api/index.md#phonon_charge_pdf.Y) for the full list.

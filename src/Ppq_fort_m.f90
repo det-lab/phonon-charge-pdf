@@ -48,12 +48,6 @@ module Ppq_fort_m
     real(c_double) :: res
   end function Y
 
-  pure module function Nbar(Erecoil, k, Z, eps) result(res) bind(c, name="Nbar")
-    !! average number of electron-hole pairs for a given Erecoil
-    real(c_double), value :: Erecoil, k, Z, eps
-    real(c_double) :: res
-  end function Nbar
-
   pure module function sigp(Ep, eps, V, p0, p10) result(res) bind(c, name="sigp")
     !! phonon sensor resolution
     real(c_double), value :: Ep, eps, V, p0, p10

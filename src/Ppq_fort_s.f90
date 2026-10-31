@@ -161,10 +161,6 @@ contains
       res   = k*g / (1.0d0 + k*g)
   end procedure Y
 
-  module procedure Nbar
-      res = Y(Erecoil, k, Z) * Erecoil / eps
-  end procedure Nbar
-
   module procedure sigp
       real(c_double) :: e2pre, e2e
 

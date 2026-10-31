@@ -44,7 +44,7 @@ by name.
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](python-events.md) |
-| Use the resolution/yield functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Python API reference](api/index.md) |
+| Use the resolution/yield functions directly (`sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, ...) | [Python API reference](api/index.md) |
 | Get normalized PDF values or a likelihood for a fit/MCMC | [Fitting](fitting.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](building-from-source.md) |

@@ -10,7 +10,7 @@ them.
 `pip install phonon-charge-pdf` is enough. This covers:
 
 - **Generating simulated events** — [`generate_events`](python-events.md), built on `event_generator.py`.
-- **Resolution/yield functions** — `sigp`, `sigq`, `Y`, `Nbar`, and `PErecoil_NR`/`PErecoil_ER`, all in `Ppq_py.py`
+- **Resolution/yield functions** — `sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, and `PErecoil_NR`/`PErecoil_ER`, all in `Ppq_py.py`
   (the pure-Python reference implementation) and listed in the [API reference](api/index.md).
 
 Use the pure-Python library to generate or describe simulated data, or to get those
@@ -38,7 +38,7 @@ an exact uncommitted state.
 
 ```text
 Do you need normalized PDF values or a likelihood (a fit, an MCMC)?
-├── No  → pure Python is enough: generate_events / sigp, Y, Nbar, ...
+├── No  → pure Python is enough: generate_events / sigp, Y, Nbar_NR, Nbar_ER, ...
 └── Yes → you need Ppq_compiled, so you need the compiled library:
           ├── pip install phonon-charge-pdf   (simplest)
           ├── a published container           (HPC / Jupyter)

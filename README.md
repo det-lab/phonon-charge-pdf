@@ -49,7 +49,7 @@ dependencies.
 
 **1. Pure Python — no Fortran, no container needed.** `pip install phonon-charge-pdf` is
 enough. This covers generating simulated events ([`generate_events`](docs/python-events.md))
-and the resolution/yield functions (`sigp`, `sigq`, `Y`, `Nbar`, ...), listed in the
+and the resolution/yield functions (`sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, ...), listed in the
 [API reference](https://det-lab.github.io/phonon-charge-pdf/api/).
 
 **2. The Fortran-backed PDF — needs the compiled library.** If you want normalized PDF
@@ -85,7 +85,7 @@ Everything below lives under [`docs/`](docs/) — read it there, on GitHub, or r
 | I want to... | See |
 |---|---|
 | Generate simulated (Ep, Eq) events, no Fortran build needed | [Generating simulated events](docs/python-events.md) |
-| Use the resolution/yield functions directly (`sigp`, `sigq`, `Y`, `Nbar`, ...) | [Python API reference](https://det-lab.github.io/phonon-charge-pdf/api/) |
+| Use the resolution/yield functions directly (`sigp`, `sigq`, `Y`, `Nbar_NR`/`Nbar_ER`, ...) | [Python API reference](https://det-lab.github.io/phonon-charge-pdf/api/) |
 | Get normalized PDF values or a likelihood for a fit/MCMC | [Fitting](docs/fitting.md) |
 | Run a fit/MCMC fast, without recomputing the normalization integral every step | [Precomputed normalization tables](docs/normalization-tables.md) |
 | Build this project from source, or build/run its containers | [Building from source](docs/building-from-source.md) |

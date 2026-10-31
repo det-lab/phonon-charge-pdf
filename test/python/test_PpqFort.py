@@ -60,17 +60,6 @@ print('The fortran result is ', result_fort)
 print('The python result is ', result_py)
 check("Y", result_fort, result_py)
 
-# Define argument and return types for the function Nbar
-api.Nbar.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double]
-api.Nbar.restype = ctypes.c_double
-
-result_fort = api.Nbar(ctypes.c_double(Erecoil), ctypes.c_double(k), ctypes.c_double(Z), ctypes.c_double(eps))
-result_py = ppq.Nbar(Erecoil, k=k, Z=Z, eps=eps, is_ER=False)
-print('back in python after running function Nbar')
-print('The fortran result is ', result_fort)
-print('The python result is ', result_py)
-check("Nbar", result_fort, result_py)
-
 # Define argument and return types for the function sigp
 api.sigp.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double]
 api.sigp.restype = ctypes.c_double

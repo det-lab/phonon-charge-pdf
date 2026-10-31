@@ -15,7 +15,7 @@ test_PpqFort.py) -- never use these in a fit/MCMC inner loop; use Ppq_compiled
 for that.
 
 Public functions:
-* Y, Nbar, sigp, sigq -- the ionization-yield, mean pair-count, and
+* Y, Nbar_NR, Nbar_ER, sigp, sigq -- the ionization-yield, mean pair-count, and
   phonon/ionization resolution models.
 * PErecoil_NR, PErecoil_ER -- the true-recoil-energy spectra (NR, ER).
 * Ppq_inspect_NR, Ppq_inspect_ER -- the full Ppq_NR/Ppq_ER value at (Ep, Eq),
@@ -53,7 +53,7 @@ import scipy.integrate as integrate
 from scipy.optimize import curve_fit
 
 __all__ = [
-    "Y", "Nbar", "sigp", "sigq", "PErecoil_NR", "PErecoil_ER",
+    "Y", "Nbar_NR", "Nbar_ER", "sigp", "sigq", "PErecoil_NR", "PErecoil_ER",
     "Ppq_inspect_NR", "Ppq_inspect_ER",
 ]
 
@@ -74,17 +74,21 @@ def Y(Erecoil,
     return k*g / (1.0 + k*g)
 
 
-def Nbar(Erecoil,
-         *,
-         k, Z,
-         eps,
-         is_ER):
-    """Mean number of e/h pairs produced by a recoil of energy Erecoil (keV).
-    is_ER=True selects the electron-recoil yield (Y=1) instead of the
-    Lindhard NR yield Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value)
-    when is_ER=True."""
-    yield_val = 1.0 if is_ER else Y(Erecoil, k=k, Z=Z)
-    return yield_val*Erecoil/eps
+def Nbar_NR(Erecoil,
+            *,
+            k, Z,
+            eps):
+    """Mean number of e/h pairs produced by a nuclear recoil of energy
+    Erecoil (keV): the Lindhard yield Y(Erecoil, k=k, Z=Z) times Erecoil/eps."""
+    return Y(Erecoil, k=k, Z=Z)*Erecoil/eps
+
+
+def Nbar_ER(Erecoil,
+            *,
+            eps):
+    """Same as Nbar_NR but for the electron-recoil band (Y=1 everywhere, so
+    there's no k/Z to pass): Erecoil/eps."""
+    return Erecoil/eps
 
 
 def sigp(Ep,
@@ -162,7 +166,7 @@ def bN(Erecoil, Ep, Eq,
     selects the electron-recoil yield (Y=1) instead of the Lindhard NR
     yield Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value) when
     is_ER=True."""
-    Nbar_val = Nbar(Erecoil,k=k,Z=Z,eps=eps,is_ER=is_ER)
+    Nbar_val = Nbar_ER(Erecoil,eps=eps) if is_ER else Nbar_NR(Erecoil,k=k,Z=Z,eps=eps)
     t1 = 1/(2*Nbar_val*F0)
     t2 = eps**2/(2*sigq(Eq,q0=q0,q10=q10)**2)
     t3 = V**2/(2*(sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)*1e3)**2)
@@ -181,7 +185,7 @@ def cN(Erecoil, Ep, Eq,
     """Constant term of N_exponent's Gaussian-in-N exponent. is_ER selects
     the electron-recoil yield (Y=1) instead of the Lindhard NR yield
     Y(Erecoil, k=k, Z=Z); k, Z are unused (pass any value) when is_ER=True."""
-    Nbar_val = Nbar(Erecoil,k=k,Z=Z,eps=eps,is_ER=is_ER)
+    Nbar_val = Nbar_ER(Erecoil,eps=eps) if is_ER else Nbar_NR(Erecoil,k=k,Z=Z,eps=eps)
     t1 = -(Ep-Erecoil)**2/(2*sigp(Ep,eps=eps,V=V,p0=p0,p10=p10)**2)
     t2 = -Eq**2/(2*sigq(Eq,q0=q0,q10=q10)**2)
     t3 = -Nbar_val/(2*F0)
@@ -213,7 +217,7 @@ def pq_N_integral(Erecoil, Ep, Eq, Nbar_val, F_val, *, eps, V, p0, p10, q0, q10)
     """The N-integral shared by pq_given_Erecoil_NR/pq_given_Erecoil_ER: a
     fixed 21-point Simpson rule over a +/-5-sigma window around the
     Gaussian-in-N peak, given that peak's own Nbar_val (NR vs ER differ
-    only in how Nbar_val is computed -- see Nbar's is_ER) and the Fano
+    only in how Nbar_val is computed -- see Nbar_NR/Nbar_ER) and the Fano
     factor F_val. Not part of the public API (not in __all__); an
     implementation detail both pq_given_Erecoil_NR and pq_given_Erecoil_ER
     are built on."""
@@ -269,7 +273,7 @@ def pq_given_Erecoil_NR(Erecoil, Ep, Eq,
     """Unnormalized NR (Ep, Eq) density at one true recoil energy Erecoil (keV):
     PErecoil_NR(Erecoil) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak)."""
-    Nbar_val = Nbar(Erecoil, k=k, Z=Z, eps=eps, is_ER=False)
+    Nbar_val = Nbar_NR(Erecoil, k=k, Z=Z, eps=eps)
     return float(pq_N_integral(Erecoil, Ep, Eq, Nbar_val, F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
                  * PErecoil_NR(Erecoil))
 
@@ -350,7 +354,7 @@ def pq_given_Erecoil_ER(Erecoil, Ep, Eq,
     PErecoil_ER(Erecoil) times the N-integral (a fixed 21-point Simpson rule over a
     +/-5-sigma window around the Gaussian-in-N peak), with the electron-
     recoil yield Y=1 (see pq_given_Erecoil_NR for the analogous NR calculation)."""
-    Nbar_val = Nbar(Erecoil, k=0.0, Z=1.0, eps=eps, is_ER=True)   # k, Z unused: Y=1 for electron recoils
+    Nbar_val = Nbar_ER(Erecoil, eps=eps)
     return float(pq_N_integral(Erecoil, Ep, Eq, Nbar_val, F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
                  * PErecoil_ER(Erecoil))
 

@@ -18,7 +18,8 @@ their own since nothing outside goodness-of-fit testing needs them). For
         - Ppq_compiled
         - generate_events
         - Y
-        - Nbar
+        - Nbar_NR
+        - Nbar_ER
         - sigp
         - sigq
         - PErecoil_NR
