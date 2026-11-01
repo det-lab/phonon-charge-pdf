@@ -118,13 +118,16 @@ class Ppq_compiled:
         python/cli/normgrid.py for exactly this region), or a name registered in
         python/cli/table_registry.json.  If given, Ppq_integral_NR/Ppq_integral_ER
         interpolate it instead of running the quadrature.
-    PErecoil_table_NR, PErecoil_table_ER : path, erecoil_table.PErecoilTable, or None
+    PErecoil_table_NR, PErecoil_table_ER : HDF5 path, erecoil_table.PErecoilTable, or None
         Tabulated true-recoil-energy spectrum for that band (see
-        erecoil_table.py), replacing the closed-form biexponential
-        PErecoil_NR/PErecoil_ER inside every Erecoil integral -- unlike
-        Ppq_table_NR/ER, this changes the density itself, not just its
-        normalization. Checked once here (erecoil_range must reach 0 and
-        cover max(ep_range, eq_range) + 5 keV) and loaded into the compiled
+        erecoil_table.py; built with erecoil_table.save_erecoil_table -- an
+        explicit path only, no registered-name lookup like Ppq_table_NR/ER
+        has), replacing the closed-form biexponential PErecoil_NR/PErecoil_ER
+        inside every Erecoil integral -- unlike Ppq_table_NR/ER, this changes
+        the density itself, not just its normalization. If the table's own
+        metadata says a band, it must match this keyword's band. Checked
+        once here (erecoil_range must reach 0 and cover
+        max(ep_range, eq_range) + 5 keV) and loaded into the compiled
         library's GLOBAL, process-wide table state (see the module-level
         comment on nr_table_x in src/Ppq_fort_s.f90): constructing a second
         Ppq_compiled in the same process, with or without its own
@@ -273,7 +276,9 @@ class Ppq_compiled:
         sys.path.insert(0, _PYTHON_DIR)
         from erecoil_table import PErecoilTable
         if not isinstance(table, PErecoilTable):
-            table = PErecoilTable.from_file(table)
+            table = PErecoilTable.from_hdf5(table)
+        if table.band and table.band != band:
+            raise ValueError(f"PErecoil_table_{band}: table's own metadata says band={table.band!r}")
         lo, hi = table.erecoil_range
         needed = max(self.ep_max, self.eq_max) + _ERECOIL_MARGIN_KEV
         if lo > 0.0:

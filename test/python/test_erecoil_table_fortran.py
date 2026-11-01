@@ -4,8 +4,8 @@ and PErecoil_clear_table_NR/ER (python/internal/_Ppq_fort_bindings.py ->
 src/Ppq_fort_s.f90's eval_cubic_table), and Ppq_compiled's construction-time
 erecoil_range check (python/Ppq_fort.py's _load_erecoil_table).
 
-Needs the compiled Fortran library -- run where it is built (e.g. in the
-container):
+Needs the compiled Fortran library and h5py -- run where the library is
+built (e.g. in the container):
 
     LD_LIBRARY_PATH=lib python test/python/test_erecoil_table_fortran.py
 """
@@ -21,7 +21,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "internal"))
 import Ppq_py as ppq
-from erecoil_table import PErecoilTable
+from erecoil_table import PErecoilTable, save_erecoil_table
 from Ppq_fort import Ppq_compiled
 import _Ppq_fort_bindings as bindings
 
@@ -44,13 +44,11 @@ def raises(exc, fn):
     return False
 
 
-def write_exponential_like_fixture(path, pdf_func, erecoil_max, n=3000):
+def write_exponential_like_fixture(path, pdf_func, erecoil_max, *, band, n=3000):
     """See test_erecoil_table.py's identical helper for why log-spaced."""
     erecoil = np.concatenate(([0.0], np.geomspace(1.0e-3, erecoil_max, n - 1)))
     counts = pdf_func(erecoil)
-    with open(path, "w") as f:
-        for e, c in zip(erecoil, counts):
-            f.write(f"{float(e)!r} {float(c)!r}\n")
+    save_erecoil_table(path, erecoil, counts, detector="TEST", band=band, provenance="Fortran cross-check fixture")
 
 
 # Raw ctypes handles on PErecoil_NR/ER themselves, mirroring test_PpqFort.py's
@@ -75,9 +73,9 @@ for e in (0.0, 1.0, 10.0, 100.0):
 # ---- set a table: Fortran's eval_cubic_table should reproduce the exact
 # same piecewise cubic erecoil_table.PErecoilTable evaluates in Python ----
 
-nr_path = os.path.join(tmp_dir, "erecoil_table_NR.dat")
-write_exponential_like_fixture(nr_path, ppq.PErecoil_NR, erecoil_max=200.0)
-table_nr = PErecoilTable.from_file(nr_path)
+nr_path = os.path.join(tmp_dir, "erecoil_table_NR.h5")
+write_exponential_like_fixture(nr_path, ppq.PErecoil_NR, erecoil_max=200.0, band="NR")
+table_nr = PErecoilTable.from_hdf5(nr_path)
 bindings.PErecoil_set_table_NR(*table_nr.fortran_table)
 
 for e in (0.0, 0.5, 3.0, 10.0, 50.0, 150.0, 200.0):
@@ -100,9 +98,9 @@ for e in (0.0, 1.0, 10.0, 100.0):
 
 # ---- same round trip for ER ----
 
-er_path = os.path.join(tmp_dir, "erecoil_table_ER.dat")
-write_exponential_like_fixture(er_path, ppq.PErecoil_ER, erecoil_max=2000.0)
-table_er = PErecoilTable.from_file(er_path)
+er_path = os.path.join(tmp_dir, "erecoil_table_ER.h5")
+write_exponential_like_fixture(er_path, ppq.PErecoil_ER, erecoil_max=2000.0, band="ER")
+table_er = PErecoilTable.from_hdf5(er_path)
 bindings.PErecoil_set_table_ER(*table_er.fortran_table)
 
 for e in (0.0, 0.1, 1.0, 10.0, 100.0, 1500.0, 2000.0):
@@ -121,29 +119,36 @@ ep_data, eq_data = np.array([30.0]), np.array([10.0])
 
 # A table narrower than max(ep_max, eq_max) + 5 must raise at construction,
 # not be silently accepted (see _load_erecoil_table's docstring).
-narrow_path = os.path.join(tmp_dir, "erecoil_table_NR_narrow.dat")
-write_exponential_like_fixture(narrow_path, ppq.PErecoil_NR, erecoil_max=10.0)
+narrow_path = os.path.join(tmp_dir, "erecoil_table_NR_narrow.h5")
+write_exponential_like_fixture(narrow_path, ppq.PErecoil_NR, erecoil_max=10.0, band="NR")
 check("Ppq_compiled rejects a PErecoil table narrower than the region needs",
       raises(ValueError, lambda: Ppq_compiled(
           EP_RANGE, EQ_RANGE, ep_data, eq_data,
           norm_epsrel=1e-4, norm_epsabs=1e-10, PErecoil_table_NR=narrow_path)))
 
 # A table that doesn't start at/below 0 must also raise.
-positive_lo_path = os.path.join(tmp_dir, "erecoil_table_NR_positive_lo.dat")
+positive_lo_path = os.path.join(tmp_dir, "erecoil_table_NR_positive_lo.h5")
 erecoil = np.linspace(1.0, 400.0, 2000)
 counts = ppq.PErecoil_NR(erecoil)
-with open(positive_lo_path, "w") as f:
-    for e, c in zip(erecoil, counts):
-        f.write(f"{float(e)!r} {float(c)!r}\n")
+save_erecoil_table(positive_lo_path, erecoil, counts, detector="TEST", band="NR",
+                    provenance="deliberately starts above 0, for the construction-time check")
 check("Ppq_compiled rejects a PErecoil table that does not start at/below 0",
       raises(ValueError, lambda: Ppq_compiled(
           EP_RANGE, EQ_RANGE, ep_data, eq_data,
           norm_epsrel=1e-4, norm_epsabs=1e-10, PErecoil_table_NR=positive_lo_path)))
 
+# A table whose own metadata says the wrong band must raise too.
+wrong_band_path = os.path.join(tmp_dir, "erecoil_table_mislabeled.h5")
+write_exponential_like_fixture(wrong_band_path, ppq.PErecoil_NR, erecoil_max=400.0, band="ER")
+check("Ppq_compiled rejects a PErecoil table whose metadata says the wrong band",
+      raises(ValueError, lambda: Ppq_compiled(
+          EP_RANGE, EQ_RANGE, ep_data, eq_data,
+          norm_epsrel=1e-4, norm_epsabs=1e-10, PErecoil_table_NR=wrong_band_path)))
+
 # A table wide enough for this region is accepted, and the compiled
 # library's PErecoil_NR now reads from it (set_table was actually called).
-wide_path = os.path.join(tmp_dir, "erecoil_table_NR_wide.dat")
-write_exponential_like_fixture(wide_path, ppq.PErecoil_NR, erecoil_max=400.0)
+wide_path = os.path.join(tmp_dir, "erecoil_table_NR_wide.h5")
+write_exponential_like_fixture(wide_path, ppq.PErecoil_NR, erecoil_max=400.0, band="NR")
 fit_pdf = Ppq_compiled(EP_RANGE, EQ_RANGE, ep_data, eq_data,
                         norm_epsrel=1e-4, norm_epsabs=1e-10, PErecoil_table_NR=wide_path)
 check("Ppq_compiled accepts a PErecoil table wide enough for the region",

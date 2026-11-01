@@ -3,6 +3,15 @@
 PErecoil_ER's closed-form biexponentials when the real spectrum is only known
 from counts at a set of Erecoil values.
 
+One file format only: HDF5, with detector/band/provenance metadata --
+mirrors normgrid.py's own table format (format_version, band, etc.) rather
+than a second, parallel bare-numbers text format. h5py is imported lazily
+(_h5py() below, only from save_erecoil_table/PErecoilTable.from_hdf5), the
+same way normgrid.py's own _h5py() is, so importing this module -- or using
+PErecoilTable built from in-memory arrays -- never requires it; that keeps
+Ppq_py.py's "pure numpy/scipy, no extra dependency" promise intact even
+though this module's one real file format needs h5py to read or write.
+
 Reuses normgrid.OutOfBoxError (python/cli/normgrid.py) rather than inventing a
 parallel exception type: same "never extrapolate, raise on a query outside the
 table" contract NormInterpolator already uses for the (Ep, Eq) normalization
@@ -18,6 +27,7 @@ window clipped to erecoil_range first, tracked as follow-up work.
 
 import os
 import sys
+import time
 
 import numpy as np
 from scipy.interpolate import PchipInterpolator
@@ -25,17 +35,51 @@ from scipy.interpolate import PchipInterpolator
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 
-__all__ = ["PErecoilTable", "load_erecoil_table"]
+# Table format version: bump this (and add a migration, mirroring
+# normgrid.migrate_table) if the HDF5 schema below ever changes
+# incompatibly. A file newer than this code understands fails loudly at
+# load time instead of being silently misread.
+TABLE_FORMAT_VERSION = 1
+
+__all__ = ["PErecoilTable", "save_erecoil_table"]
 
 
-def load_erecoil_table(path):
-    """Load a two-column (Erecoil_keV, counts) text table -- whitespace or
-    comma separated, blank lines and lines starting with '#' ignored.
-    Returns (erecoil, counts), sorted ascending by Erecoil."""
-    data = np.loadtxt(path, comments="#", delimiter=None, ndmin=2)
-    erecoil, counts = data[:, 0], data[:, 1]
-    order = np.argsort(erecoil)
-    return erecoil[order], counts[order]
+def _h5py():
+    import h5py
+    return h5py
+
+
+def save_erecoil_table(path, erecoil, counts, *, detector, band, provenance=""):
+    """Write a PErecoilTable-compatible HDF5 file: erecoil/counts datasets
+    plus format_version/detector/band/provenance/created attrs. The one
+    writer for the one file format PErecoilTable.from_hdf5 reads -- used by
+    test fixtures and any real per-detector extraction script alike, so
+    there is exactly one schema to keep in sync, not two.
+
+    detector : str
+        Short identifier (e.g. "X17") -- becomes part of this table's own
+        metadata, checked against what's expected wherever this is loaded
+        for a specific detector/band.
+    band : "NR" or "ER"
+    provenance : str
+        Free text: where this table's numbers actually came from (e.g. an
+        NRFano notebook path/commit, run or calibration identifiers) --
+        not checked by this code, but the only place this is recorded, so
+        write something a future reader can trace back from.
+    """
+    h5py = _h5py()
+    if band not in ("NR", "ER"):
+        raise ValueError(f"band must be 'NR' or 'ER', got {band!r}")
+    erecoil = np.asarray(erecoil, dtype=np.float64)
+    counts = np.asarray(counts, dtype=np.float64)
+    with h5py.File(path, "w") as f:
+        f.create_dataset("erecoil", data=erecoil)
+        f.create_dataset("counts", data=counts)
+        f.attrs["format_version"] = TABLE_FORMAT_VERSION
+        f.attrs["detector"] = detector
+        f.attrs["band"] = band
+        f.attrs["provenance"] = provenance
+        f.attrs["created"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 class PErecoilTable:
@@ -44,7 +88,7 @@ class PErecoilTable:
     normalized to integrate to 1 over the table's own range. Call with a
     single Erecoil (keV):
 
-        p_erecoil = PErecoilTable(erecoil, counts)
+        p_erecoil = PErecoilTable.from_hdf5("erecoil_tables/X17_NR.h5")
         p_erecoil(12.3)
 
     Erecoil < 0 returns 0 -- matches PErecoil_NR/PErecoil_ER's own convention,
@@ -57,7 +101,7 @@ class PErecoilTable:
     this never extrapolates to make that unnecessary.
     """
 
-    def __init__(self, erecoil, counts, *, source=""):
+    def __init__(self, erecoil, counts, *, detector="", band="", provenance="", source=""):
         erecoil = np.asarray(erecoil, dtype=float)
         counts = np.asarray(counts, dtype=float)
         if erecoil.ndim != 1 or counts.shape != erecoil.shape:
@@ -68,6 +112,9 @@ class PErecoilTable:
             raise ValueError("erecoil must be strictly increasing (sort/dedupe first)")
         if np.any(counts < 0):
             raise ValueError("counts must be non-negative")
+        self.detector = detector
+        self.band = band
+        self.provenance = provenance
         self.source = source
         self._lo, self._hi = float(erecoil[0]), float(erecoil[-1])
         self._interp = PchipInterpolator(erecoil, counts, extrapolate=False)
@@ -82,9 +129,19 @@ class PErecoilTable:
         self._norm = raw_norm
 
     @classmethod
-    def from_file(cls, path):
-        erecoil, counts = load_erecoil_table(path)
-        return cls(erecoil, counts, source=str(path))
+    def from_hdf5(cls, path):
+        h5py = _h5py()
+        with h5py.File(path, "r") as f:
+            version = f.attrs.get("format_version", 1)
+            if version > TABLE_FORMAT_VERSION:
+                raise ValueError(f"{path}: table format_version={version}, this code reads "
+                                 f"{TABLE_FORMAT_VERSION} or older -- update phonon_charge_pdf")
+            erecoil = f["erecoil"][:]
+            counts = f["counts"][:]
+            detector = str(f.attrs.get("detector", ""))
+            band = str(f.attrs.get("band", ""))
+            provenance = str(f.attrs.get("provenance", ""))
+        return cls(erecoil, counts, detector=detector, band=band, provenance=provenance, source=str(path))
 
     @property
     def erecoil_range(self):

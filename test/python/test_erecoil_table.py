@@ -1,13 +1,16 @@
 """
-Tests for python/erecoil_table.py: build a PErecoilTable from a fixture table
-sampled from Ppq_py.PErecoil_NR's own closed-form biexponential (so a correct
-PCHIP interpolant + normalization should reproduce it closely), then check the
-edge behavior that formula can't exercise: a query past the table's range
-raises normgrid.OutOfBoxError (never extrapolates), while a slightly negative
-Erecoil -- the one case the integration/peak-scan machinery is allowed to
-probe -- still returns 0, matching PErecoil_NR/PErecoil_ER's own convention.
+Tests for python/erecoil_table.py: build a PErecoilTable from an HDF5
+fixture table sampled from Ppq_py.PErecoil_NR's own closed-form
+biexponential (so a correct PCHIP interpolant + normalization should
+reproduce it closely), then check the edge behavior that formula can't
+exercise: a query past the table's range raises normgrid.OutOfBoxError
+(never extrapolates), while a slightly negative Erecoil -- the one case the
+integration/peak-scan machinery is allowed to probe -- still returns 0,
+matching PErecoil_NR/PErecoil_ER's own convention. Also checks the HDF5
+round trip (save_erecoil_table -> from_hdf5) preserves its detector/band/
+provenance metadata.
 
-No Fortran needed.
+Needs h5py. No Fortran needed.
 
 Run from the repository root:  python test/python/test_erecoil_table.py
 """
@@ -22,7 +25,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "cli"))
 import Ppq_py as ppq
-from erecoil_table import PErecoilTable, load_erecoil_table
+from erecoil_table import PErecoilTable, save_erecoil_table
 from normgrid import OutOfBoxError
 
 failures = []
@@ -44,39 +47,38 @@ def raises(exc, fn):
     return False
 
 
-def write_exponential_like_fixture(path, pdf_func, erecoil_max, n=3000):
-    """Write a two-column (Erecoil_keV, counts) table sampling pdf_func
-    (PErecoil_NR or PErecoil_ER) on [0, erecoil_max] -- a stand-in for a real
-    tabulated spectrum, shaped like the current closed form so a correct
-    table pipeline should reproduce it. Log-spaced (plus an explicit point at
-    0): PErecoil_ER's fast component decays on a ~0.17 keV scale, orders of
-    magnitude finer than erecoil_max, so a linear grid badly under-resolves it
-    near 0 -- this is a property of the fixture's sampling, not of
-    PErecoilTable itself."""
+def write_exponential_like_fixture(path, pdf_func, erecoil_max, *, detector, band, n=3000):
+    """Write an HDF5 fixture sampling pdf_func (PErecoil_NR or PErecoil_ER)
+    on [0, erecoil_max] -- a stand-in for a real tabulated spectrum, shaped
+    like the current closed form so a correct table pipeline should
+    reproduce it. Log-spaced (plus an explicit point at 0): PErecoil_ER's
+    fast component decays on a ~0.17 keV scale, orders of magnitude finer
+    than erecoil_max, so a linear grid badly under-resolves it near 0 --
+    this is a property of the fixture's sampling, not of PErecoilTable
+    itself."""
     erecoil = np.concatenate(([0.0], np.geomspace(1.0e-3, erecoil_max, n - 1)))
     counts = pdf_func(erecoil)
-    with open(path, "w") as f:
-        f.write("# Erecoil_keV  counts  (synthetic fixture, sampled from Ppq_py's own formula)\n")
-        for e, c in zip(erecoil, counts):
-            f.write(f"{float(e)!r} {float(c)!r}\n")
+    save_erecoil_table(path, erecoil, counts, detector=detector, band=band,
+                        provenance="synthetic fixture, sampled from Ppq_py's own formula")
 
 
 tmp_dir = tempfile.mkdtemp()
-nr_path = os.path.join(tmp_dir, "erecoil_table_NR_like_exponential.dat")
-er_path = os.path.join(tmp_dir, "erecoil_table_ER_like_exponential.dat")
-write_exponential_like_fixture(nr_path, ppq.PErecoil_NR, erecoil_max=200.0)
-write_exponential_like_fixture(er_path, ppq.PErecoil_ER, erecoil_max=2000.0)
+nr_path = os.path.join(tmp_dir, "TEST_NR.h5")
+er_path = os.path.join(tmp_dir, "TEST_ER.h5")
+write_exponential_like_fixture(nr_path, ppq.PErecoil_NR, erecoil_max=200.0, detector="TEST", band="NR")
+write_exponential_like_fixture(er_path, ppq.PErecoil_ER, erecoil_max=2000.0, detector="TEST", band="ER")
 
-# ---- load_erecoil_table ----
+# ---- HDF5 round trip: metadata preserved ----
 
-erecoil, counts = load_erecoil_table(nr_path)
-check("load_erecoil_table: sorted ascending", bool(np.all(np.diff(erecoil) > 0)))
-check("load_erecoil_table: same length", erecoil.shape == counts.shape)
+p_nr = PErecoilTable.from_hdf5(nr_path)
+p_er = PErecoilTable.from_hdf5(er_path)
+
+check("from_hdf5: detector round-trips", p_nr.detector == "TEST")
+check("from_hdf5: band round-trips", p_nr.band == "NR")
+check("from_hdf5: provenance round-trips", "synthetic fixture" in p_nr.provenance)
+check("from_hdf5: source is the file path", p_nr.source == nr_path)
 
 # ---- PErecoilTable reproduces PErecoil_NR/PErecoil_ER ----
-
-p_nr = PErecoilTable.from_file(nr_path)
-p_er = PErecoilTable.from_file(er_path)
 
 lo, hi = p_nr.erecoil_range
 check("erecoil_range: lo is 0", lo == 0.0, f"lo={lo!r}")
@@ -119,6 +121,9 @@ check("Erecoil exactly at the edges does not raise",
 check("non-increasing erecoil is rejected", raises(ValueError, lambda: PErecoilTable([1.0, 1.0, 2.0], [1.0, 1.0, 1.0])))
 check("negative counts are rejected", raises(ValueError, lambda: PErecoilTable([0.0, 1.0, 2.0], [1.0, -1.0, 1.0])))
 check("too few points are rejected", raises(ValueError, lambda: PErecoilTable([0.0], [1.0])))
+check("save_erecoil_table rejects an unknown band",
+      raises(ValueError, lambda: save_erecoil_table(
+          os.path.join(tmp_dir, "bad.h5"), [0.0, 1.0], [1.0, 1.0], detector="TEST", band="XX")))
 
 if failures:
     print(f"\n{len(failures)} FAILURE(S): {failures}")
