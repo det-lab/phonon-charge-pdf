@@ -207,19 +207,25 @@ def correct_nr_threshold_turnon(x, y, n_fit_bins=NR_FIT_BINS, search_window_keV=
     return y_corrected, anchor0, info
 
 
-def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False):
+def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, weights=None):
     """Equal-count (quantile) histogram of erecoil (keV, already >= 0),
     converted from raw bin counts to a density (divided by bin width).
-    correct_nr_threshold applies correct_nr_threshold_turnon (NR only --
-    see this module's docstring) before adding the explicit Erecoil=0
-    node; otherwise that node is held flat at the lowest bin's density
-    (ER's case -- the data is already flat there, so this is a reasonable
-    match to the visible trend, not a bare assumption). See the N_BINS
-    comment above for why equal-count, not fixed log-spaced, edges.
-    Returns (x, density), x strictly increasing, ready for
-    erecoil_table.save_erecoil_table."""
+    weights, if given, is a per-event array (same length/order as erecoil)
+    summed per bin instead of raw counts -- used by the Ba extraction to
+    down-weight events the Cf-activation mixture fit assigns to the
+    contamination population (see extract_erecoil_tables_ba.py's
+    fit_cf_activation_mixture); bin edges are still the unweighted
+    quantile edges below, so this only changes what's counted in each bin,
+    not where the bins are. correct_nr_threshold applies
+    correct_nr_threshold_turnon (NR only -- see this module's docstring)
+    before adding the explicit Erecoil=0 node; otherwise that node is held
+    flat at the lowest bin's density (ER's case -- the data is already
+    flat there, so this is a reasonable match to the visible trend, not a
+    bare assumption). See the N_BINS comment above for why equal-count,
+    not fixed log-spaced, edges. Returns (x, density), x strictly
+    increasing, ready for erecoil_table.save_erecoil_table."""
     edges = np.unique(np.quantile(erecoil, np.linspace(0.0, 1.0, n_bins + 1)))
-    counts, edges = np.histogram(erecoil, bins=edges)
+    counts, edges = np.histogram(erecoil, bins=edges, weights=weights)
     widths = np.diff(edges)
     density = counts / widths
     centers = 0.5 * (edges[:-1] + edges[1:])
