@@ -59,6 +59,7 @@ def write_exponential_like_fixture(path, pdf_func, erecoil_max, *, detector, ban
     erecoil = np.concatenate(([0.0], np.geomspace(1.0e-3, erecoil_max, n - 1)))
     counts = pdf_func(erecoil)
     save_erecoil_table(path, erecoil, counts, detector=detector, band=band,
+                        calibration_source="synthetic", source_file="(none, sampled from Ppq_py)",
                         provenance="synthetic fixture, sampled from Ppq_py's own formula")
 
 
@@ -75,6 +76,8 @@ p_er = PErecoilTable.from_hdf5(er_path)
 
 check("from_hdf5: detector round-trips", p_nr.detector == "TEST")
 check("from_hdf5: band round-trips", p_nr.band == "NR")
+check("from_hdf5: calibration_source round-trips", p_nr.calibration_source == "synthetic")
+check("from_hdf5: source_file round-trips", p_nr.source_file == "(none, sampled from Ppq_py)")
 check("from_hdf5: provenance round-trips", "synthetic fixture" in p_nr.provenance)
 check("from_hdf5: source is the file path", p_nr.source == nr_path)
 

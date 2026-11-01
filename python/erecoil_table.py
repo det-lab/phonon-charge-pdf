@@ -49,23 +49,38 @@ def _h5py():
     return h5py
 
 
-def save_erecoil_table(path, erecoil, counts, *, detector, band, provenance=""):
+def save_erecoil_table(path, erecoil, counts, *, detector, band, calibration_source="",
+                       source_file="", provenance=""):
     """Write a PErecoilTable-compatible HDF5 file: erecoil/counts datasets
-    plus format_version/detector/band/provenance/created attrs. The one
-    writer for the one file format PErecoilTable.from_hdf5 reads -- used by
-    test fixtures and any real per-detector extraction script alike, so
-    there is exactly one schema to keep in sync, not two.
+    plus format_version/detector/band/calibration_source/source_file/
+    provenance/created attrs. The one writer for the one file format
+    PErecoilTable.from_hdf5 reads -- used by test fixtures and any real
+    per-detector extraction script alike, so there is exactly one schema
+    to keep in sync, not two.
 
     detector : str
         Short identifier (e.g. "X17") -- becomes part of this table's own
         metadata, checked against what's expected wherever this is loaded
         for a specific detector/band.
     band : "NR" or "ER"
+    calibration_source : str
+        What produced the raw events this table was built from (e.g.
+        "Cf-252", "Ba-133") -- structured, short, meant to be read back
+        programmatically (unlike provenance below). A detector can have
+        more than one table for the same band from different calibration
+        sources (e.g. a Cf-252-derived and a Ba-133-derived ER table), so
+        this -- not just detector/band -- is what keeps them apart; see
+        this project's own filename convention,
+        erecoil_tables/<detector>_<band>_<short source tag>.h5.
+    source_file : str
+        The raw input data file this table was built from (e.g.
+        "Cf_ptqi_402.csv") -- so a reader can find the original data
+        without parsing provenance's free text.
     provenance : str
-        Free text: where this table's numbers actually came from (e.g. an
-        NRFano notebook path/commit, run or calibration identifiers) --
-        not checked by this code, but the only place this is recorded, so
-        write something a future reader can trace back from.
+        Free text: anything else about where this table's numbers came
+        from (e.g. an NRFano notebook path/commit, the cut/estimator
+        used) -- not checked by this code, but the only place this is
+        recorded, so write something a future reader can trace back from.
     """
     h5py = _h5py()
     if band not in ("NR", "ER"):
@@ -78,6 +93,8 @@ def save_erecoil_table(path, erecoil, counts, *, detector, band, provenance=""):
         f.attrs["format_version"] = TABLE_FORMAT_VERSION
         f.attrs["detector"] = detector
         f.attrs["band"] = band
+        f.attrs["calibration_source"] = calibration_source
+        f.attrs["source_file"] = source_file
         f.attrs["provenance"] = provenance
         f.attrs["created"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -101,7 +118,8 @@ class PErecoilTable:
     this never extrapolates to make that unnecessary.
     """
 
-    def __init__(self, erecoil, counts, *, detector="", band="", provenance="", source=""):
+    def __init__(self, erecoil, counts, *, detector="", band="", calibration_source="",
+                 source_file="", provenance="", source=""):
         erecoil = np.asarray(erecoil, dtype=float)
         counts = np.asarray(counts, dtype=float)
         if erecoil.ndim != 1 or counts.shape != erecoil.shape:
@@ -114,6 +132,8 @@ class PErecoilTable:
             raise ValueError("counts must be non-negative")
         self.detector = detector
         self.band = band
+        self.calibration_source = calibration_source
+        self.source_file = source_file
         self.provenance = provenance
         self.source = source
         self._lo, self._hi = float(erecoil[0]), float(erecoil[-1])
@@ -140,8 +160,11 @@ class PErecoilTable:
             counts = f["counts"][:]
             detector = str(f.attrs.get("detector", ""))
             band = str(f.attrs.get("band", ""))
+            calibration_source = str(f.attrs.get("calibration_source", ""))
+            source_file = str(f.attrs.get("source_file", ""))
             provenance = str(f.attrs.get("provenance", ""))
-        return cls(erecoil, counts, detector=detector, band=band, provenance=provenance, source=str(path))
+        return cls(erecoil, counts, detector=detector, band=band, calibration_source=calibration_source,
+                   source_file=source_file, provenance=provenance, source=str(path))
 
     @property
     def erecoil_range(self):
