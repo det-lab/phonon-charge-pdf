@@ -35,13 +35,22 @@ from-scratch Klein-Nishina calculation of the Compton continuum expected
 from Ba-133's real higher-energy lines (276/303/356/384 keV, weighted by
 their emission intensities) comes out far too small and the wrong shape to
 explain it; (3) no published Ba-133 reference spectrum shows any line in
-100-200 keV. exclude_cf_activation_contamination below removes it (per
-detector, relative to that detector's own clean-plateau baseline) rather
-than modeling or guessing a replacement -- PCHIP bridges the resulting gap
-smoothly from the clean data on either side. This necessarily risks some
-of the real 81 keV line's upper tail where the two overlap (confirmed to
-still sit close for some detectors); accepted as a real trade-off, not
-unnoticed.
+100-200 keV.
+
+subtract_cf_activation_peak below removes it with a joint fit instead of a
+hard cut: a power-law continuum (C*Er^k) plus a single Gaussian for the
+hump, fit jointly to the region around it, then only the Gaussian
+component is subtracted back out of the real data. An earlier version cut
+every bin above a density threshold entirely and let PCHIP bridge the
+resulting ~60-130 keV gap from the surviving data on either side -- visibly
+wrong on inspection, since PCHIP has nothing in that gap to anchor its
+curvature to and the bridge didn't track the two-sided falloff the data
+actually shows. The Gaussian's width (sigma ~30-45 keV, i.e. FWHM
+~75-105 keV) is far broader than a real detector energy resolution at
+140 keV; this is expected, not a sign the fit is wrong -- Er here is the
+crude, uncorrected estimator (erecoil_of, no yield/resolution correction),
+so "sigma" is just whatever shape parameter lets a single Gaussian track
+this estimator's smeared hump, not a claim about the true line width.
 
 Same Erecoil estimate and quantile/log-log-slope-style binning as the Cf
 script (imported from it, not reimplemented): Er = pt - V*(qi/eps)/1000,
@@ -63,6 +72,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import curve_fit
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
@@ -116,44 +126,63 @@ def band_outliers(Ep, Eq, nsig=CLEAN_NSIG, n_slices=30):
     return bad
 
 
-# Where the Ge-75m-contamination search looks, and what counts as
-# "contaminated" -- see this module's docstring for the evidence. The
-# baseline window (40-60 keV) sits comfortably below where the hump starts
-# for every detector checked; the search window's upper bound (250 keV)
-# comfortably clears it on the high side too.
+# Where the fit looks and where it's allowed to put the Gaussian's center
+# and width -- see this module's docstring for the evidence behind the
+# model itself. The fit window (20-260 keV) extends well past the hump on
+# both sides so the power-law continuum is anchored by real clean data,
+# not just the few bins immediately flanking the peak; the baseline window
+# (40-60 keV) for the initial-guess amplitude sits comfortably below where
+# the hump starts for every detector checked; the mu/sigma bounds keep the
+# fit from wandering onto the real 81 keV line (excluded below 60 keV) or
+# past the falloff into the post-line region (above 250 keV).
+CONTINUUM_GAUSSIAN_FIT_WINDOW_KEV = (20.0, 260.0)
+PEAK_MU_BOUNDS_KEV = (60.0, 250.0)
+PEAK_SIGMA_BOUNDS_KEV = (5.0, 100.0)
 BASELINE_WINDOW_KEV = (40.0, 60.0)
-CONTAMINATION_SEARCH_WINDOW_KEV = (60.0, 250.0)
-CONTAMINATION_THRESHOLD = 1.1  # x the baseline density -- see this module's
-# docstring/commit history: 1.5 was tried first and only cut the sharp
-# peak, leaving the broader shoulders of the same feature in place (still
-# visibly part of the same hump on a log-x plot, just under that
-# threshold). 1.1 was chosen by eye against that plot: it comfortably
-# brackets the full visual extent of the hump for all 5 detectors without
-# cutting into the flat plateau on either side.
 
 
-def exclude_cf_activation_contamination(x, y, baseline_window=BASELINE_WINDOW_KEV,
-                                        search_window=CONTAMINATION_SEARCH_WINDOW_KEV,
-                                        threshold=CONTAMINATION_THRESHOLD):
-    """Remove bins in search_window where density exceeds threshold times
-    the baseline (median density in baseline_window) -- the leftover
-    Cf-252 neutron-activation contamination identified in this module's
-    docstring, not genuine Ba-133 structure. Unlike
-    correct_nr_threshold_turnon, this doesn't model or guess a replacement
-    value for the compromised region -- it just removes those nodes and
-    lets PCHIP bridge smoothly across the gap from the clean data on
-    either side, since there's nothing in the data itself to say what the
-    true continuum looks like under the contamination.
+def _continuum_plus_gaussian(Er, C, k, A, mu, sigma):
+    return C * Er**k + A * np.exp(-0.5 * ((Er - mu) / sigma) ** 2)
+
+
+def subtract_cf_activation_peak(x, y, fit_window=CONTINUUM_GAUSSIAN_FIT_WINDOW_KEV):
+    """Fit a power-law continuum (C*Er^k) plus a single Gaussian to the
+    region around the leftover Cf-252/Ge-75m activation hump (see this
+    module's docstring for the evidence it's contamination, not genuine
+    Ba-133 structure), then subtract only the fitted Gaussian component
+    back out of the real data -- leaving the continuum's own shape, bin
+    noise included, untouched everywhere the Gaussian is negligible,
+    rather than blanking the region and bridging it with PCHIP (the
+    earlier approach: visibly wrong on inspection, since PCHIP has nothing
+    in a ~60-130 keV gap to anchor its curvature to).
 
     x, y : the real (non-zero-anchor) bin centers/densities, ascending.
-    Returns (x_clean, y_clean, info)."""
-    baseline = float(np.median(y[(x > baseline_window[0]) & (x < baseline_window[1])]))
-    search_mask = (x > search_window[0]) & (x < search_window[1])
-    contaminated = search_mask & (y > threshold * baseline)
-    info = dict(baseline=baseline, n_removed=int(contaminated.sum()))
-    if contaminated.any():
-        info["removed_range_keV"] = (float(x[contaminated].min()), float(x[contaminated].max()))
-    return x[~contaminated], y[~contaminated], info
+    Returns (y_clean, info) -- y_clean has the same x grid as y (no gap),
+    info holds the fit parameters and their uncertainties for logging."""
+    mask = (x > fit_window[0]) & (x < fit_window[1])
+    xf, yf = x[mask], y[mask]
+
+    baseline = float(np.median(y[(x > BASELINE_WINDOW_KEV[0]) & (x < BASELINE_WINDOW_KEV[1])]))
+    hump_mask = (xf > PEAK_MU_BOUNDS_KEV[0]) & (xf < PEAK_MU_BOUNDS_KEV[1])
+    mu0 = float(xf[hump_mask][np.argmax(yf[hump_mask])]) if hump_mask.any() else 140.0
+    amplitude0 = max(float(yf[hump_mask].max() - baseline), 1.0) if hump_mask.any() else baseline
+    k0 = -0.3
+    C0 = baseline / 60.0 ** k0
+
+    p0 = [C0, k0, amplitude0, mu0, 25.0]
+    bounds = ([0.0, -3.0, 0.0, PEAK_MU_BOUNDS_KEV[0], PEAK_SIGMA_BOUNDS_KEV[0]],
+             [np.inf, 1.0, np.inf, PEAK_MU_BOUNDS_KEV[1], PEAK_SIGMA_BOUNDS_KEV[1]])
+    popt, pcov = curve_fit(_continuum_plus_gaussian, xf, yf, p0=p0, bounds=bounds, maxfev=20000)
+    C, k, amplitude, mu, sigma = popt
+    perr = np.sqrt(np.diag(pcov))
+
+    gaussian = amplitude * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+    y_clean = y - gaussian
+    info = dict(continuum_C=float(C), continuum_k=float(k),
+               amplitude=float(amplitude), amplitude_err=float(perr[2]),
+               mu_keV=float(mu), mu_err_keV=float(perr[3]),
+               sigma_keV=float(sigma), sigma_err_keV=float(perr[4]))
+    return y_clean, info
 
 
 def extract_one(nrfano_dir, detector, out_dir, commit):
@@ -181,22 +210,22 @@ def extract_one(nrfano_dir, detector, out_dir, commit):
     # raw data before enabling this, not assumed.
     x, y = histogram_density(er, n_bins=N_BINS, correct_nr_threshold=True)
 
-    # Exclude the leftover Cf-activation contamination (x[0]/y[0] is the
-    # synthetic Erecoil=0 anchor from histogram_density -- never in the
-    # search window, but kept out of this step regardless to be explicit).
-    x_real, y_real, contam_info = exclude_cf_activation_contamination(x[1:], y[1:])
-    x, y = np.concatenate(([x[0]], x_real)), np.concatenate(([y[0]], y_real))
-    if contam_info["n_removed"]:
-        lo, hi = contam_info["removed_range_keV"]
-        print(f"    Cf-activation contamination removed: {contam_info['n_removed']} bins, "
-              f"[{lo:.1f}, {hi:.1f}] keV (baseline={contam_info['baseline']:.1f})")
-        contam_note = (f"; the {lo:.0f}-{hi:.0f} keV region excluded as leftover Cf-252/Ge-75m "
-                       f"activation contamination (see this script's module docstring for the "
-                       f"evidence), not genuine Ba-133 structure")
-    else:
-        print(f"    no Cf-activation contamination found above {CONTAMINATION_THRESHOLD}x baseline "
-              f"({contam_info['baseline']:.1f})")
-        contam_note = "; no Cf-activation contamination found"
+    # Subtract the leftover Cf-activation contamination's fitted Gaussian
+    # component (x[0]/y[0] is the synthetic Erecoil=0 anchor from
+    # histogram_density -- well outside the fit window, but kept out of
+    # this step regardless to be explicit).
+    y_real_clean, peak_info = subtract_cf_activation_peak(x[1:], y[1:])
+    x, y = x, np.concatenate(([y[0]], y_real_clean))
+    print(f"    Cf-activation peak subtracted: mu={peak_info['mu_keV']:.1f}"
+          f"+-{peak_info['mu_err_keV']:.1f} keV, sigma={peak_info['sigma_keV']:.1f}"
+          f"+-{peak_info['sigma_err_keV']:.1f} keV, amplitude={peak_info['amplitude']:.0f}"
+          f"+-{peak_info['amplitude_err']:.0f}")
+    contam_note = (
+        f"; a leftover Cf-252/Ge-75m activation peak (see this script's module docstring for "
+        f"the evidence) was modeled as a Gaussian (mu={peak_info['mu_keV']:.1f} keV, "
+        f"sigma={peak_info['sigma_keV']:.1f} keV) on a power-law continuum fit over "
+        f"{CONTINUUM_GAUSSIAN_FIT_WINDOW_KEV} keV and subtracted out, not genuine Ba-133 structure"
+    )
 
     out_path = os.path.join(out_dir, f"{detector}_ER_{SOURCE_TAG}.h5")
     provenance = (
