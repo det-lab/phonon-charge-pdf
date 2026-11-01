@@ -92,6 +92,18 @@ class PErecoilTable:
         integration window must be clipped to before this is ever called."""
         return self._lo, self._hi
 
+    @property
+    def fortran_table(self):
+        """(x, c0, c1, c2, c3): breakpoints and per-interval power-basis
+        cubic coefficients -- scipy's own PPoly convention (value at Erecoil
+        in [x[i], x[i+1]) is ((c0[i]*dx + c1[i])*dx + c2[i])*dx + c3[i],
+        dx = Erecoil - x[i]), already divided by this table's own
+        normalization. Exactly what Ppq_fort.py needs to load this table
+        into the compiled library via PErecoil_set_table_NR/ER, whose
+        eval_cubic_table (src/Ppq_fort_s.f90) evaluates this identical form."""
+        c = self._interp.c / self._norm
+        return self._interp.x, c[0], c[1], c[2], c[3]
+
     def __call__(self, Erecoil):
         Erecoil = float(Erecoil)
         if Erecoil < 0:

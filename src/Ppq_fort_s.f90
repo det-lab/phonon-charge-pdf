@@ -37,6 +37,34 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! integration window; overlapping windows are merged.
   integer, parameter :: max_modes = 4
 
+  ! Tabulated PErecoil state (NR/ER independently): set once, before any
+  ! density evaluation, via PErecoil_set_table_NR/ER (the only non-pure
+  ! procedures in this file -- everything else here stays pure because it
+  ! only ever *reads* this, never between two evaluations of the same
+  ! (Ep, Eq) point). *_loaded false means "use the closed-form
+  ! PErecoil_NR_impl/ER_impl below" -- the default, unchanged behavior.
+  !
+  ! This is GLOBAL, process-wide state, not per Ppq_compiled instance: the
+  ! compiled library has no per-instance handle anywhere else either (the
+  ! (Ep, Eq) normalization tables live entirely in Python's NormInterpolator
+  ! for exactly this reason -- PErecoil can't, since it's evaluated at every
+  ! quadrature node inside this file's own hot integration loop, not once
+  ! per likelihood call). Two Ppq_compiled instances with different Erecoil
+  ! tables cannot coexist in one process; Ppq_fort.py's _load_erecoil_table
+  ! always explicitly sets-or-clears both tables on every construction so
+  ! this stays deterministic, if not concurrent.
+  !
+  ! x/c0/c1/c2/c3 are a piecewise cubic in power-basis form (scipy's
+  ! PchipInterpolator.c convention, see erecoil_table.py): on
+  ! [x(i), x(i+1)), the table value is
+  !   ((c0(i)*dx + c1(i))*dx + c2(i))*dx + c3(i), dx = Erecoil - x(i).
+  ! Pre-normalized on the Python side (erecoil_table.PErecoilTable already
+  ! integrates to 1), so no extra normalization constant is carried here.
+  logical :: nr_table_loaded = .false.
+  logical :: er_table_loaded = .false.
+  real(c_double), allocatable :: nr_table_x(:), nr_table_c0(:), nr_table_c1(:), nr_table_c2(:), nr_table_c3(:)
+  real(c_double), allocatable :: er_table_x(:), er_table_c0(:), er_table_c1(:), er_table_c2(:), er_table_c3(:)
+
   ! Bundles the scalar model/detector constants that are fixed for one
   ! Ppq_NR/Ppq_ER/pq_given_Erecoil_NR call, so the internal engine below threads one
   ! argument instead of nine.  Internal-only: never crosses the bind(c)
@@ -186,6 +214,53 @@ contains
       res = PErecoil_ER_impl(Erecoil)
   end procedure PErecoil_ER
 
+  ! Evaluate a piecewise cubic (power-basis, scipy PPoly convention: see the
+  ! module-level comment on nr_table_x/er_table_x above) at Erecoil. Shared
+  ! by both bands' table path -- not elemental itself (its array dummies are
+  ! whole, un-sliced tables, never a per-element broadcast), only called
+  ! from inside the elemental *_impl functions below, which each pass their
+  ! own band's arrays.
+  !
+  ! Erecoil < 0 returns 0, matching the closed-form PErecoil_NR_impl/
+  ! ER_impl's own convention (the integration/mode scan can transiently
+  ! probe just below zero). Anything else outside [x(1), x(n)] error-stops:
+  ! Ppq_fort.py's construction-time check (table's erecoil_range vs.
+  ! max(ep_range, eq_range)) should make this unreachable, so reaching it
+  ! here means that check was skipped or there is a genuine bug -- see
+  ! erecoil_table.PErecoilTable's own OutOfBoxError for the catchable
+  ! equivalent of this on the pure-Python path.
+  pure function eval_cubic_table(Erecoil, x, c0, c1, c2, c3, n) result(res)
+      real(c_double), intent(in) :: Erecoil
+      integer, intent(in) :: n
+      real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
+      real(c_double) :: res
+      integer :: lo, hi, mid
+      real(c_double) :: dx
+
+      if (Erecoil < 0.0d0) then
+          res = 0.0d0
+          return
+      end if
+      if (Erecoil < x(1) .or. Erecoil > x(n)) then
+          error stop "PErecoil table: Erecoil outside the table's range -- " // &
+              "Ppq_fort.py's construction-time check should have caught this; this is a bug"
+      end if
+      ! Binary search for x(lo) <= Erecoil <= x(lo+1), same style as interp1d below.
+      lo = 1
+      hi = n
+      do while (hi - lo > 1)
+          mid = (lo + hi) / 2
+          if (x(mid) <= Erecoil) then
+              lo = mid
+          else
+              hi = mid
+          end if
+      end do
+      if (lo == n) lo = n - 1   ! Erecoil == x(n) exactly: use the last interval
+      dx = Erecoil - x(lo)
+      res = ((c0(lo) * dx + c1(lo)) * dx + c2(lo)) * dx + c3(lo)
+  end function eval_cubic_table
+
   elemental function PErecoil_NR_impl(Erecoil) result(res)
       real(c_double), intent(in) :: Erecoil
       real(c_double) :: res
@@ -195,6 +270,11 @@ contains
       real(c_double), parameter :: PNa_over_PNb   = PNa / PNb
       real(c_double), parameter :: one_minus_PNa_over_PNd = (1.0d0 - PNa) / PNd
 
+      if (nr_table_loaded) then
+          res = eval_cubic_table(Erecoil, nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, &
+                                  nr_table_c3, size(nr_table_x))
+          return
+      end if
       res = PNa_over_PNb * exp(-Erecoil / PNb) + one_minus_PNa_over_PNd * exp(-Erecoil / PNd)
   end function PErecoil_NR_impl
 
@@ -207,8 +287,45 @@ contains
       real(c_double), parameter :: PGa_over_PGb   = PGa / PGb
       real(c_double), parameter :: one_minus_PGa_over_PGd = (1.0d0 - PGa) / PGd
 
+      if (er_table_loaded) then
+          res = eval_cubic_table(Erecoil, er_table_x, er_table_c0, er_table_c1, er_table_c2, &
+                                  er_table_c3, size(er_table_x))
+          return
+      end if
       res = PGa_over_PGb * exp(-Erecoil / PGb) + one_minus_PGa_over_PGd * exp(-Erecoil / PGd)
   end function PErecoil_ER_impl
+
+  module procedure PErecoil_set_table_NR
+      if (allocated(nr_table_x)) deallocate (nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, nr_table_c3)
+      allocate (nr_table_x(n), nr_table_c0(n - 1), nr_table_c1(n - 1), nr_table_c2(n - 1), nr_table_c3(n - 1))
+      nr_table_x = x
+      nr_table_c0 = c0
+      nr_table_c1 = c1
+      nr_table_c2 = c2
+      nr_table_c3 = c3
+      nr_table_loaded = .true.
+  end procedure PErecoil_set_table_NR
+
+  module procedure PErecoil_clear_table_NR
+      nr_table_loaded = .false.
+      if (allocated(nr_table_x)) deallocate (nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, nr_table_c3)
+  end procedure PErecoil_clear_table_NR
+
+  module procedure PErecoil_set_table_ER
+      if (allocated(er_table_x)) deallocate (er_table_x, er_table_c0, er_table_c1, er_table_c2, er_table_c3)
+      allocate (er_table_x(n), er_table_c0(n - 1), er_table_c1(n - 1), er_table_c2(n - 1), er_table_c3(n - 1))
+      er_table_x = x
+      er_table_c0 = c0
+      er_table_c1 = c1
+      er_table_c2 = c2
+      er_table_c3 = c3
+      er_table_loaded = .true.
+  end procedure PErecoil_set_table_ER
+
+  module procedure PErecoil_clear_table_ER
+      er_table_loaded = .false.
+      if (allocated(er_table_x)) deallocate (er_table_x, er_table_c0, er_table_c1, er_table_c2, er_table_c3)
+  end procedure PErecoil_clear_table_ER
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
   ! per Ppq_NR/Ppq_ER call (by integrate_Ppq) instead of recomputing the Z

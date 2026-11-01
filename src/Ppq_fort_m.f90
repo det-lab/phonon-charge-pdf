@@ -72,6 +72,35 @@ module Ppq_fort_m
     real(c_double) :: res
   end function PErecoil_ER
 
+  module subroutine PErecoil_set_table_NR(x, c0, c1, c2, c3, n) bind(c, name="PErecoil_set_table_NR")
+    !! Switch PErecoil_NR to a tabulated true-recoil-energy spectrum: a
+    !! piecewise cubic in power-basis form (scipy PPoly convention; see
+    !! erecoil_table.PErecoilTable, which builds x/c0..c3 with PCHIP and is
+    !! already normalized to integrate to 1), replacing the closed-form
+    !! biexponential until PErecoil_clear_table_NR is called. NOT pure: this
+    !! is global, process-wide state (see the module-level comment on
+    !! nr_table_x in Ppq_fort_s.f90) -- call it once, before any density
+    !! evaluation, never from inside a parallel region. x has n points
+    !! (strictly increasing); c0/c1/c2/c3 each have n-1, one per interval.
+    integer(c_int), value :: n
+    real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
+  end subroutine PErecoil_set_table_NR
+
+  module subroutine PErecoil_clear_table_NR() bind(c, name="PErecoil_clear_table_NR")
+    !! Undo PErecoil_set_table_NR: PErecoil_NR goes back to the closed-form
+    !! biexponential. NOT pure; see PErecoil_set_table_NR.
+  end subroutine PErecoil_clear_table_NR
+
+  module subroutine PErecoil_set_table_ER(x, c0, c1, c2, c3, n) bind(c, name="PErecoil_set_table_ER")
+    !! Same as PErecoil_set_table_NR but for PErecoil_ER.
+    integer(c_int), value :: n
+    real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
+  end subroutine PErecoil_set_table_ER
+
+  module subroutine PErecoil_clear_table_ER() bind(c, name="PErecoil_clear_table_ER")
+    !! Same as PErecoil_clear_table_NR but for PErecoil_ER.
+  end subroutine PErecoil_clear_table_ER
+
   pure module function pq_given_Erecoil_NR(Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_NR")
     !! An internal bind(c) handle on the per-Erecoil N-integral piece of
     !! Ppq_NR, exposed only so test_PpqFort.py can cross-check it against

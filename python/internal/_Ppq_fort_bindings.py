@@ -143,6 +143,16 @@ def _load_library():
     ]
     _api.Ppq_region_ER.restype = ctypes.c_double
 
+    for name in ("PErecoil_set_table_NR", "PErecoil_set_table_ER"):
+        fn = getattr(_api, name)
+        fn.argtypes = [_DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int]
+        fn.restype = None
+
+    for name in ("PErecoil_clear_table_NR", "PErecoil_clear_table_ER"):
+        fn = getattr(_api, name)
+        fn.argtypes = []
+        fn.restype = None
+
     return _api
 
 
@@ -245,6 +255,49 @@ def Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, *,
     return api.Ppq_region_ER(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
                             F0, eps, V, p0, p10, q0, q10)
+
+
+def PErecoil_set_table_NR(x, c0, c1, c2, c3):
+    """Switch the compiled library's PErecoil_NR to a tabulated spectrum:
+    x (breakpoints, n points) and c0/c1/c2/c3 (per-interval power-basis
+    cubic coefficients, n-1 points each) -- see
+    erecoil_table.PErecoilTable.fortran_table for exactly this shape, and
+    its own docstring for the convention. GLOBAL, process-wide state (see
+    the module-level comment on nr_table_x in src/Ppq_fort_s.f90): call
+    this once per Ppq_compiled construction, never concurrently with
+    another Ppq_compiled's density calls in the same process."""
+    api = _load_library()
+    x = np.ascontiguousarray(np.asarray(x, dtype=np.float64))
+    c0 = np.ascontiguousarray(np.asarray(c0, dtype=np.float64))
+    c1 = np.ascontiguousarray(np.asarray(c1, dtype=np.float64))
+    c2 = np.ascontiguousarray(np.asarray(c2, dtype=np.float64))
+    c3 = np.ascontiguousarray(np.asarray(c3, dtype=np.float64))
+    api.PErecoil_set_table_NR(x, c0, c1, c2, c3, x.size)
+
+
+def PErecoil_clear_table_NR():
+    """Undo PErecoil_set_table_NR: PErecoil_NR goes back to the closed-form
+    biexponential. See its docstring for why this is global, process-wide
+    state."""
+    api = _load_library()
+    api.PErecoil_clear_table_NR()
+
+
+def PErecoil_set_table_ER(x, c0, c1, c2, c3):
+    """Same as PErecoil_set_table_NR but for PErecoil_ER."""
+    api = _load_library()
+    x = np.ascontiguousarray(np.asarray(x, dtype=np.float64))
+    c0 = np.ascontiguousarray(np.asarray(c0, dtype=np.float64))
+    c1 = np.ascontiguousarray(np.asarray(c1, dtype=np.float64))
+    c2 = np.ascontiguousarray(np.asarray(c2, dtype=np.float64))
+    c3 = np.ascontiguousarray(np.asarray(c3, dtype=np.float64))
+    api.PErecoil_set_table_ER(x, c0, c1, c2, c3, x.size)
+
+
+def PErecoil_clear_table_ER():
+    """Same as PErecoil_clear_table_NR but for PErecoil_ER."""
+    api = _load_library()
+    api.PErecoil_clear_table_ER()
 
 
 def _make_threaded_pdf(eval_chunk, n_workers):

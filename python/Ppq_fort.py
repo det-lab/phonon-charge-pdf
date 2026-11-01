@@ -82,7 +82,15 @@ _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 
 sys.path.insert(0, _INTERNAL_DIR)
 from _Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
-                                 Ppq_region_ER, Ppq_region_NR, version as _fort_version)
+                                 Ppq_region_ER, Ppq_region_NR, version as _fort_version,
+                                 PErecoil_set_table_NR, PErecoil_clear_table_NR,
+                                 PErecoil_set_table_ER, PErecoil_clear_table_ER)
+
+# Erecoil margin (keV) past max(ep_max, eq_max) a PErecoil table must still
+# cover: matches Ppq_py.py's Ppq_inspect_NR/ER ("maxx = max(Ep, Eq) + 5"),
+# the same conservative bound on how far past (Ep, Eq) the true Erecoil peak
+# can physically sit (EP_mean = Erecoil + (V/1000)*Nbar(Erecoil) >= Erecoil).
+_ERECOIL_MARGIN_KEV = 5.0
 
 
 class Ppq_compiled:
@@ -110,6 +118,18 @@ class Ppq_compiled:
         python/cli/normgrid.py for exactly this region), or a name registered in
         python/cli/table_registry.json.  If given, Ppq_integral_NR/Ppq_integral_ER
         interpolate it instead of running the quadrature.
+    PErecoil_table_NR, PErecoil_table_ER : path, erecoil_table.PErecoilTable, or None
+        Tabulated true-recoil-energy spectrum for that band (see
+        erecoil_table.py), replacing the closed-form biexponential
+        PErecoil_NR/PErecoil_ER inside every Erecoil integral -- unlike
+        Ppq_table_NR/ER, this changes the density itself, not just its
+        normalization. Checked once here (erecoil_range must reach 0 and
+        cover max(ep_range, eq_range) + 5 keV) and loaded into the compiled
+        library's GLOBAL, process-wide table state (see the module-level
+        comment on nr_table_x in src/Ppq_fort_s.f90): constructing a second
+        Ppq_compiled in the same process, with or without its own
+        PErecoil_table_NR/ER, replaces this one's. Prototype stage -- see
+        erecoil_table.py's own module docstring.
     prior_bounds : dict or None
         The MCMC prior's hard bounds, {param: (lo, hi)} for k (NR), V, p0,
         p10, q0, q10 (Z/eps may be given as their fixed values), flat --
@@ -129,6 +149,7 @@ class Ppq_compiled:
     def __init__(self, ep_range, eq_range, ep_data, eq_data, *,
                  norm_epsrel=None, norm_epsabs=None,
                  Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
+                 PErecoil_table_NR=None, PErecoil_table_ER=None,
                  n_workers=None):
         # A table only ever replaces the normalization integral, never the
         # per-event PDF evaluation (_Ppq_densities_NR/_Ppq_densities_ER always need
@@ -147,6 +168,8 @@ class Ppq_compiled:
         self.n_workers = n_workers
         self.Ppq_table_NR = self._load_table(Ppq_table_NR, "NR")
         self.Ppq_table_ER = self._load_table(Ppq_table_ER, "ER")
+        self.PErecoil_table_NR = self._load_erecoil_table(PErecoil_table_NR, "NR")
+        self.PErecoil_table_ER = self._load_erecoil_table(PErecoil_table_ER, "ER")
         if prior_bounds is not None:
             if not self._tables():
                 raise ValueError("prior_bounds is checked against the tables; no table was given")
@@ -220,6 +243,51 @@ class Ppq_compiled:
                 or not np.allclose(table.eq_range, eq_range, rtol=0, atol=1e-12)):
             raise ValueError(f"table was built for ep_range={table.ep_range}, eq_range={table.eq_range}, "
                              f"not ep_range={ep_range}, eq_range={eq_range}")
+        return table
+
+    def _load_erecoil_table(self, table, band):
+        """Validate table's erecoil_range against this region, then load it
+        into the compiled library (PErecoil_set_table_NR/ER) or, if table is
+        None, explicitly clear that band's table (PErecoil_clear_table_NR/ER)
+        -- every construction sets-or-clears both bands, rather than
+        silently inheriting whatever a previous Ppq_compiled in this process
+        left loaded (see PErecoil_table_NR/ER's own docstring above on why
+        this state is global).
+
+        Unlike Ppq_py.py's prototype (integrate_inspect's erecoil_bounds),
+        nothing dynamically checks Erecoil against the table at run time in
+        the compiled library -- bind(c) module procedures here are pure, so
+        there's no catchable-exception path across that boundary (see the
+        fatal error stop's docstring-level discussion for the analogous
+        parameter-box case). This check, done once here from the physically
+        provable bound EP_mean = Erecoil + (V/1000)*Nbar(Erecoil) >= Erecoil
+        (so the true Erecoil peak for any (Ep, Eq) in this region can't
+        exceed max(ep_max, eq_max) + _ERECOIL_MARGIN_KEV), is what makes
+        that unreachable in practice -- "fails now, not hours into the run."
+        """
+        set_table, clear_table = ((PErecoil_set_table_NR, PErecoil_clear_table_NR) if band == "NR"
+                                   else (PErecoil_set_table_ER, PErecoil_clear_table_ER))
+        if table is None:
+            clear_table()
+            return None
+        sys.path.insert(0, _PYTHON_DIR)
+        from erecoil_table import PErecoilTable
+        if not isinstance(table, PErecoilTable):
+            table = PErecoilTable.from_file(table)
+        lo, hi = table.erecoil_range
+        needed = max(self.ep_max, self.eq_max) + _ERECOIL_MARGIN_KEV
+        if lo > 0.0:
+            raise ValueError(
+                f"PErecoil_table_{band}: erecoil_range starts at {lo!r}, not <= 0 -- a table used "
+                "with Ppq_compiled (the compiled Fortran path) must cover Erecoil down to 0, since "
+                "nothing dynamically checks this at run time there, unlike Ppq_py.py's prototype path.")
+        if hi < needed:
+            raise ValueError(
+                f"PErecoil_table_{band}: erecoil_range only reaches {hi!r} keV, but this region "
+                f"(ep_range/eq_range up to {max(self.ep_max, self.eq_max)!r} keV) needs it to reach "
+                f"at least {needed!r} keV -- rebuild the table with a wider range, or narrow "
+                "ep_range/eq_range.")
+        set_table(*table.fortran_table)
         return table
 
     def _quadrature_tolerances(self):
