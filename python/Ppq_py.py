@@ -46,11 +46,20 @@ Not part of the public API (not in __all__) -- no end user needs these directly:
   peak-width fit.
 """
 
+import os
+import sys
 import warnings
 
 import numpy as np
 import scipy.integrate as integrate
 from scipy.optimize import curve_fit
+
+# cli/'s normgrid.py (table machinery) is imported lazily, only from inside
+# integrate_inspect's erecoil_bounds error path below -- same reasoning and
+# the same sys.path setup Ppq_fort.py uses for its own lazy `import normgrid`:
+# this keeps this module's "no compiled-library dependency at all" promise,
+# since that import only has to happen for a tabulated PErecoil's error case.
+_CLI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cli")
 
 __all__ = [
     "Y", "Nbar_NR", "Nbar_ER", "sigp", "sigq", "PErecoil_NR", "PErecoil_ER",
@@ -269,13 +278,23 @@ def pq_given_Erecoil_NR(Erecoil, Ep, Eq,
              eps,
              V,
              p0, p10,
-             q0, q10):
+             q0, q10,
+             p_erecoil=None):
     """Unnormalized NR (Ep, Eq) density at one true recoil energy Erecoil (keV):
-    PErecoil_NR(Erecoil) times the N-integral (a fixed 21-point Simpson rule over a
-    +/-5-sigma window around the Gaussian-in-N peak)."""
+    p_erecoil(Erecoil) (PErecoil_NR by default) times the N-integral (a fixed
+    21-point Simpson rule over a +/-5-sigma window around the Gaussian-in-N
+    peak).
+
+    p_erecoil overrides the closed-form PErecoil_NR -- pass an
+    erecoil_table.PErecoilTable (or anything else matching its Erecoil ->
+    density signature) to use a tabulated true-recoil-energy spectrum
+    instead. This function does not itself keep Erecoil inside the table's
+    range: call it through Ppq_inspect_NR (its own p_erecoil argument), which
+    clips the scan/integration windows to erecoil_range first."""
+    p_erecoil = PErecoil_NR if p_erecoil is None else p_erecoil
     Nbar_val = Nbar_NR(Erecoil, k=k, Z=Z, eps=eps)
     return float(pq_N_integral(Erecoil, Ep, Eq, Nbar_val, F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-                 * PErecoil_NR(Erecoil))
+                 * p_erecoil(Erecoil))
 
 
 def Ppq_inspect_NR(Ep, Eq,
@@ -286,7 +305,8 @@ def Ppq_inspect_NR(Ep, Eq,
               V,
               p0, p10,
               q0, q10,
-              erecoil_step):
+              erecoil_step,
+              p_erecoil=None):
     """The full NR PDF value Ppq_NR(Ep, Eq), found by scanning a uniform Erecoil
     grid (step `erecoil_step`, in keV) for the Gaussian-in-N exponent's peak
     and integrating pq_given_Erecoil_NR around it with scipy.integrate.quad -- the
@@ -302,6 +322,13 @@ def Ppq_inspect_NR(Ep, Eq,
     same reasoning behind quad's own `points=` argument (see
     test/python/quad_breakpoints_demo.py): a peak narrower than erecoil_step
     can fall entirely between grid points and be missed.
+
+    p_erecoil overrides the closed-form PErecoil_NR (see pq_given_Erecoil_NR).
+    When it has an erecoil_range (an erecoil_table.PErecoilTable does), this
+    function's own scan and integrate_inspect's window are both clipped to
+    it, and integrate_inspect raises normgrid.OutOfBoxError rather than
+    silently truncating if the integrand still needs more room than the
+    table's edge allows.
 
     Returns a dict:
       value, value_err : the PDF value and its quadrature error.
@@ -320,9 +347,16 @@ def Ppq_inspect_NR(Ep, Eq,
     if F0 == 0:
         raise ValueError("Fano factor F(Erecoil) = F0 is zero for all Erecoil")
 
+    p_erecoil = PErecoil_NR if p_erecoil is None else p_erecoil
+    erecoil_bounds = getattr(p_erecoil, "erecoil_range", None)
+
     # find Erecoil_max
     f = lambda erecoil,ep,eq: -1*N_exponent(erecoil,ep,eq,k=k,Z=Z,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=False)
 
+    # Deliberately NOT clipped to erecoil_bounds: this scan never calls
+    # p_erecoil (N_exponent alone), and the bounds check right after locating
+    # Erecoil_peak below needs that peak's true, unclamped location to tell
+    # whether the table actually reaches it.
     maxx = max(Ep, Eq) + 5
     erecoil_arr = np.arange(5e-21, maxx, erecoil_step)
     f_arr = np.zeros(len(erecoil_arr), dtype=np.float64)
@@ -353,10 +387,31 @@ def Ppq_inspect_NR(Ep, Eq,
     # overflowed to NaN.
     valid_idx = np.flatnonzero(valid)
     Erecoil_peak = erecoil_arr[valid_idx[np.argmin(f_arr[valid_idx])]]
+    if erecoil_bounds is not None:
+        # This scan never calls p_erecoil (it locates the resolution-driven
+        # peak of N_exponent alone, independent of the recoil spectrum), so
+        # it cannot raise on its own -- but if *that* peak sits outside the
+        # table's range, this (Ep, Eq) point's dominant contribution is
+        # somewhere the table has no data for. Clamping it to the edge and
+        # carrying on would hand integrate_inspect a seed whose own g() value
+        # there can underflow to exactly 0, which looks exactly like "no
+        # density here" instead of "the table doesn't reach where it is" --
+        # so raise here, before that happens, rather than downstream.
+        lo, hi = erecoil_bounds
+        tol = 1e-9 * (hi - lo)
+        if not (lo - tol <= Erecoil_peak <= hi + tol):
+            sys.path.insert(0, _CLI_DIR)
+            from normgrid import OutOfBoxError
+            raise OutOfBoxError(
+                f"Ppq_inspect_NR(Ep={Ep!r}, Eq={Eq!r}): the dominant Erecoil={Erecoil_peak!r} "
+                f"peak sits outside the PErecoil table's range [{lo:.6g}, {hi:.6g}] -- this point's "
+                "density depends on a recoil energy the table has no data for.",
+                axis="Erecoil", value=Erecoil_peak, box=(lo, hi), query={"Ep": Ep, "Eq": Eq})
+        Erecoil_peak = min(max(Erecoil_peak, lo), hi)
 
-    g = lambda erecoil, ep, eq: pq_given_Erecoil_NR(erecoil, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    g = lambda erecoil, ep, eq: pq_given_Erecoil_NR(erecoil, ep, eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, p_erecoil=p_erecoil)
 
-    return integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step)
+    return integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step, erecoil_bounds=erecoil_bounds)
 
 
 def pq_given_Erecoil_ER(Erecoil, Ep, Eq,
@@ -365,14 +420,17 @@ def pq_given_Erecoil_ER(Erecoil, Ep, Eq,
              eps,
              V,
              p0, p10,
-             q0, q10):
+             q0, q10,
+             p_erecoil=None):
     """Unnormalized ER (Ep, Eq) density at one true recoil energy Erecoil (keV):
-    PErecoil_ER(Erecoil) times the N-integral (a fixed 21-point Simpson rule over a
-    +/-5-sigma window around the Gaussian-in-N peak), with the electron-
-    recoil yield Y=1 (see pq_given_Erecoil_NR for the analogous NR calculation)."""
+    p_erecoil(Erecoil) (PErecoil_ER by default) times the N-integral (a fixed
+    21-point Simpson rule over a +/-5-sigma window around the Gaussian-in-N
+    peak), with the electron-recoil yield Y=1 (see pq_given_Erecoil_NR for
+    the analogous NR calculation, including what p_erecoil overrides)."""
+    p_erecoil = PErecoil_ER if p_erecoil is None else p_erecoil
     Nbar_val = Nbar_ER(Erecoil, eps=eps)
     return float(pq_N_integral(Erecoil, Ep, Eq, Nbar_val, F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
-                 * PErecoil_ER(Erecoil))
+                 * p_erecoil(Erecoil))
 
 
 def consecutive_groups(data, stepsize=1):
@@ -391,7 +449,7 @@ def gaussian_profile(x, A, mu, sigma):
     return A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
 
 
-def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step):
+def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step, erecoil_bounds=None):
     """Integrate g(Erecoil, Ep, Eq) over Erecoil by locating its peak(s) on a
     uniform scan grid (step `erecoil_step`, in keV, starting from an
     approximate peak location Erecoil_peak) and integrating each located peak
@@ -406,12 +464,21 @@ def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step):
     function's own name doesn't carry an N/G suffix the way Ppq_inspect_NR/
     Ppq_inspect_ER do.
 
+    erecoil_bounds, if given, is g's PErecoil table's own erecoil_range: the
+    scan/integration window is clipped to it and never grows past its upper
+    edge, since a tabulated PErecoil raises OutOfBoxError rather than
+    extrapolate -- g must never be called outside this range. None (the
+    default) keeps the unrestricted closed-form-PErecoil behavior.
+
     Returns a dict: value, value_err (the integral and its quadrature
     error), erecoil_scan_grid, erecoil_scan_integrand, and peaks -- see
     Ppq_inspect_NR's docstring for the shape of each peaks entry.
     """
-    minx = 5e-21
+    erecoil_hi = None if erecoil_bounds is None else erecoil_bounds[1]
+    minx = 5e-21 if erecoil_bounds is None else max(5e-21, erecoil_bounds[0])
     maxx = max(Ep, Eq) + 5
+    if erecoil_hi is not None:
+        maxx = min(maxx, erecoil_hi)
 
     # This early-out (Erecoil_peak's own value is exactly zero or NaN) has not
     # been confirmed to be reachable given how Erecoil_peak is located by the
@@ -435,7 +502,25 @@ def integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step):
         nonZero_idx = np.where(erecoil_integrand_arr > 0)[0]
         if len(nonZero_idx) == 0 or nonZero_idx[-1] + 5 < len(erecoil_arr) - 1:
             break
-        maxx = 1.5 * maxx
+        if erecoil_hi is not None and maxx >= erecoil_hi:
+            # The integrand is still significantly nonzero right at the
+            # table's own edge: real probability mass sits past erecoil_hi,
+            # which a tabulated PErecoil cannot supply (it raises rather than
+            # extrapolate). Silently accepting this window would silently
+            # under-integrate this (Ep, Eq) point -- raise instead, the same
+            # "table doesn't cover what's needed" failure as a direct
+            # out-of-range PErecoil query, just discovered here instead of
+            # inside a single call to g.
+            sys.path.insert(0, _CLI_DIR)
+            from normgrid import OutOfBoxError
+            raise OutOfBoxError(
+                f"Erecoil integration window for Ep={Ep!r}, Eq={Eq!r} still needs to extend past "
+                f"{erecoil_hi:.6g} keV (the PErecoil table's own upper edge) to capture the full "
+                "integrand -- refusing to silently truncate it there. Either this (Ep, Eq) point "
+                "is outside what the table's recoil-energy range can support, or the table needs "
+                "to extend further.",
+                axis="Erecoil", value=maxx, box=(minx, erecoil_hi), query={"Ep": Ep, "Eq": Eq})
+        maxx = 1.5 * maxx if erecoil_hi is None else min(1.5 * maxx, erecoil_hi)
 
     if len(nonZero_idx) == 0:
         # the peak is narrower than the scan step and fell between grid
@@ -585,21 +670,25 @@ def Ppq_inspect_ER(Ep, Eq,
               V,
               p0, p10,
               q0, q10,
-              erecoil_step):
+              erecoil_step,
+              p_erecoil=None):
     """The full ER PDF value Ppq_ER(Ep, Eq) -- the ER counterpart of
-    Ppq_inspect_NR (see its docstring for the method, return shape, and
-    the "never use this in a fit/MCMC loop" caveat). `erecoil_step` (keV)
-    should be scanned finer than the narrowest expected peak: ER peaks
-    can be as narrow as the zero-energy ionization resolution q0 (~0.06
-    keV for typical CDMS parameters), so e.g. erecoil_step=0.005 is finer
-    than the 0.01 keV grid the Fortran Ppq_ER integrates on. Usage to
-    just get the value:
+    Ppq_inspect_NR (see its docstring for the method, return shape, the
+    "never use this in a fit/MCMC loop" caveat, and what p_erecoil
+    overrides). `erecoil_step` (keV) should be scanned finer than the
+    narrowest expected peak: ER peaks can be as narrow as the zero-energy
+    ionization resolution q0 (~0.06 keV for typical CDMS parameters), so
+    e.g. erecoil_step=0.005 is finer than the 0.01 keV grid the Fortran
+    Ppq_ER integrates on. Usage to just get the value:
     Ppq_inspect_ER(...)["value"].
     """
     if F0 == 0:
         raise ValueError("Fano factor F(Erecoil) = F0 is zero for all Erecoil")
 
-    g = lambda erecoil, ep, eq: pq_given_Erecoil_ER(erecoil, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+    p_erecoil = PErecoil_ER if p_erecoil is None else p_erecoil
+    erecoil_bounds = getattr(p_erecoil, "erecoil_range", None)
+
+    g = lambda erecoil, ep, eq: pq_given_Erecoil_ER(erecoil, ep, eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, p_erecoil=p_erecoil)
 
     # k, Z are unused placeholders here: is_ER=True forces Y=1 in N_exponent
     f = lambda erecoil,ep,eq: -1*N_exponent(erecoil,ep,eq,k=0.0,Z=1.0,F0=F0,eps=eps,V=V,p0=p0,p10=p10,q0=q0,q10=q10,is_ER=True)
@@ -607,6 +696,9 @@ def Ppq_inspect_ER(Ep, Eq,
     # WARNING: this will only work if your peaks have a width greater
     # than 0.1 keV, which seems to be true for all reasonable CDMS
     # parameters (see Ppq_inspect_NR's docstring).
+    #
+    # Deliberately NOT clipped to erecoil_bounds -- see the matching comment
+    # in Ppq_inspect_NR.
     maxx = max(Ep, Eq) + 5
     erecoil_arr = np.arange(5e-21, maxx, erecoil_step)
     f_arr = np.zeros(len(erecoil_arr))
@@ -640,5 +732,18 @@ def Ppq_inspect_ER(Ep, Eq,
     # overflowed to NaN.
     valid_idx = np.flatnonzero(valid)
     Erecoil_peak = erecoil_arr[valid_idx[np.argmin(f_arr[valid_idx])]]
+    if erecoil_bounds is not None:
+        # See the matching guard (and its full rationale) in Ppq_inspect_NR.
+        lo, hi = erecoil_bounds
+        tol = 1e-9 * (hi - lo)
+        if not (lo - tol <= Erecoil_peak <= hi + tol):
+            sys.path.insert(0, _CLI_DIR)
+            from normgrid import OutOfBoxError
+            raise OutOfBoxError(
+                f"Ppq_inspect_ER(Ep={Ep!r}, Eq={Eq!r}): the dominant Erecoil={Erecoil_peak!r} "
+                f"peak sits outside the PErecoil table's range [{lo:.6g}, {hi:.6g}] -- this point's "
+                "density depends on a recoil energy the table has no data for.",
+                axis="Erecoil", value=Erecoil_peak, box=(lo, hi), query={"Ep": Ep, "Eq": Eq})
+        Erecoil_peak = min(max(Erecoil_peak, lo), hi)
 
-    return integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step)
+    return integrate_inspect(g, Ep, Eq, Erecoil_peak, erecoil_step, erecoil_bounds=erecoil_bounds)
