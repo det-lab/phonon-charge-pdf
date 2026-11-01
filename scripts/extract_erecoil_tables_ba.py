@@ -25,67 +25,75 @@ the PCHIP continuum alone absorb them, is the separate "peaks
 infrastructure" work this extraction is meant to feed into.
 
 Ba's OWN raw data has a large, broad feature around 100-190 keV that is
-NOT one of those four lines and does not belong in this table at all: it's
-leftover Ge-75m (139.7 keV) neutron-activation contamination from a prior
-Cf-252 run on the same crystal, not genuine Ba-133 physics. Three lines of
-evidence support this (none alone conclusive, together fairly convincing):
-(1) each detector's own hump position tracks its own Cf-derived Ge-75m-
-candidate line position to within a few keV, for 4 of 5 detectors; (2) a
-from-scratch Klein-Nishina calculation of the Compton continuum expected
-from Ba-133's real higher-energy lines (276/303/356/384 keV, weighted by
-their emission intensities) comes out far too small and the wrong shape to
-explain it; (3) no published Ba-133 reference spectrum shows any line in
-100-200 keV.
+NOT one of those four lines: it's leftover Ge-75m (139.7 keV)
+neutron-activation contamination from a prior Cf-252 run on the same
+crystal, not genuine Ba-133 physics. Three lines of evidence support this
+(none alone conclusive, together fairly convincing): (1) each detector's
+own hump position tracks its own Cf-derived Ge-75m-candidate line
+position to within a few keV, for 4 of 5 detectors; (2) a from-scratch
+Klein-Nishina calculation of the Compton continuum expected from Ba-133's
+real higher-energy lines (276/303/356/384 keV, weighted by their emission
+intensities) comes out far too small and the wrong shape to explain it;
+(3) no published Ba-133 reference spectrum shows any line in 100-200 keV.
 
-fit_cf_activation_mixture below removes it with a two-population mixture
-model instead of a subtracted curve: a power-law background (Er^k) plus a
-single Gaussian "peak" population, fit jointly by unbinned extended
-maximum likelihood to the real events in MIXTURE_FIT_WINDOW_KEV. Each
-event's own posterior probability of being background (Bayes' rule on the
-two fitted population densities at that event's own Er -- the same idea
-sPlot/sWeights uses in particle physics to statistically separate species)
-becomes its histogram weight, rather than subtracting one global curve
-from the binned density.
+DELIBERATE DECISION: this contamination is NOT removed. It is left in the
+table as-measured, documented here and in the table's own provenance
+string instead. This follows several attempts at removing it, all tried
+and all rejected as worse than the problem they were meant to fix:
 
-Two earlier versions were tried and both left visible artifacts. A hard
-density-threshold cut, letting PCHIP bridge the resulting ~60-130 keV gap
-from the surviving data on either side, was visibly wrong: PCHIP has
-nothing inside that gap to anchor its curvature to, and the bridge didn't
-track the two-sided falloff the data actually shows. Fitting the same
-power-law background + Gaussian jointly by weighted least-squares on the
-*binned density* and subtracting only the Gaussian back out did better,
-but the background curve -- forced to fit the full 20-260 keV dynamic
-range with one 2-parameter shape -- systematically overshot the data at
-low Er and undershot it just below the peak, leaving a visible "double
-peak" after subtraction (confirmed by inspection, not assumed): one real
-bump (the contamination) and one artifact bump from the background
-mismatch. The per-event mixture-weighting approach fixes this because the
-weight at each event depends on the *local* ratio of the two fitted
-densities at that event's own energy, not a single global curve that has
-to simultaneously fit both tails; checked directly against power-law,
-log-log-quadratic, and 1+c/Er background shapes, which gave nearly
-identical weighted results -- much less sensitive to the exact background
-functional form than the subtraction approach was, so the simplest
-(power-law) shape is kept.
+  1. A hard density-threshold cut, letting PCHIP bridge the resulting
+     ~60-130 keV gap from the surviving data on either side -- visibly
+     wrong: PCHIP has nothing inside that gap to anchor its curvature to.
+  2. Fitting a power-law background + Gaussian jointly by weighted least
+     squares on the binned density and subtracting only the Gaussian back
+     out -- the background, forced to fit the full 20-260 keV dynamic
+     range with one 2-parameter shape, systematically overshot the data at
+     low Er and undershot it just below the peak, leaving a visible
+     "double peak" artifact after subtraction.
+  3. A two-population mixture (same power-law background + Gaussian) fit
+     by unbinned extended maximum likelihood, weighting each event by its
+     posterior probability of being background (sPlot-style) rather than
+     subtracting a curve -- better, but still left real (not noise-level,
+     confirmed against Poisson statistics), unexplained non-monotonic
+     residual structure for 3 of 5 detectors that no amount of window or
+     background-shape tuning removed.
+  4. Both a charge-trapping-motivated asymmetric peak shape (exponentially
+     modified Gaussian, tried in both tail directions) and fitting the
+     same mixture natively in (Ep, Eq) space instead of the derived Er
+     estimator -- neither reduced the residual structure; the (Ep, Eq) fit
+     in particular failed structurally, because band_outliers() already
+     restricts every surviving event (contamination and genuine Ba-133
+     alike) to within 5 sigma of the same ER band, so (Ep, Eq) carries no
+     more separating information than the 1D Er estimate already did.
 
-The fitted Gaussian's width (sigma ~35-48 keV, i.e. FWHM ~85-115 keV) is
-far broader than a real detector energy resolution at 140 keV; this is
-expected, not a sign the fit is wrong -- Er here is the crude, uncorrected
-estimator (erecoil_of, no yield/resolution correction), so "sigma" is just
-whatever width lets a single Gaussian track this estimator's own smearing
-of the hump, not a claim about the true line width. Likewise the "peak
-fraction" f (0.45-0.80 across detectors) is large only because the
-Gaussian is broad relative to the fit window, not because most of the
-window's events are contamination -- the weighted spectra themselves
-(checked directly) stay smooth, positive, and consistent with the
-surrounding clean data.
+The common thread: with only energy information (no timing data
+available -- checked), there is a hard ceiling on how cleanly these two
+populations can be statistically separated, and every attempt at pushing
+past it introduced a new artifact whose size isn't well understood. A
+known, well-characterized problem (this hump, whose origin is established
+above) is preferable to an unknown one (whatever residual bias a
+not-fully-trusted removal method leaves behind). This also matches the
+rest of this project's existing approach: erecoil_of is already a crude,
+uncorrected zeroth-order Er estimator (no yield or resolution
+deconvolution) standing in for the true recoil-energy spectrum, so using
+"what this calibration run's data actually shows" as the table, rather
+than a statistically reconstructed version of it, is a difference of
+degree, not of kind.
 
-Weights outside MIXTURE_FIT_WINDOW_KEV are fixed at 1 (no reweighting);
-the fitted populations evaluated at the window edges give a posterior
-background-probability of ~0.96, not exactly 1, so there is a small
-(~4%) discontinuity in the weight right at each edge -- checked directly
-and found negligible against the surrounding bin-to-bin noise, not
-corrected for further.
+Consequence: this table's PErecoil_ER(Ba) will not respond correctly to
+changes in resolution parameters during an MCMC fit in the ~70-200 keV
+region (the contamination's shape is baked in as measured, not as a true
+recoil-energy spectrum that gets reconvolved), and the table is specific
+to this calibration run -- it should not be assumed to generalize to a
+different run without revisiting this contamination. An analysis whose
+fit region is sensitive to this should exclude ~70-200 keV from its own
+fit window; this script does not make that choice on the caller's behalf.
+Properly separating this (rather than working around it) is exactly the
+"peaks infrastructure" idea from this project's design discussions: model
+Ge-75m explicitly via the project's own resolution physics once real
+per-detector resolution parameters (F0, V, p0, p10, q0, q10) are
+available, instead of an empirically-fit curve on derived, energy-only
+data that's already shown it can't reliably separate the two populations.
 
 Same Erecoil estimate and quantile/log-log-slope-style binning as the Cf
 script (imported from it, not reimplemented): Er = pt - V*(qi/eps)/1000,
@@ -107,8 +115,6 @@ import sys
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
-from scipy.special import erf
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
@@ -162,89 +168,6 @@ def band_outliers(Ep, Eq, nsig=CLEAN_NSIG, n_slices=30):
     return bad
 
 
-# Where the mixture fit looks and where it's allowed to put the Gaussian
-# population's center and width -- see this module's docstring for the
-# evidence behind the model itself. The fit window (20-260 keV) extends
-# well past the hump on both sides so the background population is
-# anchored by real clean data, not just the few bins immediately flanking
-# the peak; the mu/sigma bounds keep the fit from wandering onto the real
-# 81 keV line (excluded below 60 keV) or past the falloff into the
-# post-line region (above 250 keV).
-MIXTURE_FIT_WINDOW_KEV = (20.0, 260.0)
-PEAK_MU_BOUNDS_KEV = (60.0, 250.0)
-PEAK_SIGMA_BOUNDS_KEV = (5.0, 100.0)
-PEAK_FRACTION_BOUNDS = (1e-4, 0.95)
-BACKGROUND_K_BOUNDS = (-3.0, 1.0)
-
-
-def _powerlaw_pdf(Er, k, lo, hi):
-    """Power law Er^k, normalized to a unit-integral density over [lo, hi]."""
-    if abs(k + 1.0) < 1e-8:
-        norm = np.log(hi / lo)
-    else:
-        norm = (hi ** (k + 1.0) - lo ** (k + 1.0)) / (k + 1.0)
-    return Er**k / norm
-
-
-def _gaussian_pdf(Er, mu, sigma, lo, hi):
-    """Gaussian(mu, sigma), normalized to a unit-integral density over
-    [lo, hi] (truncated, not the usual unbounded normalization) -- both
-    populations need to integrate to 1 over the same window for f to be a
-    meaningful mixing fraction."""
-    z_lo = (lo - mu) / (sigma * np.sqrt(2.0))
-    z_hi = (hi - mu) / (sigma * np.sqrt(2.0))
-    norm = max(0.5 * (erf(z_hi) - erf(z_lo)), 1e-300)
-    return np.exp(-0.5 * ((Er - mu) / sigma) ** 2) / (sigma * np.sqrt(2.0 * np.pi)) / norm
-
-
-def fit_cf_activation_mixture(er, window=MIXTURE_FIT_WINDOW_KEV):
-    """Fit a two-population mixture -- power-law background + Gaussian
-    "peak" -- to the real events in window, by unbinned extended maximum
-    likelihood, then return each event's own posterior probability of
-    being background (Bayes' rule on the two fitted densities at that
-    event's own Er), to use as a histogram weight. See this module's
-    docstring for why this replaces subtracting one global curve from the
-    binned density.
-
-    er : every real (Er >= 0) event for this detector, ascending or not.
-    Returns (weights, info) -- weights has the same length/order as er
-    (1.0 outside window, the posterior background-probability inside it),
-    info holds the fit parameters for logging/provenance."""
-    lo, hi = window
-    in_window = (er > lo) & (er < hi)
-    er_w = er[in_window]
-
-    coarse_counts, coarse_edges = np.histogram(er_w, bins=30)
-    mu0 = float(0.5 * (coarse_edges[np.argmax(coarse_counts)] + coarse_edges[np.argmax(coarse_counts) + 1]))
-    mu0 = min(max(mu0, PEAK_MU_BOUNDS_KEV[0] + 1.0), PEAK_MU_BOUNDS_KEV[1] - 1.0)
-
-    def neg_log_l(theta):
-        k, f, mu, sigma = theta
-        if not (PEAK_FRACTION_BOUNDS[0] < f < PEAK_FRACTION_BOUNDS[1]) or sigma <= 0:
-            return 1e12
-        bg = _powerlaw_pdf(er_w, k, lo, hi)
-        pk = _gaussian_pdf(er_w, mu, sigma, lo, hi)
-        pdf = f * pk + (1.0 - f) * bg
-        if np.any(pdf <= 0):
-            return 1e12
-        return -np.sum(np.log(pdf))
-
-    p0 = [-0.3, 0.15, mu0, 25.0]
-    bounds = [BACKGROUND_K_BOUNDS, PEAK_FRACTION_BOUNDS, PEAK_MU_BOUNDS_KEV, PEAK_SIGMA_BOUNDS_KEV]
-    res = minimize(neg_log_l, p0, method="Nelder-Mead", bounds=bounds,
-                   options=dict(maxiter=20000, xatol=1e-7, fatol=1e-7))
-    k, f, mu, sigma = res.x
-
-    bg_w = _powerlaw_pdf(er_w, k, lo, hi)
-    pk_w = _gaussian_pdf(er_w, mu, sigma, lo, hi)
-    weights = np.ones_like(er)
-    weights[in_window] = ((1.0 - f) * bg_w) / (f * pk_w + (1.0 - f) * bg_w)
-
-    info = dict(background_k=float(k), peak_fraction=float(f),
-               mu_keV=float(mu), sigma_keV=float(sigma), converged=bool(res.success))
-    return weights, info
-
-
 def extract_one(nrfano_dir, detector, out_dir, commit):
     source_file = f"Ba_ptqi_{detector}.csv"
     csv_path = os.path.join(nrfano_dir, "analysis_notebooks", "data",
@@ -263,34 +186,18 @@ def extract_one(nrfano_dir, detector, out_dir, commit):
     er = erecoil_of(pt_clean, qi_clean)
     er = er[er >= 0]
 
-    # Down-weight the leftover Cf-activation contamination before
-    # histogramming at all: fit the two-population mixture (see
-    # fit_cf_activation_mixture and this module's docstring), then give
-    # each event its own posterior probability of being background as its
-    # histogram weight.
-    weights, peak_info = fit_cf_activation_mixture(er)
-    print(f"    Cf-activation mixture fit: background Er^{peak_info['background_k']:.3g}, "
-          f"peak fraction={peak_info['peak_fraction']:.3f}, mu={peak_info['mu_keV']:.1f} keV, "
-          f"sigma={peak_info['sigma_keV']:.1f} keV"
-          f"{'' if peak_info['converged'] else ' (optimizer did not report convergence)'}")
-
     # Despite the name (shared with the Cf NR extraction -- the mechanism
     # itself isn't NR-specific, just where it was first needed), this
     # applies here too: Ba's ER data has the same class of problem, just a
     # milder shape (a single suppressed bin stepping up to a plateau,
     # rather than a whole displaced peak) -- checked directly against the
     # raw data before enabling this, not assumed.
-    x, y = histogram_density(er, n_bins=N_BINS, weights=weights, correct_nr_threshold=True)
-
-    contam_note = (
-        f"; a leftover Cf-252/Ge-75m activation population (see this script's module docstring "
-        f"for the evidence) was modeled jointly with a power-law background (Er^"
-        f"{peak_info['background_k']:.2g}) as a Gaussian (mu={peak_info['mu_keV']:.1f} keV, "
-        f"sigma={peak_info['sigma_keV']:.1f} keV, peak fraction={peak_info['peak_fraction']:.2f}) "
-        f"by unbinned extended maximum likelihood over {MIXTURE_FIT_WINDOW_KEV} keV; each event's "
-        f"own posterior probability of being background was used as its histogram weight "
-        f"(see fit_cf_activation_mixture), not genuine Ba-133 structure"
-    )
+    #
+    # No contamination removal beyond this: the ~70-200 keV Cf-252/Ge-75m
+    # activation feature (see this module's docstring) is left in the
+    # table as-measured. Several removal attempts were tried and rejected
+    # -- see the docstring's DELIBERATE DECISION section for why.
+    x, y = histogram_density(er, n_bins=N_BINS, correct_nr_threshold=True)
 
     out_path = os.path.join(out_dir, f"{detector}_ER_{SOURCE_TAG}.h5")
     provenance = (
@@ -298,8 +205,13 @@ def extract_one(nrfano_dir, detector, out_dir, commit):
         f"Ba_data_resolution_fitting_ZW.ipynb's ROI (ep {ROI['ep_min']}-{ROI['ep_max']}, "
         f"eq {ROI['eq_min']}-{ROI['eq_max']}) and band_outliers() cut ({CLEAN_NSIG:g} sigma, "
         f"V={V_FOR_BAND} for the band line only) verbatim, same Er = pt - V*(qi/eps)/1000 as "
-        f"the Cf extraction; near-threshold bins corrected (see correct_nr_threshold_turnon)"
-        f"{contam_note} -- extracted via scripts/extract_erecoil_tables_ba.py"
+        f"the Cf extraction; near-threshold bins corrected (see correct_nr_threshold_turnon); "
+        f"the ~70-200 keV region contains leftover Cf-252/Ge-75m (139.7 keV) neutron-activation "
+        f"contamination from a prior Cf-252 run on this crystal, NOT genuine Ba-133 structure "
+        f"(see this script's module docstring for the evidence) -- left unremoved after several "
+        f"removal methods were tried and rejected as introducing worse, less-understood artifacts "
+        f"than the contamination itself; an analysis sensitive to this region should exclude it "
+        f"from its own fit window -- extracted via scripts/extract_erecoil_tables_ba.py"
     )
     save_erecoil_table(out_path, x, y, detector=detector, band="ER",
                        calibration_source=CALIBRATION_SOURCE, source_file=source_file,
