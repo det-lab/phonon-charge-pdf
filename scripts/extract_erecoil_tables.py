@@ -155,28 +155,47 @@ EP_MIN = 2.0
 #
 # The actual valley between the real NR band and this noise population's
 # own qi distribution, not a visual guess: per-pt-slice KDE of qi (bw=0.2)
-# is genuinely bimodal over pt~4.6-13 keV in every detector (below that
-# range the two populations overlap too much to resolve; above it the noise
-# peak has vanished). The valley location varies by detector -- median 0.831
-# pooling all 5, but detector 415 runs consistently high (~1.13-1.27) while
-# the others cluster lower (~0.37-0.94) -- so a single shared value either
-# over-cuts the detectors that don't need it or under-cuts 415. We care
-# about keeping the lowest-energy information we can, so NR_EQ_MIN is set
-# per detector at that detector's own median valley (not inflated above
-# it): 402: 0.80 (median of 4 detections), 405: 0.77 (2 detections -- the
-# fewest, so the least certain of the five), 415: 1.16 (4 detections),
-# 426: 0.78 (5 detections), 432: 0.89 (5 detections). No pt dependence
-# needed in the cut itself despite the valley's own mild pt-trend within a
-# detector: the fraction of events below each detector's threshold falls
-# off smoothly from pt~5 keV on and reaches 0% by pt~20-40 keV, well past
-# where the real band has already separated, so a flat per-detector cut
-# stops mattering there without needing an upper bound.
+# is genuinely bimodal over pt~4.6-13 keV in some slices of every detector
+# (below that range the two populations overlap too much to resolve; above
+# it the noise peak has vanished). Not every slice that finds two local KDE
+# maxima is a genuine second population, though -- a first pass that only
+# required both peaks to clear a small height floor let through several
+# slices that were really just KDE sampling wobble within one mode (two
+# near-equal-height bumps a few tenths of a keV apart, with the "valley"
+# between them barely dipping below either peak). Visually auditing each
+# detector's per-slice KDE caught this directly (detector 426, in
+# particular, had two low-pt slices like this that pulled its naive median
+# down substantially). Fixed by also requiring a real dip: the valley must
+# sit at least 15% below the smaller of the two peaks, not just above an
+# arbitrary floor. Detectors 402/405/432 barely move under this stricter
+# check; 426 does (0.78 -> 0.94, losing its two spurious low-pt slices).
+# Detector 415 only ever had one slice (pt~7.1-8.7 keV) that passes this
+# check at all -- a clean, comparable-height, deep-dip split -- so 1.18 is
+# the one data point we actually have for it, not a median; there's no
+# resolvable valley for 415 at lower pt to anchor a lower value on (same
+# overlap problem every detector has below pt~4.6-5.7, just extending
+# further for 415). Reviewed directly against the per-slice KDE plots
+# before accepting, not applied blind.
+#
+# The valley location varies by detector -- detector 415 runs high (1.18)
+# while the other four cluster lower (0.76-0.94) -- so a single shared
+# value either over-cuts the detectors that don't need it or under-cuts
+# 415. We care about keeping the lowest-energy information we can, so
+# NR_EQ_MIN is set per detector at that detector's own (post-filtering)
+# valley, not inflated above it: 402: 0.81, 405: 0.76, 415: 1.18,
+# 426: 0.94, 432: 0.90 (432 has 2 surviving slices; the other four have 1
+# each). No pt dependence in the cut itself despite the valley's own mild
+# pt-trend within a detector: the fraction of events below each detector's
+# threshold falls off smoothly from pt~5 keV on and reaches 0% by
+# pt~20-40 keV, well past where the real band has already separated, so a
+# flat per-detector cut stops mattering there without needing an upper
+# bound.
 NR_EQ_MIN = {
-    "402": 0.80,
-    "405": 0.77,
-    "415": 1.16,
-    "426": 0.78,
-    "432": 0.89,
+    "402": 0.81,
+    "405": 0.76,
+    "415": 1.18,
+    "426": 0.94,
+    "432": 0.90,
 }
 
 # Quantile (equal-count) bins, not fixed log-spaced edges: a blind
