@@ -57,6 +57,16 @@ peak, extrapolated down through Er=0. ER's raw data shows no equivalent
 rise (it's already flat near Er=0, consistent with a smoothly-declining
 spectrum evaluated near its own origin), so it keeps the simpler flat-hold.
 
+Below EP_MIN (2 keV in pt/Ep), raw data is dropped entirely before any other
+step: a compact, non-physical origin blob (most plausibly detector pedestal/
+zero-energy trigger noise) sits at almost exactly the same (pt, qi) as
+genuine near-threshold signal, since the real NR band's own Eq -> 0 as
+Ep -> 0 too -- no statistical cut in qi can separate them there without also
+cutting real events, so this is a flat, deliberately conservative floor
+rather than a fitted boundary (see EP_MIN's own comment below). Above that
+floor, band_mode_outliers (also below) removes a further, separable
+near-threshold tail.
+
 Calibration source: Cf-252 is a neutron source (populates both NR and ER,
 since ER here just means "not NR"). A detector's ER table from a different
 source (e.g. Ba-133, a pure gamma source used for high-energy ER
@@ -84,6 +94,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from scipy.stats import gaussian_kde
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
@@ -114,6 +125,39 @@ V = 3.0
 LSLOPE, LINT = 0.20, -3.0
 HSLOPE, HINT = 0.35, 0.0
 
+# Hard floor on pt (Ep), applied to the raw data before anything else, for
+# both bands. Below this, there's a compact, non-physical "blob" of events
+# at (pt, qi) ~ (0.1-0.5, ~0) -- most plausibly detector pedestal/zero-energy
+# trigger noise (checked directly: a dense, roughly Gaussian cluster at the
+# origin, distinct from either band's own rising trend). band_mode_outliers
+# can't separate it statistically: the real NR band's own Eq -> 0 as Ep -> 0
+# too (that's the physics -- NR turns on at Erecoil=0), so down here the
+# blob and genuine near-threshold signal sit in the same place in (pt, qi).
+# No cut in qi can tell them apart without also cutting real low-energy
+# band events. EP_MIN=2.0 is comfortably above where the blob's density
+# actually falls off (~0.5-0.7, confirmed via 2D density plots for all 5
+# detectors) -- a deliberately conservative choice, not a tight boundary
+# fit. Below it, we don't claim to know the true Erecoil shape at all;
+# histogram_density's near-threshold extrapolation (correct_nr_threshold_turnon,
+# NR only) still anchors the table down to Er=0, now built from this cleaner
+# input. Checked across all 5 detectors: the blob's extent is consistent
+# enough that one shared value was chosen over per-detector tuning.
+EP_MIN = 2.0
+
+# A second, NR-only noise population, surviving EP_MIN: a diffuse tail below
+# the real NR band, roughly flat in qi, that band_mode_outliers can't catch
+# -- not because it isn't noise, but because it's too large a fraction of
+# each low-pt slice (checked directly: 43-79% of events below qi=0.5 for
+# pt<5 keV) for a robust (IQR-based) sigma to stay small enough to flag it;
+# the "outlier" isn't a minority here. Known to be noise regardless (same
+# class of near-threshold contamination as the stuff band_mode_outliers
+# does catch elsewhere), so cut directly rather than tuning a statistical
+# test to do a job it structurally can't: reject NR events with
+# qi < NR_EQ_MIN. No pt dependence needed -- by pt~17-20 keV, 0% of events
+# sit below this threshold anyway (the real band has separated), so a flat
+# cut stops mattering there on its own rather than needing an upper bound.
+NR_EQ_MIN = 0.5
+
 # Quantile (equal-count) bins, not fixed log-spaced edges: a blind
 # geomspace(1e-3, max, 500) packed ~180 of its 500 bins into 1e-3-0.1 keV
 # alone, where these detectors have essentially no events below their real
@@ -131,6 +175,18 @@ N_BINS = 150
 # single-exponential threshold correction (see this module's docstring).
 NR_FIT_BINS = 15
 
+# Robust-outlier sigma threshold for band_mode_outliers below, shared with
+# extract_erecoil_tables_ba.py (imports this directly, doesn't redefine it) so
+# both scripts' cuts use the same aggressiveness unless deliberately revisited
+# together. Started at 5.0 (Zack's original choice for Ba's median-based cut);
+# raised to 6.0 after checking the above-the-band/below-the-band split of what
+# gets rejected: NR was already ~100% below-band at 5.0 (matches the
+# charge-leakage-only-drifts-down physics expectation), but ER was often
+# majority above-band (e.g. detector 402: 300/319; 415: 181/230) -- 6.0 roughly
+# halves-to-thirds those above-band counts while barely touching the
+# below-band ones, which is the asymmetry 5.0 was getting wrong.
+CLEAN_NSIG = 6.0
+
 
 def erecoil_of(pt, qi):
     """The same zeroth-order Erecoil estimate the source notebooks use:
@@ -146,6 +202,99 @@ def band_mask(pt, qi):
     ubound = HSLOPE * pt + HINT
     lbound = LSLOPE * pt + LINT
     return (qi < ubound) & (qi > lbound)
+
+
+def band_slope(V):
+    """qi/pt ratio of the ER band's line (Y=1, Er = pt - V*(qi/eps)/1000
+    -> qi = pt/band_slope at Er=0... equivalently qi = pt/(1 + V/(1000*eps))
+    for any Er, since Y=1 makes qi a fixed fraction of pt). Shared with
+    extract_erecoil_tables_ba.py, which imports this rather than redefining
+    it (same relation, same eps/V)."""
+    return 1.0 + V / (1000.0 * EPS)
+
+
+def kde_mode(x, grid_n=400):
+    """The KDE-estimated mode of x (scipy.stats.gaussian_kde, Scott's rule
+    bandwidth, peak over a grid spanning the 1st-99th percentiles). Used
+    instead of the median for band_mode_outliers below: checked directly
+    (see this project's design discussion) that the median is systematically
+    biased away from the data's own densest point even in the low-energy
+    region that matters most here, for both NR's curved yield-band and ER's
+    nominally straight line -- confirmed against two KDE bandwidths and a
+    bandwidth-free half-sample-mode estimator, so this isn't a bandwidth
+    artifact. Falls back to the median for very small slices, where a KDE
+    is unreliable anyway."""
+    if len(x) < 10:
+        return float(np.median(x))
+    lo, hi = np.percentile(x, [1, 99])
+    if hi <= lo:
+        return float(np.median(x))
+    grid = np.linspace(lo, hi, grid_n)
+    density = gaussian_kde(x)(grid)
+    return float(grid[np.argmax(density)])
+
+
+def band_mode_outliers(x, y, nsig=CLEAN_NSIG, n_slices=30, min_per_slice=30, x_floor=1e-3):
+    """True for points far from the data's own robust per-slice mode of y
+    vs log-spaced x: in each slice, flags |y - kde_mode(y)| > nsig * robust
+    sigma (IQR/1.349). Generalizes
+    extract_erecoil_tables_ba.py's band_outliers() (median of a residual
+    from one fixed straight line) to band_mode_outliers (per-slice mode of
+    y directly) so the same mechanism works for NR's curved yield-band too,
+    not just ER's line -- for ER, pass y as the residual (qi - pt/band_slope)
+    to match Ba's convention; for NR, pass y = qi directly.
+
+    x_floor excludes x <= x_floor from slicing entirely (always kept, never
+    flagged): log-spaced edges need x > 0, and there's too little data down
+    there to cut reliably anyway. A slice (or the whole sliceable range,
+    if too small overall) with fewer than min_per_slice points is also left
+    unflagged, same as Ba's algorithm."""
+    bad = np.zeros(len(x), dtype=bool)
+    sliceable = x > x_floor
+    if sliceable.sum() < min_per_slice:
+        return bad
+    idx_sliceable = np.flatnonzero(sliceable)
+    xs, ys = x[sliceable], y[sliceable]
+    edges = np.geomspace(xs.min(), xs.max(), n_slices + 1)
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        m = (xs >= lo) & (xs <= hi) if hi == edges[-1] else (xs >= lo) & (xs < hi)
+        if m.sum() < min_per_slice:
+            continue
+        center = kde_mode(ys[m])
+        q25, q75 = np.percentile(ys[m], [25, 75])
+        sigma = (q75 - q25) / 1.349
+        bad[idx_sliceable[m]] = np.abs(ys[m] - center) > nsig * sigma
+    return bad
+
+
+def plot_band_outliers(pt, qi, bad, band, detector, source_tag, out_path, nsig=CLEAN_NSIG):
+    """Diagnostic scatter of (pt, qi): kept points muted, rejected
+    (band_mode_outliers) points in red, so nsig can be sanity-checked by eye
+    before trusting it. x (pt) is log scale (it spans several orders of
+    magnitude); y (qi) is symlog, not log -- most rejected points turn out
+    to have qi < 0 (noise-floor events near threshold, checked directly),
+    which plain log would silently drop from the plot entirely, hiding
+    exactly what this is meant to show. matplotlib is a test-only
+    dependency (see pyproject.toml) -- imported here, not at module level,
+    so extraction itself never needs it unless this is called."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.scatter(pt[~bad], qi[~bad], s=2, alpha=0.3, color="C0",
+              label=f"kept ({(~bad).sum()})")
+    ax.scatter(pt[bad], qi[bad], s=8, alpha=0.8, color="red",
+              label=f"rejected ({bad.sum()})")
+    ax.set_xscale("log")
+    ax.set_yscale("symlog", linthresh=1.0)
+    ax.set_xlabel("pt, i.e. Ep (keV)")
+    ax.set_ylabel("qi, i.e. Eq (keV)")
+    ax.set_title(f"detector {detector}, {band} ({source_tag}) -- band_mode_outliers, nsig={nsig:g}")
+    ax.legend(fontsize=8, markerscale=3)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def correct_nr_threshold_turnon(x, y, n_fit_bins=NR_FIT_BINS, search_window_keV=30.0):
@@ -251,23 +400,55 @@ def nrfano_commit(nrfano_dir):
         return "unknown"
 
 
-def extract_one(nrfano_dir, detector, out_dir, commit):
+def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
     source_file = f"Cf_ptqi_{detector}.csv"
     csv_path = os.path.join(nrfano_dir, "analysis_notebooks", "data",
                              "Cf_data_germanium", source_file)
     data = pd.read_csv(csv_path, skiprows=1, names=["pt", "qi"])
     pt, qi = data["pt"].to_numpy(), data["qi"].to_numpy()
+    n_raw = len(pt)
+    ep_floor_mask = pt > EP_MIN
+    pt, qi = pt[ep_floor_mask], qi[ep_floor_mask]
+    print(f"{detector}: {n_raw} raw events, {len(pt)} ({100 * len(pt) / n_raw:.1f}%) "
+          f"with pt > EP_MIN={EP_MIN:g} keV (see this script's EP_MIN comment)")
     is_nr = band_mask(pt, qi)
 
     for band, mask in (("NR", is_nr), ("ER", ~is_nr)):
-        er = erecoil_of(pt[mask], qi[mask])
+        pt_b, qi_b = pt[mask], qi[mask]
+        n_eq_cut = 0
+        if band == "NR":
+            # Known noise, not something band_mode_outliers can be tuned to
+            # catch (see NR_EQ_MIN's comment) -- cut directly.
+            eq_floor_mask = qi_b >= NR_EQ_MIN
+            n_eq_cut = int((~eq_floor_mask).sum())
+            pt_b, qi_b = pt_b[eq_floor_mask], qi_b[eq_floor_mask]
+
+        # NR's band curves with the Lindhard yield, so there's no single line
+        # to take a residual from -- use qi directly. ER's band is a single
+        # line (Y=1), so use the residual from it, matching Ba's own
+        # band_outliers() convention (see extract_erecoil_tables_ba.py).
+        y_b = qi_b if band == "NR" else qi_b - pt_b / band_slope(V)
+        bad = band_mode_outliers(pt_b, y_b)
+        if plot_dir:
+            plot_path = os.path.join(plot_dir, f"{detector}_{band}_{SOURCE_TAG}_outliers.png")
+            plot_band_outliers(pt_b, qi_b, bad, band, detector, SOURCE_TAG, plot_path)
+
+        er = erecoil_of(pt_b[~bad], qi_b[~bad])
         er = er[er >= 0]  # unphysical for this table's convention; see erecoil_table.py
         x, y = histogram_density(er, correct_nr_threshold=(band == "NR"))
         out_path = os.path.join(out_dir, f"{detector}_{band}_{SOURCE_TAG}.h5")
         provenance = (
             f"NRFano (nrFanoII_paper2022) @ {commit}, "
+            f"raw data restricted to pt (Ep) > {EP_MIN:g} keV first (below this, a non-physical "
+            f"origin blob and genuine near-threshold signal aren't statistically separable -- "
+            f"see this script's EP_MIN comment), then "
             f"{band}_Energy_Distributions.ipynb's band cut (qi vs {LSLOPE}*pt{LINT:+g} / "
             f"{HSLOPE}*pt{HINT:+g}) and Er = pt - V*(qi/eps)/1000 (V={V}, eps={EPS}), "
+            + (f"a qi >= {NR_EQ_MIN:g} keV cut (a diffuse near-threshold noise tail that's too "
+               f"large a fraction of each low-pt slice for band_mode_outliers' robust sigma to "
+               f"flag -- see this script's NR_EQ_MIN comment), then " if band == "NR" else "")
+            + f"a {CLEAN_NSIG:g}-sigma band_mode_outliers cut (per-pt-slice robust mode, "
+            f"IQR-based sigma -- see this script's docstring), "
             f"extracted per-detector (not pooled) via scripts/extract_erecoil_tables.py"
             + (f"; NR near-threshold bins below the observed peak replaced by a single-"
                f"exponential fit (see this script's correct_nr_threshold_turnon)" if band == "NR" else "")
@@ -275,8 +456,11 @@ def extract_one(nrfano_dir, detector, out_dir, commit):
         save_erecoil_table(out_path, x, y, detector=detector, band=band,
                            calibration_source=CALIBRATION_SOURCE, source_file=source_file,
                            provenance=provenance)
-        print(f"{detector} {band}: {mask.sum()} events -> {(er >= 0).sum()} with Er>=0, "
-              f"range [0, {er.max():.6g}] keV -> {out_path}")
+        eq_cut_msg = f"{n_eq_cut} removed as qi < NR_EQ_MIN={NR_EQ_MIN:g}, " if band == "NR" else ""
+        print(f"{detector} {band}: {mask.sum()} events, {eq_cut_msg}"
+              f"{bad.sum()} ({100 * bad.mean():.2f}% of what's left) "
+              f"removed as {CLEAN_NSIG:g}-sigma band_mode_outliers, "
+              f"{(er >= 0).sum()} with Er>=0, range [0, {er.max():.6g}] keV -> {out_path}")
 
 
 def main():
@@ -285,13 +469,19 @@ def main():
                         help="Path to a nrFanoII_paper2022 checkout (contains analysis_notebooks/)")
     parser.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "erecoil_tables"))
     parser.add_argument("--detectors", nargs="+", default=DETECTORS)
+    parser.add_argument("--plot-dir", default=None,
+                        help="If given, save a per-detector/band band_mode_outliers "
+                             "diagnostic scatter (red = rejected) here (needs matplotlib)")
     args = parser.parse_args()
+
+    if args.plot_dir:
+        os.makedirs(args.plot_dir, exist_ok=True)
 
     nrfano_dir = os.path.abspath(os.path.expanduser(args.nrfano_dir))
     os.makedirs(args.out_dir, exist_ok=True)
     commit = nrfano_commit(nrfano_dir)
     for detector in args.detectors:
-        extract_one(nrfano_dir, detector, args.out_dir, commit)
+        extract_one(nrfano_dir, detector, args.out_dir, commit, plot_dir=args.plot_dir)
 
 
 if __name__ == "__main__":
