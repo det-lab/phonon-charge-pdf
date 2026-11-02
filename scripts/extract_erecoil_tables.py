@@ -157,18 +157,27 @@ EP_MIN = 2.0
 # own qi distribution, not a visual guess: per-pt-slice KDE of qi (bw=0.2)
 # is genuinely bimodal over pt~4.6-13 keV in every detector (below that
 # range the two populations overlap too much to resolve; above it the noise
-# peak has vanished), and the valley between the two peaks sits at a median
-# of 0.831 over 20 valid detections across all 5 detectors (range
-# 0.373-1.274 -- real detector-to-detector variation, not noise in the
-# method; detector 415 in particular runs consistently high). NR_EQ_MIN=1.0
-# sits above that median, chosen deliberately conservative given that
-# spread rather than cutting right at it. No pt dependence needed in the
-# cut itself despite the valley's own mild pt-trend: the fraction below
-# qi=1.0 falls off smoothly from pt~5 keV on (e.g. detector 402: 83% at
-# pt~4.3-5.3, 8.6% by pt~9.4-11.4, 0% by pt~20-40), so a flat cut stops
-# mattering on its own well past the band's own separation rather than
-# needing an upper bound.
-NR_EQ_MIN = 1.0
+# peak has vanished). The valley location varies by detector -- median 0.831
+# pooling all 5, but detector 415 runs consistently high (~1.13-1.27) while
+# the others cluster lower (~0.37-0.94) -- so a single shared value either
+# over-cuts the detectors that don't need it or under-cuts 415. We care
+# about keeping the lowest-energy information we can, so NR_EQ_MIN is set
+# per detector at that detector's own median valley (not inflated above
+# it): 402: 0.80 (median of 4 detections), 405: 0.77 (2 detections -- the
+# fewest, so the least certain of the five), 415: 1.16 (4 detections),
+# 426: 0.78 (5 detections), 432: 0.89 (5 detections). No pt dependence
+# needed in the cut itself despite the valley's own mild pt-trend within a
+# detector: the fraction of events below each detector's threshold falls
+# off smoothly from pt~5 keV on and reaches 0% by pt~20-40 keV, well past
+# where the real band has already separated, so a flat per-detector cut
+# stops mattering there without needing an upper bound.
+NR_EQ_MIN = {
+    "402": 0.80,
+    "405": 0.77,
+    "415": 1.16,
+    "426": 0.78,
+    "432": 0.89,
+}
 
 # Quantile (equal-count) bins, not fixed log-spaced edges: a blind
 # geomspace(1e-3, max, 500) packed ~180 of its 500 bins into 1e-3-0.1 keV
@@ -431,7 +440,8 @@ def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
         if band == "NR":
             # Known noise, not something band_mode_outliers can be tuned to
             # catch (see NR_EQ_MIN's comment) -- cut directly.
-            eq_floor_mask = qi_b >= NR_EQ_MIN
+            nr_eq_min = NR_EQ_MIN[detector]
+            eq_floor_mask = qi_b >= nr_eq_min
             n_eq_cut = int((~eq_floor_mask).sum())
             pt_b, qi_b = pt_b[eq_floor_mask], qi_b[eq_floor_mask]
 
@@ -456,9 +466,9 @@ def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
             f"see this script's EP_MIN comment), then "
             f"{band}_Energy_Distributions.ipynb's band cut (qi vs {LSLOPE}*pt{LINT:+g} / "
             f"{HSLOPE}*pt{HINT:+g}) and Er = pt - V*(qi/eps)/1000 (V={V}, eps={EPS}), "
-            + (f"a qi >= {NR_EQ_MIN:g} keV cut (a diffuse near-threshold noise tail that's too "
-               f"large a fraction of each low-pt slice for band_mode_outliers' robust sigma to "
-               f"flag -- see this script's NR_EQ_MIN comment), then " if band == "NR" else "")
+            + (f"a qi >= {NR_EQ_MIN[detector]:g} keV cut (a diffuse near-threshold noise tail "
+               f"that's too large a fraction of each low-pt slice for band_mode_outliers' robust "
+               f"sigma to flag -- see this script's NR_EQ_MIN comment), then " if band == "NR" else "")
             + f"a {CLEAN_NSIG:g}-sigma band_mode_outliers cut (per-pt-slice robust mode, "
             f"IQR-based sigma -- see this script's docstring), "
             f"extracted per-detector (not pooled) via scripts/extract_erecoil_tables.py"
@@ -468,7 +478,7 @@ def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
         save_erecoil_table(out_path, x, y, detector=detector, band=band,
                            calibration_source=CALIBRATION_SOURCE, source_file=source_file,
                            provenance=provenance)
-        eq_cut_msg = f"{n_eq_cut} removed as qi < NR_EQ_MIN={NR_EQ_MIN:g}, " if band == "NR" else ""
+        eq_cut_msg = f"{n_eq_cut} removed as qi < NR_EQ_MIN={nr_eq_min:g}, " if band == "NR" else ""
         print(f"{detector} {band}: {mask.sum()} events, {eq_cut_msg}"
               f"{bad.sum()} ({100 * bad.mean():.2f}% of what's left) "
               f"removed as {CLEAN_NSIG:g}-sigma band_mode_outliers, "
