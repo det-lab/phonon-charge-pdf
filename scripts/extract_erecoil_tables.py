@@ -153,20 +153,22 @@ EP_MIN = 2.0
 # tuning a statistical test to do a job it structurally can't: reject NR
 # events with qi < NR_EQ_MIN.
 #
-# NR_EQ_MIN=0.8 is the location of the actual valley between the real NR
-# band and this noise population's own qi distribution, not a visual guess:
-# per-pt-slice KDE of qi (bw=0.2) is genuinely bimodal over pt~4.6-13 keV in
-# every detector (below that range the two populations overlap too much to
-# resolve; above it the noise peak has vanished), and the valley between the
-# two peaks sits consistently around qi~0.8 (median 0.831 over 20 valid
-# detections across all 5 detectors, range 0.55-1.27 -- real detector-to-
-# detector variation, not noise in the method). No pt dependence needed in
-# the cut itself despite the valley's own mild pt-trend: the fraction below
-# qi=0.8 falls off smoothly from pt~5 keV on (e.g. detector 402: 71% at
-# pt~4.3-5.3, 6.7% by pt~9.4-11.4, 0% by pt~20-40), so a flat cut stops
+# The actual valley between the real NR band and this noise population's
+# own qi distribution, not a visual guess: per-pt-slice KDE of qi (bw=0.2)
+# is genuinely bimodal over pt~4.6-13 keV in every detector (below that
+# range the two populations overlap too much to resolve; above it the noise
+# peak has vanished), and the valley between the two peaks sits at a median
+# of 0.831 over 20 valid detections across all 5 detectors (range
+# 0.373-1.274 -- real detector-to-detector variation, not noise in the
+# method; detector 415 in particular runs consistently high). NR_EQ_MIN=1.0
+# sits above that median, chosen deliberately conservative given that
+# spread rather than cutting right at it. No pt dependence needed in the
+# cut itself despite the valley's own mild pt-trend: the fraction below
+# qi=1.0 falls off smoothly from pt~5 keV on (e.g. detector 402: 83% at
+# pt~4.3-5.3, 8.6% by pt~9.4-11.4, 0% by pt~20-40), so a flat cut stops
 # mattering on its own well past the band's own separation rather than
 # needing an upper bound.
-NR_EQ_MIN = 0.8
+NR_EQ_MIN = 1.0
 
 # Quantile (equal-count) bins, not fixed log-spaced edges: a blind
 # geomspace(1e-3, max, 500) packed ~180 of its 500 bins into 1e-3-0.1 keV
