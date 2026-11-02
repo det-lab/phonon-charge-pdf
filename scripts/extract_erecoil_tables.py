@@ -145,18 +145,28 @@ HSLOPE, HINT = 0.35, 0.0
 EP_MIN = 2.0
 
 # A second, NR-only noise population, surviving EP_MIN: a diffuse tail below
-# the real NR band, roughly flat in qi, that band_mode_outliers can't catch
-# -- not because it isn't noise, but because it's too large a fraction of
-# each low-pt slice (checked directly: 43-79% of events below qi=0.5 for
-# pt<5 keV) for a robust (IQR-based) sigma to stay small enough to flag it;
-# the "outlier" isn't a minority here. Known to be noise regardless (same
-# class of near-threshold contamination as the stuff band_mode_outliers
-# does catch elsewhere), so cut directly rather than tuning a statistical
-# test to do a job it structurally can't: reject NR events with
-# qi < NR_EQ_MIN. No pt dependence needed -- by pt~17-20 keV, 0% of events
-# sit below this threshold anyway (the real band has separated), so a flat
-# cut stops mattering there on its own rather than needing an upper bound.
-NR_EQ_MIN = 0.5
+# the real NR band that band_mode_outliers can't catch -- not because it
+# isn't noise, but because at low pt it's too large a fraction of each
+# slice (43-79% of events below qi=0.5 for pt<5 keV) for a robust
+# (IQR-based) sigma to stay small enough to flag it; the "outlier" isn't a
+# minority there. Known to be noise regardless, so cut directly rather than
+# tuning a statistical test to do a job it structurally can't: reject NR
+# events with qi < NR_EQ_MIN.
+#
+# NR_EQ_MIN=0.8 is the location of the actual valley between the real NR
+# band and this noise population's own qi distribution, not a visual guess:
+# per-pt-slice KDE of qi (bw=0.2) is genuinely bimodal over pt~4.6-13 keV in
+# every detector (below that range the two populations overlap too much to
+# resolve; above it the noise peak has vanished), and the valley between the
+# two peaks sits consistently around qi~0.8 (median 0.831 over 20 valid
+# detections across all 5 detectors, range 0.55-1.27 -- real detector-to-
+# detector variation, not noise in the method). No pt dependence needed in
+# the cut itself despite the valley's own mild pt-trend: the fraction below
+# qi=0.8 falls off smoothly from pt~5 keV on (e.g. detector 402: 71% at
+# pt~4.3-5.3, 6.7% by pt~9.4-11.4, 0% by pt~20-40), so a flat cut stops
+# mattering on its own well past the band's own separation rather than
+# needing an upper bound.
+NR_EQ_MIN = 0.8
 
 # Quantile (equal-count) bins, not fixed log-spaced edges: a blind
 # geomspace(1e-3, max, 500) packed ~180 of its 500 bins into 1e-3-0.1 keV
