@@ -186,13 +186,19 @@ def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
     # applies here too: Ba's ER data has the same class of problem, just a
     # milder shape (a single suppressed bin stepping up to a plateau,
     # rather than a whole displaced peak) -- checked directly against the
-    # raw data before enabling this, not assumed.
+    # raw data before enabling this, not assumed. model="linear", not the
+    # default "exp": Ba's near-threshold region is a Compton continuum,
+    # not a declining recoil spectrum, and published Ba-133/EDELWEISS
+    # calibration analyses describe this specifically as a flat plateau at
+    # these energies (arXiv:1607.04560, arXiv:1707.04308) -- no physics
+    # motivation for an exponential here (see correct_nr_threshold_turnon's
+    # own docstring for the full reasoning).
     #
     # No contamination removal beyond this: the ~70-200 keV Cf-252/Ge-75m
     # activation feature (see this module's docstring) is left in the
     # table as-measured. Several removal attempts were tried and rejected
     # -- see the docstring's DELIBERATE DECISION section for why.
-    x, y = histogram_density(er, n_bins=N_BINS, correct_nr_threshold=True)
+    x, y = histogram_density(er, n_bins=N_BINS, correct_nr_threshold=True, model="linear")
 
     out_path = os.path.join(out_dir, f"{detector}_ER_{SOURCE_TAG}.h5")
     provenance = (
@@ -202,7 +208,8 @@ def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
         f"({CLEAN_NSIG:g} sigma, V={V_FOR_BAND} for the band line only) as the Cf extraction's "
         f"NR/ER bands (not Zack's own median-based band_outliers() -- a deliberate choice, see "
         f"this script's module docstring), same Er = pt - V*(qi/eps)/1000 as the Cf extraction; "
-        f"near-threshold bins corrected (see correct_nr_threshold_turnon); "
+        f"near-threshold bins corrected with a linear (not exponential) fit -- see "
+        f"correct_nr_threshold_turnon's docstring for the physics reasoning; "
         f"the ~70-200 keV region contains leftover Cf-252/Ge-75m (139.7 keV) neutron-activation "
         f"contamination from a prior Cf-252 run on this crystal, NOT genuine Ba-133 structure "
         f"(see this script's module docstring for the evidence) -- left unremoved after several "

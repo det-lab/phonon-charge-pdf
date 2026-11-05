@@ -211,25 +211,31 @@ NR_EQ_MIN = {
 # ~200-400 events/bin on average, ~5-7% Poisson noise per bin.
 N_BINS = 150
 
-# Number of real bins immediately above the NR peak used to fit the
-# single-exponential threshold correction (see this module's docstring).
-# Was 15 (~1.7-2.4 keV of data, given these equal-count bins): too narrow
-# a window to pin down a stable slope -- checked directly by plotting the
-# fit against the raw data for all 5 detectors (see
-# nrFanoII_paper2022/analysis_notebooks/Band_Relative_Outlier_Cut.ipynb,
-# Section 7), tau at n=15 ranged 4.2-20.9 keV across detectors (a 5x
+# Width (in keV, past the observed peak) of the window used to fit the
+# near-threshold correction (see this module's docstring and
+# correct_nr_threshold_turnon below). Originally a bin COUNT (NR_FIT_BINS),
+# not an energy width: started at 15 bins (~1.7-2.4 keV of data for Cf's
+# NR tables), too narrow a window to pin down a stable slope -- checked
+# directly by plotting the fit against the raw data for all 5 detectors
+# (see nrFanoII_paper2022/analysis_notebooks/Band_Relative_Outlier_Cut.ipynb,
+# Section 7), tau at 15 bins ranged 4.2-20.9 keV across detectors (a 5x
 # spread) even though the underlying decline looks similar once you look
-# past the first few keV -- each detector's narrow window happened to
-# land on a locally shallower or steeper stretch, not a stable fit.
-# Widening the window converges: tau stabilizes to a tight 10.9-14.0 keV
-# cluster by n=50-80, visually matching each detector's own near-threshold
-# decline (no more detector-to-detector "kink" between the fit and the
-# data just past it). Past ~n=100 it diverges again -- the fit window's
-# own equal-count bins get wide enough in the sparse tail to start
-# averaging over a different part of the spectrum per detector, which is
-# a different failure mode (too wide, not too narrow). NR_FIT_BINS=60
-# sits in the middle of that stable plateau.
-NR_FIT_BINS = 60
+# past the first few keV. Widening to 60 bins fixed NR (tau converged to a
+# tight 10.9-14.0 keV cluster) -- but a bin COUNT doesn't transfer across
+# datasets with very different statistics: Ba has 5-40x more events per
+# detector than Cf, so the same 60 bins that spanned ~15-26 keV for Cf's
+# NR tables spanned *up to 116 keV* for Ba's ER tables, reaching clean
+# through the near-threshold dip and into the rising edge of the ~70-200
+# keV Ge-75m contamination peak -- not remotely a near-threshold window
+# any more (confirmed directly by plotting where those 60 bins actually
+# landed). Fixed by bounding the window in ENERGY instead of bin count, a
+# property of the detector physics, not of how many events either
+# calibration run happened to collect. FIT_WINDOW_KEV=20.0 keV matches
+# where the bin-count approach's own convergence landed for Cf's NR
+# tables, and stays well clear of Ba's dip/contamination bump (checked:
+# Ba's per-detector windows at this width hold 10-16 bins, comfortably
+# inside the flat plateau).
+FIT_WINDOW_KEV = 20.0
 
 # Robust-outlier sigma threshold for band_mode_outliers below, shared with
 # extract_erecoil_tables_ba.py (imports this directly, doesn't redefine it) so
@@ -353,15 +359,30 @@ def plot_band_outliers(pt, qi, bad, band, detector, source_tag, out_path, nsig=C
     plt.close(fig)
 
 
-def correct_nr_threshold_turnon(x, y, n_fit_bins=NR_FIT_BINS, search_window_keV=30.0):
+def correct_nr_threshold_turnon(x, y, model="exp", fit_window_keV=FIT_WINDOW_KEV, search_window_keV=30.0):
     """Replace the spectrum's compromised near-threshold bins (at or below
     its observed peak, searched for only below search_window_keV -- see
-    below for why) with a single-exponential fit to the trustworthy bins
+    below for why) with a fit to the trustworthy bins in the fit_window_keV
     just past it. See this module's docstring for why: short version, a
     near-Er=0 rise (or, for Ba's ER, a single suppressed first bin) is the
     detector's own trigger/ionization-threshold efficiency turning on, not
-    the true recoil spectrum, which should be maximal and smoothly falling
+    the true recoil spectrum, which should be maximal and smoothly varying
     from Er=0.
+
+    model picks the fit, chosen per band/source for a physics reason, not
+    tuned to fit better: "exp" (single exponential decay, the default) for
+    Cf's NR band, whose true recoil spectrum really does decline close to
+    exponentially away from threshold (checked: literature on low-threshold
+    Ge detectors models this as a real declining feature, and NR's own
+    fit tau is stable and well-defined here). "linear" for Ba's ER band,
+    whose true spectrum just past threshold is a Compton continuum that
+    multiple published Ba-133/EDELWEISS calibration analyses describe as a
+    flat plateau at these energies (arXiv:1607.04560, arXiv:1707.04308) --
+    there's no physics motivation for an exponential there, and fitting one
+    anyway is why Ba's fits were unstable (see the old NR_FIT_BINS=60
+    comment history). A linear fit can't go unstable the way a forced
+    exponential can; it's clamped at 0 (density is never negative) for the
+    rare case a noisy window has it crossing zero before Er=0.
 
     The peak search is restricted to x < search_window_keV rather than a
     blind argmax(y) over the whole table: deep in a flat plateau (Ba's ER,
@@ -375,6 +396,10 @@ def correct_nr_threshold_turnon(x, y, n_fit_bins=NR_FIT_BINS, search_window_keV=
     suppressed bin at a few keV) while safely excluding the plateau and
     the ER lines (lowest at 81 keV).
 
+    fit_window_keV bounds the fit to real energy past the peak (see
+    FIT_WINDOW_KEV's own comment for why this has to be an energy, not a
+    bin count, once Cf and Ba's very different statistics are both in play).
+
     x, y : the real (non-zero-anchor) bin centers/densities, ascending.
     Returns (y_corrected, anchor0, info) -- anchor0 is the fit evaluated
     at Er=0 (for the explicit x=0 node), y_corrected has every bin at or
@@ -382,41 +407,41 @@ def correct_nr_threshold_turnon(x, y, n_fit_bins=NR_FIT_BINS, search_window_keV=
     info is a small dict of fit diagnostics for logging."""
     search_mask = x < search_window_keV
     peak_idx = int(np.flatnonzero(search_mask)[np.argmax(y[search_mask])])
-    fit_x = x[peak_idx:peak_idx + n_fit_bins]
-    fit_y = y[peak_idx:peak_idx + n_fit_bins]
-    slope, intercept = np.polyfit(fit_x, np.log(fit_y), 1)
-    tau = -1.0 / slope
-    amplitude = np.exp(intercept)
+    fit_mask = (x >= x[peak_idx]) & (x <= x[peak_idx] + fit_window_keV)
+    fit_x = x[fit_mask]
+    fit_y = y[fit_mask]
 
-    # NR's region just past its peak is a real declining tail, so an
-    # exponential is the right model there and this always comes out
-    # tau > 0. Ba's ER is different: right past its (milder) suppressed
-    # region sits a near-flat plateau for tens of keV, not a decline --
-    # fitting an exponential to a flat/noisy window is the wrong model and
-    # goes unstable. At NR_FIT_BINS=60 (see that constant's own comment --
-    # widened from 15 to get a stable NR fit) this is now the common case
-    # for Ba, not a rare one: 4 of 5 detectors' fits come back tau<=0 once
-    # the window is wide enough to see that it really is flat, not just
-    # noisy. tau <= 0 means exactly that -- fall back to a flat anchor (the
-    # fit window's own median, robust to the same noise that broke the
-    # exponential fit) rather than trust a nonsensical extrapolation. This
-    # is the correct outcome for Ba, not a degradation: a wider window
-    # that more reliably recognizes "this is a plateau" is doing its job.
-    if tau > 0:
-        fit = lambda xx: amplitude * np.exp(-xx / tau)
+    if model == "exp":
+        slope, intercept = np.polyfit(fit_x, np.log(fit_y), 1)
+        tau = -1.0 / slope
+        amplitude = np.exp(intercept)
+        # NR's region just past its peak is a real declining tail, so this
+        # is normally stable (tau > 0). A non-declining fit (tau <= 0) means
+        # the window wasn't actually declining -- the wrong regime for this
+        # model -- so fall back to a flat anchor (the fit window's own
+        # median) rather than trust a nonsensical extrapolation.
+        if tau > 0:
+            fit = lambda xx: amplitude * np.exp(-xx / tau)
+        else:
+            flat_value = float(np.median(fit_y))
+            fit = lambda xx: np.full_like(np.asarray(xx, dtype=float), flat_value) if np.ndim(xx) else flat_value
+            amplitude, tau = flat_value, np.inf
+        info = dict(peak_Er_keV=float(x[peak_idx]), fit_amplitude=float(amplitude), fit_tau_keV=float(tau))
+    elif model == "linear":
+        slope, intercept = np.polyfit(fit_x, fit_y, 1)
+        fit = lambda xx: np.clip(slope * np.asarray(xx, dtype=float) + intercept, 0.0, None) \
+            if np.ndim(xx) else max(slope * xx + intercept, 0.0)
+        info = dict(peak_Er_keV=float(x[peak_idx]), fit_slope=float(slope), fit_intercept=float(intercept))
     else:
-        flat_value = float(np.median(fit_y))
-        fit = lambda xx: np.full_like(np.asarray(xx, dtype=float), flat_value) if np.ndim(xx) else flat_value
-        amplitude, tau = flat_value, np.inf
+        raise ValueError(f"model must be 'exp' or 'linear', got {model!r}")
 
     y_corrected = y.copy()
     y_corrected[:peak_idx] = fit(x[:peak_idx])
     anchor0 = float(fit(0.0))
-    info = dict(peak_Er_keV=float(x[peak_idx]), fit_amplitude=float(amplitude), fit_tau_keV=float(tau))
     return y_corrected, anchor0, info
 
 
-def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, weights=None):
+def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, model="exp", weights=None):
     """Equal-count (quantile) histogram of erecoil (keV, already >= 0),
     converted from raw bin counts to a density (divided by bin width).
     weights, if given, is a per-event array (same length/order as erecoil)
@@ -426,13 +451,15 @@ def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, weight
     fit_cf_activation_mixture); bin edges are still the unweighted
     quantile edges below, so this only changes what's counted in each bin,
     not where the bins are. correct_nr_threshold applies
-    correct_nr_threshold_turnon (NR only -- see this module's docstring)
-    before adding the explicit Erecoil=0 node; otherwise that node is held
-    flat at the lowest bin's density (ER's case -- the data is already
-    flat there, so this is a reasonable match to the visible trend, not a
-    bare assumption). See the N_BINS comment above for why equal-count,
-    not fixed log-spaced, edges. Returns (x, density), x strictly
-    increasing, ready for erecoil_table.save_erecoil_table."""
+    correct_nr_threshold_turnon before adding the explicit Erecoil=0 node
+    (model picked per caller -- see that function's own docstring for why
+    "exp" suits Cf's NR band and "linear" suits Ba's ER band); otherwise
+    that node is held flat at the lowest bin's density (Cf's ER case -- no
+    correction applied there at all, since the data is already flat near
+    threshold, a reasonable match to the visible trend without needing a
+    fit). See the N_BINS comment above for why equal-count, not fixed
+    log-spaced, edges. Returns (x, density), x strictly increasing, ready
+    for erecoil_table.save_erecoil_table."""
     edges = np.unique(np.quantile(erecoil, np.linspace(0.0, 1.0, n_bins + 1)))
     counts, edges = np.histogram(erecoil, bins=edges, weights=weights)
     widths = np.diff(edges)
@@ -440,9 +467,13 @@ def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, weight
     centers = 0.5 * (edges[:-1] + edges[1:])
 
     if correct_nr_threshold:
-        density, anchor0, info = correct_nr_threshold_turnon(centers, density)
-        print(f"    NR threshold correction: peak at {info['peak_Er_keV']:.3g} keV, "
-              f"fit tau={info['fit_tau_keV']:.3g} keV, Er=0 anchor={anchor0:.4g}")
+        density, anchor0, info = correct_nr_threshold_turnon(centers, density, model=model)
+        if model == "exp":
+            print(f"    threshold correction ({model}): peak at {info['peak_Er_keV']:.3g} keV, "
+                  f"fit tau={info['fit_tau_keV']:.3g} keV, Er=0 anchor={anchor0:.4g}")
+        else:
+            print(f"    threshold correction ({model}): peak at {info['peak_Er_keV']:.3g} keV, "
+                  f"fit slope={info['fit_slope']:.3g}, Er=0 anchor={anchor0:.4g}")
     else:
         anchor0 = density[0]
 
