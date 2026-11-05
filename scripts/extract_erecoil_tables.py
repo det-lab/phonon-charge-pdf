@@ -213,7 +213,23 @@ N_BINS = 150
 
 # Number of real bins immediately above the NR peak used to fit the
 # single-exponential threshold correction (see this module's docstring).
-NR_FIT_BINS = 15
+# Was 15 (~1.7-2.4 keV of data, given these equal-count bins): too narrow
+# a window to pin down a stable slope -- checked directly by plotting the
+# fit against the raw data for all 5 detectors (see
+# nrFanoII_paper2022/analysis_notebooks/Band_Relative_Outlier_Cut.ipynb,
+# Section 7), tau at n=15 ranged 4.2-20.9 keV across detectors (a 5x
+# spread) even though the underlying decline looks similar once you look
+# past the first few keV -- each detector's narrow window happened to
+# land on a locally shallower or steeper stretch, not a stable fit.
+# Widening the window converges: tau stabilizes to a tight 10.9-14.0 keV
+# cluster by n=50-80, visually matching each detector's own near-threshold
+# decline (no more detector-to-detector "kink" between the fit and the
+# data just past it). Past ~n=100 it diverges again -- the fit window's
+# own equal-count bins get wide enough in the sparse tail to start
+# averaging over a different part of the spectrum per detector, which is
+# a different failure mode (too wide, not too narrow). NR_FIT_BINS=60
+# sits in the middle of that stable plateau.
+NR_FIT_BINS = 60
 
 # Robust-outlier sigma threshold for band_mode_outliers below, shared with
 # extract_erecoil_tables_ba.py (imports this directly, doesn't redefine it) so
@@ -377,11 +393,15 @@ def correct_nr_threshold_turnon(x, y, n_fit_bins=NR_FIT_BINS, search_window_keV=
     # tau > 0. Ba's ER is different: right past its (milder) suppressed
     # region sits a near-flat plateau for tens of keV, not a decline --
     # fitting an exponential to a flat/noisy window is the wrong model and
-    # goes unstable (confirmed directly: one detector's fit came back
-    # tau=-690 keV, i.e. *rising*, not falling). tau <= 0 means exactly
-    # that -- fall back to a flat anchor (the fit window's own median,
-    # robust to the same noise that broke the exponential fit) rather than
-    # trust a nonsensical extrapolation.
+    # goes unstable. At NR_FIT_BINS=60 (see that constant's own comment --
+    # widened from 15 to get a stable NR fit) this is now the common case
+    # for Ba, not a rare one: 4 of 5 detectors' fits come back tau<=0 once
+    # the window is wide enough to see that it really is flat, not just
+    # noisy. tau <= 0 means exactly that -- fall back to a flat anchor (the
+    # fit window's own median, robust to the same noise that broke the
+    # exponential fit) rather than trust a nonsensical extrapolation. This
+    # is the correct outcome for Ba, not a degradation: a wider window
+    # that more reliably recognizes "this is a plateau" is doing its job.
     if tau > 0:
         fit = lambda xx: amplitude * np.exp(-xx / tau)
     else:
