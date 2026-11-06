@@ -126,13 +126,14 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from erecoil_table import save_erecoil_table
 from extract_erecoil_tables import (erecoil_of, histogram_density, nrfano_commit, N_BINS,
-                                    CLEAN_NSIG, band_slope, band_mode_outliers, plot_band_outliers)
+                                    CLEAN_NSIG, band_slope, band_mode_outliers, plot_band_outliers,
+                                    DETECTORS)
 
-# Same 5 detectors as the Cf extraction, for a matched NR(Cf)/ER(Cf)/ER(Ba)
-# set per detector. Ba_ptqi_<code>.csv exists for more detectors (413, 422,
-# 424, 434, 435, 436, 444, 445), same as Cf -- not pulled in here, same
-# reasoning as extract_erecoil_tables.py's DETECTORS list.
-DETECTORS = ["402", "405", "415", "426", "432"]
+# DETECTORS imported from extract_erecoil_tables, not redefined here: Ba's
+# own Ba_ptqi_<code>.csv files cover the same 14 detectors as Cf's, and a
+# matched NR(Cf)/ER(Cf)/ER(Ba) set per detector only happens if both
+# scripts agree on the list -- importing one shared list means they can't
+# drift apart.
 
 SOURCE_TAG = "Ba"
 CALIBRATION_SOURCE = "Ba-133"
@@ -198,7 +199,18 @@ def extract_one(nrfano_dir, detector, out_dir, commit, plot_dir=None):
     # activation feature (see this module's docstring) is left in the
     # table as-measured. Several removal attempts were tried and rejected
     # -- see the docstring's DELIBERATE DECISION section for why.
-    x, y = histogram_density(er, n_bins=N_BINS, correct_nr_threshold=True, model="linear")
+    #
+    # search_window_keV=12.0, narrower than the 30 keV default: Ba's flat
+    # ER plateau is noisy enough that a 30 keV search window can and did
+    # land on a spurious local maximum deep in the plateau instead of the
+    # real near-threshold feature (detectors 435/436, found when this
+    # script was expanded to the full 14-detector set -- see
+    # correct_nr_threshold_turnon's own docstring for detail). 12.0 keV
+    # comfortably covers every detector's real feature (3.6-8.7 keV
+    # observed) with margin, well short of where the plateau-noise risk
+    # actually showed up.
+    x, y = histogram_density(er, n_bins=N_BINS, correct_nr_threshold=True, model="linear",
+                             search_window_keV=12.0)
 
     out_path = os.path.join(out_dir, f"{detector}_ER_{SOURCE_TAG}.h5")
     provenance = (

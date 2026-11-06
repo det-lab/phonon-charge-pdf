@@ -100,12 +100,17 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 from erecoil_table import save_erecoil_table
 
-# The 5 detectors covered by NR_Energy_Distributions.ipynb/
-# ER_Energy_Distributions.ipynb. More Cf_ptqi_<code>.csv files exist in
-# NRFano (e.g. 413, 422, 424, 434, 435, 436, 444, 445) but are not pulled
-# in here -- add to this list deliberately, not by discovering files on
-# disk, so a stray/unrelated CSV never silently becomes a table.
-DETECTORS = ["402", "405", "415", "426", "432"]
+# All 14 Ge detectors listed in nrFanoII_paper2022's own
+# analysis_notebooks/data/Ge_detector_ids.csv, each with both a
+# Cf_ptqi_<code>.csv and Ba_ptqi_<code>.csv available. Originally just the
+# 5 covered by NR_Energy_Distributions.ipynb/ER_Energy_Distributions.ipynb
+# (402/405/415/426/432); expanded to the full set once the other 9 were
+# confirmed present with substantial data (44k-172k Cf events, 36k-423k Ba
+# events each -- see band-relative outlier cut notebook for the per-detector
+# derivation this expansion re-ran). Still an explicit list, not discovered
+# from disk, so a stray/unrelated CSV never silently becomes a table.
+DETECTORS = ["402", "405", "413", "415", "422", "424", "425", "426",
+             "432", "434", "435", "436", "444", "445"]
 
 # Calibration source for every table this script writes -- see the
 # "Calibration source" docstring section above. SOURCE_TAG is the short,
@@ -177,25 +182,57 @@ EP_MIN = 2.0
 # further for 415). Reviewed directly against the per-slice KDE plots
 # before accepting, not applied blind.
 #
-# The valley location varies by detector -- detector 415 runs high (1.18)
-# while the other four cluster lower (0.76-0.94) -- so a single shared
+# The valley location varies by detector -- e.g. 415/413/422/425 run high
+# (1.18-1.94) while others cluster lower (0.73-1.06) -- so a single shared
 # value either over-cuts the detectors that don't need it or under-cuts
-# 415. We care about keeping the lowest-energy information we can, so
-# NR_EQ_MIN is set per detector at that detector's own (post-filtering)
-# valley, not inflated above it: 402: 0.81, 405: 0.76, 415: 1.18,
-# 426: 0.94, 432: 0.90 (432 has 2 surviving slices; the other four have 1
-# each). No pt dependence in the cut itself despite the valley's own mild
-# pt-trend within a detector: the fraction of events below each detector's
-# threshold falls off smoothly from pt~5 keV on and reaches 0% by
-# pt~20-40 keV, well past where the real band has already separated, so a
-# flat per-detector cut stops mattering there without needing an upper
-# bound.
+# the high ones. We care about keeping the lowest-energy information we
+# can, so NR_EQ_MIN is set per detector at that detector's own
+# (post-filtering) valley, not inflated above it.
+#
+# Expanded from the original 5 detectors (402/405/415/426/432) to the
+# full 14-detector set in Ge_detector_ids.csv once the other 9 were
+# confirmed to have both Cf_ptqi/Ba_ptqi data available. Same method, same
+# filters, reapplied and re-audited per detector, not copied from the
+# original 5 -- two things came up that didn't in the original pass:
+#
+# - Detector 424 had ZERO slices pass the height-ratio/depth-ratio filter
+#   anywhere in the pt~2-25 keV scan range, even though its raw (pt, qi)
+#   scatter shows the identical diffuse-tail problem as every other
+#   detector (checked directly, side by side with 402's). Its near-miss
+#   slices all have depth_ratio just above the 0.85 cutoff (0.86-0.97,
+#   vs. the clean detections elsewhere at 0.60-0.85) -- a smoother,
+#   less-sharply-bimodal transition than other detectors, not evidence
+#   the population isn't there. The three most plausible candidates
+#   (excluding the weakest, lowest-height-ratio one) cluster at
+#   0.74-0.78 keV. Set to 0.80, consistent with how every other
+#   borderline case this project has hit was handled (conservative
+#   relative to the near-miss cluster, not a guess) -- the one judgment
+#   call in this table that isn't a direct automated valley reading;
+#   flagged here for visibility, not hidden in a median.
+# - Detectors 425 and 436 each had one additional slice pass the filter
+#   at pt~2.5-3.0 keV (valleys 0.110 and 0.073) that visual audit
+#   rejected as spurious: both are tight triple/double-humps crammed into
+#   a single narrow mode (-0.5 to ~1.2 keV total span, n~213-259, the
+#   smallest samples of any accepted slice), not a real second population
+#   -- the same failure mode as the original 426 low-pt exclusions,
+#   just not caught by the existing numeric filter this time. Excluded by
+#   hand after audit, same as that earlier case; the remaining slices for
+#   both detectors are clean, well-separated splits.
 NR_EQ_MIN = {
     "402": 0.81,
     "405": 0.76,
+    "413": 1.64,
     "415": 1.18,
+    "422": 1.32,
+    "424": 0.80,
+    "425": 1.94,
     "426": 0.94,
     "432": 0.90,
+    "434": 0.76,
+    "435": 0.95,
+    "436": 1.06,
+    "444": 0.81,
+    "445": 0.73,
 }
 
 # Quantile (equal-count) bins, not fixed log-spaced edges: a blind
@@ -389,12 +426,20 @@ def correct_nr_threshold_turnon(x, y, model="exp", fit_window_keV=FIT_WINDOW_KEV
     ~20-300 keV), every equal-count bin holds almost exactly the same raw
     count, so density = count/width is dominated by bin-width noise, not
     signal -- a global argmax can and does land tens of keV away from the
-    real near-threshold feature, picking up pure binning noise instead
-    (confirmed directly: one such "peak" sat on bins all holding within 1
-    of each other's raw count). 30 keV comfortably covers every real
-    threshold feature seen so far (NR peaks at 0.2-0.8 keV, Ba's single
-    suppressed bin at a few keV) while safely excluding the plateau and
-    the ER lines (lowest at 81 keV).
+    real near-threshold feature, picking up pure binning noise instead.
+    The default, 30 keV, comfortably covers every real NR threshold
+    feature seen (peaks at 5.3-14.1 keV across all 14 detectors) while
+    safely excluding the ER lines (lowest at 81 keV) -- but it's *not*
+    narrow enough for Ba's ER plateau: expanding from the original 5
+    detectors to the full 14-detector set caught 2 of 9 new ones (435,
+    436) landing their "peak" at 13.9/21.4 keV, deep in the noisy flat
+    plateau, well past their real single-suppressed-bin feature (which
+    sits at 4.8/9.6 keV, in line with every other Ba detector's 3.6-8.7
+    keV cluster -- confirmed directly by zooming into each one's raw,
+    unfit density). Ba's own call narrows search_window_keV to 12.0 (see
+    extract_erecoil_tables_ba.py), comfortably above that whole cluster
+    with margin, but well short of where the plateau-noise risk actually
+    showed up.
 
     fit_window_keV bounds the fit to real energy past the peak (see
     FIT_WINDOW_KEV's own comment for why this has to be an energy, not a
@@ -441,7 +486,8 @@ def correct_nr_threshold_turnon(x, y, model="exp", fit_window_keV=FIT_WINDOW_KEV
     return y_corrected, anchor0, info
 
 
-def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, model="exp", weights=None):
+def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, model="exp",
+                      search_window_keV=30.0, weights=None):
     """Equal-count (quantile) histogram of erecoil (keV, already >= 0),
     converted from raw bin counts to a density (divided by bin width).
     weights, if given, is a per-event array (same length/order as erecoil)
@@ -457,9 +503,12 @@ def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, model=
     that node is held flat at the lowest bin's density (Cf's ER case -- no
     correction applied there at all, since the data is already flat near
     threshold, a reasonable match to the visible trend without needing a
-    fit). See the N_BINS comment above for why equal-count, not fixed
-    log-spaced, edges. Returns (x, density), x strictly increasing, ready
-    for erecoil_table.save_erecoil_table."""
+    fit). search_window_keV is passed straight through to
+    correct_nr_threshold_turnon's own peak search (see its docstring --
+    Ba's ER call narrows this from the 30 keV default). See the N_BINS
+    comment above for why equal-count, not fixed log-spaced, edges.
+    Returns (x, density), x strictly increasing, ready for
+    erecoil_table.save_erecoil_table."""
     edges = np.unique(np.quantile(erecoil, np.linspace(0.0, 1.0, n_bins + 1)))
     counts, edges = np.histogram(erecoil, bins=edges, weights=weights)
     widths = np.diff(edges)
@@ -467,7 +516,8 @@ def histogram_density(erecoil, n_bins=N_BINS, correct_nr_threshold=False, model=
     centers = 0.5 * (edges[:-1] + edges[1:])
 
     if correct_nr_threshold:
-        density, anchor0, info = correct_nr_threshold_turnon(centers, density, model=model)
+        density, anchor0, info = correct_nr_threshold_turnon(centers, density, model=model,
+                                                              search_window_keV=search_window_keV)
         if model == "exp":
             print(f"    threshold correction ({model}): peak at {info['peak_Er_keV']:.3g} keV, "
                   f"fit tau={info['fit_tau_keV']:.3g} keV, Er=0 anchor={anchor0:.4g}")
