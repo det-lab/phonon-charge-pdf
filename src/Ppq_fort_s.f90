@@ -49,10 +49,12 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! (Ep, Eq) normalization tables live entirely in Python's NormInterpolator
   ! for exactly this reason -- PErecoil can't, since it's evaluated at every
   ! quadrature node inside this file's own hot integration loop, not once
-  ! per likelihood call). Two Ppq_compiled instances with different Erecoil
-  ! tables cannot coexist in one process; Ppq_fort.py's _load_erecoil_table
-  ! always explicitly sets-or-clears both tables on every construction so
-  ! this stays deterministic, if not concurrent.
+  ! per likelihood call). Two Ppq_compiled instances -- or a Ppq_compiled
+  ! and a Ppq_densities, or two Ppq_densities -- with different Erecoil
+  ! tables cannot coexist in one process; both Python classes construct via
+  ! _Ppq_fort_bindings.py's shared _load_erecoil_table, which always
+  ! explicitly sets-or-clears both tables on every construction so this
+  ! stays deterministic, if not concurrent.
   !
   ! x/c0/c1/c2/c3 are a piecewise cubic in power-basis form (scipy's
   ! PchipInterpolator.c convention, see erecoil_table.py): on

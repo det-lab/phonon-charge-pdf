@@ -25,9 +25,10 @@ already cropped to the region -- see run_chisquare_test's own docstring
 for why generate_events_NR/generate_events_ER can't be passed directly
 (they have no ROI cropping of their own) and docs/goodness-of-fit.md
 for a sampler that wraps one correctly.
-make_Ppq_densities_NR/make_Ppq_densities_ER (re-exported here from
-python/internal/_Ppq_fort_bindings.py -- see that module's docstring) build
-the one pdf_func this package actually ships, so they live here rather
+make_Ppq_densities_NR/make_Ppq_densities_ER and Ppq_densities (re-exported
+here from python/internal/_Ppq_fort_bindings.py -- see that module's
+docstring) build the pdf_func this package actually ships, optionally
+against a tabulated PErecoil (Ppq_densities), so they live here rather
 than at the top level: nothing else in this package needs arbitrary-point
 density evaluation.
 
@@ -56,17 +57,18 @@ try:
     # Relative import (not the sys.path trick above) so mkdocstrings/griffe
     # can resolve these as real re-exports when this module is loaded as
     # part of the phonon_charge_pdf package -- see the module docstring.
-    from .internal._Ppq_fort_bindings import make_Ppq_densities_ER, make_Ppq_densities_NR  # noqa: F401
+    from .internal._Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
+                                              Ppq_densities)  # noqa: F401
 except ImportError:
     # Imported standalone (e.g. test/python/*.py via sys.path, with no
-    # parent package) -- those callers get make_Ppq_densities_NR/ER
-    # directly from _Ppq_fort_bindings instead, so this re-export isn't
-    # needed here.
+    # parent package) -- those callers get make_Ppq_densities_NR/ER/
+    # Ppq_densities directly from _Ppq_fort_bindings instead, so this
+    # re-export isn't needed here.
     pass
 
 __all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin",
            "make_ridge_breakpoints_NR", "make_ridge_breakpoints_ER",
-           "make_Ppq_densities_NR", "make_Ppq_densities_ER"]
+           "make_Ppq_densities_NR", "make_Ppq_densities_ER", "Ppq_densities"]
 
 
 # ---------------------------------------------------------------------------

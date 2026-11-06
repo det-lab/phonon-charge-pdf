@@ -2,7 +2,8 @@
 Tests for the tabulated PErecoil's Fortran port: PErecoil_set_table_NR/ER
 and PErecoil_clear_table_NR/ER (python/internal/_Ppq_fort_bindings.py ->
 src/Ppq_fort_s.f90's eval_cubic_table), and Ppq_compiled's construction-time
-erecoil_range check (python/Ppq_fort.py's _load_erecoil_table).
+erecoil_range check (python/internal/_Ppq_fort_bindings.py's
+_load_erecoil_table, shared with that module's Ppq_densities).
 
 Needs the compiled Fortran library and h5py -- run where the library is
 built (e.g. in the container):

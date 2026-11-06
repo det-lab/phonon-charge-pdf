@@ -4,10 +4,12 @@ phonon_charge_pdf library (lib/libphonon_charge_pdf.so).
 
 Leading underscore means what it usually does for everything else in this
 module -- not a public API, no stability promise.  make_Ppq_densities_NR/
-make_Ppq_densities_ER are the one exception: they're re-exported as public
-API (phonon_charge_pdf.goodness_of_fit.make_Ppq_densities_NR/ER) for that
-module's own pdf_func and for anyone else who wants the raw band density at
-arbitrary points.  If you're doing a fit or MCMC instead, use Ppq_compiled in
+make_Ppq_densities_ER and Ppq_densities are the exceptions: they're
+re-exported as public API (phonon_charge_pdf.goodness_of_fit.
+make_Ppq_densities_NR/ER and ...Ppq_densities) for that module's own
+pdf_func and for anyone else who wants the raw band density at arbitrary
+points, optionally against a tabulated PErecoil (Ppq_densities -- see its
+own docstring).  If you're doing a fit or MCMC instead, use Ppq_compiled in
 python/Ppq_fort.py; that is the one intended entrypoint there.  Ppq_compiled
 combines the pieces here (a density over the full physical plane and a
 separate region-normalization integral) correctly, raises instead of
@@ -47,11 +49,20 @@ import numpy as np
 # python/internal/ is two levels below the repo root now (it used to be one).
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _REPO_LIB_DIR = os.path.join(_REPO_ROOT, "lib")
+_PYTHON_DIR = os.path.join(_REPO_ROOT, "python")
 # fpm/the OS linker name this .dylib on macOS and .so everywhere else fpm
 # supports (Linux); there's no third platform to worry about.
 _LIB_NAME = "libphonon_charge_pdf.dylib" if sys.platform == "darwin" else "libphonon_charge_pdf.so"
 
 _DOUBLE_ARR = np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")
+
+# Erecoil margin (keV) past max(ep_max, eq_max) a PErecoil table must still
+# cover: matches Ppq_py.py's Ppq_inspect_NR/ER ("maxx = max(Ep, Eq) + 5"),
+# the same conservative bound on how far past (Ep, Eq) the true Erecoil peak
+# can physically sit (EP_mean = Erecoil + (V/1000)*Nbar(Erecoil) >= Erecoil).
+# Shared by Ppq_compiled and Ppq_densities (both call _load_erecoil_table
+# below) -- moved here, not kept in Ppq_fort.py, now that both live.
+_ERECOIL_MARGIN_KEV = 5.0
 
 _api = None
 
@@ -298,6 +309,98 @@ def PErecoil_clear_table_ER():
     """Same as PErecoil_clear_table_NR but for PErecoil_ER."""
     api = _load_library()
     api.PErecoil_clear_table_ER()
+
+
+def _load_erecoil_table(table, band, *, ep_max, eq_max):
+    """Validate table's erecoil_range against a region reaching up to
+    (ep_max, eq_max), then load it into the compiled library
+    (PErecoil_set_table_NR/ER) or, if table is None, explicitly clear
+    that band's table (PErecoil_clear_table_NR/ER) -- every caller
+    (Ppq_compiled.__init__, Ppq_densities.__init__) sets-or-clears both
+    bands every time, rather than silently inheriting whatever a
+    previous caller in this process left loaded (see
+    PErecoil_set_table_NR's own docstring on why this state is global).
+
+    Unlike Ppq_py.py's prototype (integrate_inspect's erecoil_bounds),
+    nothing dynamically checks Erecoil against the table at run time in
+    the compiled library -- bind(c) module procedures here are pure, so
+    there's no catchable-exception path across that boundary. This
+    check, done once here from the physically provable bound
+    EP_mean = Erecoil + (V/1000)*Nbar(Erecoil) >= Erecoil (so the true
+    Erecoil peak for any (Ep, Eq) up to (ep_max, eq_max) can't exceed
+    that plus _ERECOIL_MARGIN_KEV), is what makes that unreachable in
+    practice -- fails now, not hours into a run.
+    """
+    set_table, clear_table = ((PErecoil_set_table_NR, PErecoil_clear_table_NR) if band == "NR"
+                               else (PErecoil_set_table_ER, PErecoil_clear_table_ER))
+    if table is None:
+        clear_table()
+        return None
+    sys.path.insert(0, _PYTHON_DIR)
+    from erecoil_table import PErecoilTable
+    if not isinstance(table, PErecoilTable):
+        table = PErecoilTable.from_hdf5(table)
+    if table.band and table.band != band:
+        raise ValueError(f"PErecoil_table_{band}: table's own metadata says band={table.band!r}")
+    lo, hi = table.erecoil_range
+    needed = max(ep_max, eq_max) + _ERECOIL_MARGIN_KEV
+    if lo > 0.0:
+        raise ValueError(
+            f"PErecoil_table_{band}: erecoil_range starts at {lo!r}, not <= 0 -- a table used "
+            "with the compiled Fortran path must cover Erecoil down to 0, since nothing "
+            "dynamically checks this at run time there, unlike Ppq_py.py's prototype path.")
+    if hi < needed:
+        raise ValueError(
+            f"PErecoil_table_{band}: erecoil_range only reaches {hi!r} keV, but this region "
+            f"(up to {max(ep_max, eq_max)!r} keV) needs it to reach at least {needed!r} keV -- "
+            "rebuild the table with a wider range, or narrow the region.")
+    set_table(*table.fortran_table)
+    return table
+
+
+class Ppq_densities:
+    """Region- and (optionally) table-bound NR/ER density evaluator,
+    backed by the same fast multi-threaded Ppq_vector_NR/ER as
+    make_Ppq_densities_NR/ER -- the lighter sibling of Ppq_compiled
+    (python/Ppq_fort.py) for callers (goodness-of-fit/chi-square checks,
+    debugging) that want the raw per-point density without Ppq_compiled's
+    region-integral normalization, dataset binding, or prior-bounds
+    machinery.
+
+    ep_range, eq_range : (min, max) -- the analysis region. Required even
+    though density_NR/density_ER evaluate at whatever points you hand
+    them (not cropped to this box): every real caller already has a
+    definite box in mind (a fit region, a debug bin, etc.), and it's what
+    PErecoil_table_NR/ER's own coverage gets checked against, so making
+    it explicit here keeps that check possible rather than implicit.
+
+    PErecoil_table_NR, PErecoil_table_ER : None (default -- closed-form
+    biexponential) or a PErecoilTable / HDF5 path. Loaded (or cleared)
+    into the compiled library's global state here, at construction, via
+    the exact same mechanism Ppq_compiled uses -- density_NR/density_ER
+    themselves call the unmodified make_Ppq_densities_NR/ER, which know
+    nothing about tables; they just see whatever is currently loaded
+    globally. Same "two instances with different tables can't coexist in
+    one process" caveat as Ppq_compiled (see that class's own docstring).
+    """
+
+    def __init__(self, ep_range, eq_range, *,
+                 PErecoil_table_NR=None, PErecoil_table_ER=None, n_workers=None):
+        self.ep_min, self.ep_max = ep_range
+        self.eq_min, self.eq_max = eq_range
+        self.n_workers = n_workers
+        self.PErecoil_table_NR = _load_erecoil_table(PErecoil_table_NR, "NR",
+                                                      ep_max=self.ep_max, eq_max=self.eq_max)
+        self.PErecoil_table_ER = _load_erecoil_table(PErecoil_table_ER, "ER",
+                                                      ep_max=self.ep_max, eq_max=self.eq_max)
+
+    def density_NR(self, ep_flat, eq_flat, *, k, Z, F0, eps, V, p0, p10, q0, q10):
+        return make_Ppq_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
+                                     q0=q0, q10=q10, n_workers=self.n_workers)(ep_flat, eq_flat)
+
+    def density_ER(self, ep_flat, eq_flat, *, F0, eps, V, p0, p10, q0, q10):
+        return make_Ppq_densities_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
+                                     q0=q0, q10=q10, n_workers=self.n_workers)(ep_flat, eq_flat)
 
 
 def _make_threaded_pdf(eval_chunk, n_workers):
