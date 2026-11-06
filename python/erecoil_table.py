@@ -19,10 +19,18 @@ tables, imported the same lazy way Ppq_fort.py does (so this module, like
 Ppq_py.py, has no hard dependency on cli/ or the compiled library at import
 time).
 
-Prototype stage: this is validated against Ppq_py.PErecoil_NR/PErecoil_ER
-(see test/python/test_erecoil_table.py) but not yet wired into
-pq_given_Erecoil_NR/ER's quad integration -- that needs the integration
-window clipped to erecoil_range first, tracked as follow-up work.
+Validated against Ppq_py.PErecoil_NR/PErecoil_ER (see
+test/python/test_erecoil_table.py). Wired into PDF/likelihood evaluation:
+pq_given_Erecoil_NR/ER and Ppq_inspect_NR/ER take a p_erecoil argument (a
+PErecoilTable overrides the closed-form default, with the scan/integration
+windows clipped to erecoil_range first -- see those functions' own
+docstrings), and Ppq_fort.py's compiled-library wrapper takes
+PErecoil_table_NR/PErecoil_table_ER constructor params (an HDF5 path or a
+PErecoilTable instance). NOT yet wired into event_generator.py's
+generate_events() -- that still only draws Erecoil from the closed-form
+biexponential (_sample_biexponential), with no parameter anywhere in its
+call chain for a table; an independent follow-up, not blocked by anything
+above.
 """
 
 import os
