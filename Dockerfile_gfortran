@@ -96,6 +96,17 @@ RUN fpm install --prefix=. --flag "-march=native -fopenmp -ftree-parallelize-loo
 # Needed to find the appropriate .so files from within python
 ENV LD_LIBRARY_PATH=/app/lib
 
+# Install the Python package, so `import phonon_charge_pdf` works without
+# the sys.path inserts the scripts use.  --no-deps: the dependencies came
+# from apt and pip above.  No .git exists in this image, so setuptools-scm
+# cannot derive a version; hand it the one in fpm.toml (the same source
+# PpqFort_version() reports).  The compiled library is not bundled here: it
+# is found through LD_LIBRARY_PATH above (the bare-name candidate in
+# python/internal/_Ppq_fort_bindings.py).
+RUN SETUPTOOLS_SCM_PRETEND_VERSION="$(sed -n 's/^version *= *"\(.*\)"/\1/p' fpm.toml | head -n1)" \
+    pip install --break-system-packages --no-deps --no-cache-dir . \
+    && python -c "import phonon_charge_pdf as p; print('installed phonon-charge-pdf', p.__version__)"
+
 # Published normalization tables (python/cli/table_registry.json), fetched and
 # hash-checked at build time -- HPC compute nodes often have no internet.
 # python/cli/normtables.py (and so Ppq(Ppq_table_NR=NAME)) finds them here.
