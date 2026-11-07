@@ -127,12 +127,16 @@ module Ppq_fort_m
     !! epsrel/epsabs set how tightly two successive doubled quadrature
     !! orders (32 vs 64, 64 vs 128, 128 vs 256) must agree before the
     !! result is trusted: this stops refining once
-    !! |result_2N - result_N| <= max(epsabs, epsrel*|result_2N|), and
-    !! error-stops rather than returning an unverified number if order 256
-    !! still hasn't converged.  Parameter sets the model cannot evaluate
-    !! (p10 < p0 or q10 < q0, which make the resolution variance negative
-    !! at high energy; F0, eps, p0, q0, k, Z <= 0; empty region; NaN
-    !! inputs) error-stop immediately instead of grinding.
+    !! |result_2N - result_N| <= max(epsabs, epsrel*|result_2N|).  Returns
+    !! NaN (not a value you can mistake for a real one), rather than an
+    !! unverified number, if order 256 still hasn't converged -- the
+    !! Python wrapper (_Ppq_fort_bindings.Ppq_region_NR) turns that into a
+    !! catchable GLConvergenceError.  Parameter sets the model cannot
+    !! evaluate (p10 < p0 or q10 < q0, which make the resolution variance
+    !! negative at high energy; F0, eps, p0, q0, k, Z <= 0; empty region;
+    !! NaN inputs) error-stop immediately instead of grinding -- that guard
+    !! is a different, genuinely fatal case (a logic error in the caller),
+    !! unlike ordinary non-convergence above.
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
@@ -145,6 +149,43 @@ module Ppq_fort_m
     real(c_double), value :: F0, eps, V, p0, p10, q0, q10
     real(c_double) :: res
   end function Ppq_region_ER
+
+  pure module subroutine Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+      k, Z, F0, eps, V, p0, p10, q0, q10, res, error_estimate) &
+      bind(c, name="Ppq_region_NR_with_error")
+    !! Same as Ppq_region_NR, plus the achieved Gauss-Legendre doubling
+    !! residual in error_estimate: |result_2N - result_N| for whichever
+    !! pair of successive orders (32/64, 64/128, 128/256) satisfied
+    !! epsrel/epsabs (or, if none did, the 128/256 pair just before
+    !! returning NaN) -- a numerical convergence diagnostic, in the same
+    !! units as res, not a statistical uncertainty on the PErecoil model
+    !! itself (a tabulated PErecoil's own calibration-statistics
+    !! uncertainty is a separate question this says nothing about -- see
+    !! erecoil_table.py). By design this should be far smaller than
+    !! epsrel/epsabs asked for; a caller propagating it into e.g. a
+    !! likelihood's error budget is checking that it's negligible, not
+    !! normally expecting it to matter. A second, separate entry point
+    !! (not an extra argument on Ppq_region_NR itself) so that function's
+    !! existing bind(c) signature never changes. A subroutine, not a
+    !! function: a pure FUNCTION's dummy arguments must all be
+    !! intent(in)/value, unlike a pure SUBROUTINE (same reason
+    !! PpqFort_version is a subroutine) -- res is this entry point's
+    !! equivalent of Ppq_region_NR's own function result, just passed out
+    !! as an ordinary argument instead.
+    real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
+    real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
+    real(c_double), intent(out) :: res, error_estimate
+  end subroutine Ppq_region_NR_with_error
+
+  pure module subroutine Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+      F0, eps, V, p0, p10, q0, q10, res, error_estimate) &
+      bind(c, name="Ppq_region_ER_with_error")
+    !! Same as Ppq_region_NR_with_error but for Ppq_ER (electron-recoil
+    !! band, Y=1) -- see that function's comment.
+    real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
+    real(c_double), value :: F0, eps, V, p0, p10, q0, q10
+    real(c_double), intent(out) :: res, error_estimate
+  end subroutine Ppq_region_ER_with_error
 
   pure module subroutine PpqFort_version(major, minor, patch) bind(c, name="PpqFort_version")
     !! Report the package version: fpm.toml's version field, verbatim --

@@ -100,9 +100,50 @@ report a ~zero integral without ever subdividing toward the peak — a silent wr
 not an error. `make_ridge_breakpoints_NR`/`ER` locates the ridge from the band physics (the yield
 model and Neganov-Luke amplification) and its local width (phonon and charge resolution
 added in quadrature), so `expected_counts_from_pdf` can force quadrature to subdivide there.
-There's no "skip this" option for these PDFs — passing `inner_points_func=None` is not
-supported by `expected_counts_from_pdf`, only by `debug_bin` below, specifically so you can
-see the failure mode it exists to prevent.
+There's no "skip this" option for quadrature itself — passing `inner_points_func=None` with
+no `region_integral_func` either is not supported by `expected_counts_from_pdf`, only by
+`debug_bin` below, specifically so you can see the failure mode it exists to prevent. (The
+other way to skip it is `region_integral_func`, next, which doesn't need breakpoints because
+it isn't quadrature over an opaque callable in the first place.)
+
+## A faster alternative: `Ppq_region_NR`/`Ppq_region_ER`
+
+`expected_counts_from_pdf`'s default path treats `pdf_func` as an opaque callable and
+integrates it with nested adaptive quadrature — general, but it pays one Python/ctypes round
+trip per quadrature node and rediscovers the band ridge from scratch for every bin (that's
+what `inner_points_func` is for). `Ppq_region_NR`/`Ppq_region_ER` are a dedicated Fortran
+region integral for exactly this PDF family instead: one call per bin, already ridge-aware,
+converging by doubling Gauss-Legendre order. Pass `region_integral_func=` (from
+`make_region_integral_NR`/`ER`) instead of `inner_points_func=` to use it:
+
+```python
+region_integral = pdf.goodness_of_fit.make_region_integral_NR(
+    epsrel=1e-4, epsabs=1e-10, **FIT,
+)
+
+expected = pdf.goodness_of_fit.expected_counts_from_pdf(
+    None, result.bins, n_events=len(Ep_obs),
+    region_integral_func=region_integral, n_workers=8,
+)
+```
+
+`pdf_func`/`inner_points_func` are ignored (and may be `None`) on this path. This matters
+most once `PErecoil` is a real tabulated spectrum rather than the smooth closed form
+(`erecoil_table.PErecoilTable`, loaded via `Ppq_densities`/`Ppq_compiled`'s own
+`PErecoil_table_NR`/`_ER`): real calibration data has small-scale statistical roughness
+that generic adaptive quadrature chases node by node against an opaque `pdf_func`, which can
+be dramatically slower than against the closed form for no corresponding gain in accuracy —
+the same roughness, read through `Ppq_region_NR`/`ER` directly instead, is not.
+
+A handful of bins can still fail the order-256 doubling check at a tight `epsrel`/`epsabs`
+(typically wherever a table's own statistics are thinnest, not broadly) — `Ppq_region_NR`/`ER`
+raise `GLConvergenceError` rather than return an unverified number in that case.
+`make_region_integral_NR`/`ER` retry automatically (`max_epsrel`/`max_epsabs`, both
+defaulted to 100x `epsrel`/`epsabs` — the worst tolerance you'll accept, not a retry count),
+loosening the tolerance only for the specific bin that needs it, with a
+`warnings.warn` every time, rather than giving up precision everywhere to accommodate the
+worst bin: ask for the tight tolerance you actually want (e.g. `1e-4`/`1e-10`, matching
+`Ppq_compiled`'s own default) and let it relax only where it has to.
 
 ## Diagnosing a specific bin
 

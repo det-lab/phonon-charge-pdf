@@ -227,10 +227,14 @@ contains
   ! ER_impl's own convention (the integration/mode scan can transiently
   ! probe just below zero). Anything else outside [x(1), x(n)] error-stops:
   ! Ppq_fort.py's construction-time check (table's erecoil_range vs.
-  ! max(ep_range, eq_range)) should make this unreachable, so reaching it
-  ! here means that check was skipped or there is a genuine bug -- see
-  ! erecoil_table.PErecoilTable's own OutOfBoxError for the catchable
-  ! equivalent of this on the pure-Python path.
+  ! max(ep_range, eq_range)) catches a table that's too narrow for the
+  ! region up front, and locate_modes/integrate_Ppq clip every Erecoil
+  ! search window to table_hi_bound(is_ER) so they never probe past a
+  ! loaded table's own edge regardless of region size -- together these
+  ! should make this unreachable, so reaching it here means one of them
+  ! has a genuine bug -- see erecoil_table.PErecoilTable's own
+  ! OutOfBoxError for the catchable equivalent of this on the pure-Python
+  ! path.
   pure function eval_cubic_table(Erecoil, x, c0, c1, c2, c3, n) result(res)
       real(c_double), intent(in) :: Erecoil
       integer, intent(in) :: n
@@ -296,6 +300,33 @@ contains
       end if
       res = PGa_over_PGb * exp(-Erecoil / PGb) + one_minus_PGa_over_PGd * exp(-Erecoil / PGd)
   end function PErecoil_ER_impl
+
+  ! Upper edge of whichever table (NR/ER) is currently loaded for this
+  ! band, or no bound (huge) if the closed-form spectrum is in use.
+  ! locate_modes/integrate_Ppq clip their Erecoil search windows to this
+  ! so they never query eval_cubic_table past the table's own range: a
+  ! loaded table's density is real calibration data, not a closed form
+  ! with a known decaying tail, so the window-finding logic that works by
+  ! watching the closed-form integrand die off at the edges cannot be
+  ! trusted to stop itself before running off a table's end.
+  pure function table_hi_bound(is_ER) result(hi)
+      logical, intent(in) :: is_ER
+      ! Relative safety margin, well above float64 rounding (~1e-16): a
+      ! window clipped to exactly the table's edge can still land a grid
+      ! point a few ULPs past it once integrate_window's lo + (npts-1)*h
+      ! arithmetic rounds, which eval_cubic_table's strict Erecoil > x(n)
+      ! check would reject. Negligible physically; keeps every clipped
+      ! point strictly inside the table.
+      real(c_double), parameter :: edge_margin = 1.0d-9
+      real(c_double) :: hi
+
+      hi = huge(1.0d0)
+      if (is_ER) then
+          if (er_table_loaded) hi = er_table_x(size(er_table_x)) * (1.0d0 - edge_margin)
+      else
+          if (nr_table_loaded) hi = nr_table_x(size(nr_table_x)) * (1.0d0 - edge_margin)
+      end if
+  end function table_hi_bound
 
   module procedure PErecoil_set_table_NR
       if (allocated(nr_table_x)) deallocate (nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, nr_table_c3)
@@ -379,20 +410,43 @@ contains
   ! See region_integral_gl for the algorithm.
   module procedure Ppq_region_NR
       type(detector_params_t) :: pars
+      real(c_double) :: unused_error_estimate
 
       pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
-      res = region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-                               pars, .false.)
+      call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+                              pars, .false., res, unused_error_estimate)
   end procedure Ppq_region_NR
 
   module procedure Ppq_region_ER
       type(detector_params_t) :: pars
+      real(c_double) :: unused_error_estimate
 
       ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
       pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
-      res = region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-                               pars, .true.)
+      call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+                              pars, .true., res, unused_error_estimate)
   end procedure Ppq_region_ER
+
+  ! Ppq_region_NR_with_error / Ppq_region_ER_with_error: same as
+  ! Ppq_region_NR/ER, also reporting the Gauss-Legendre doubling residual
+  ! -- a separate entry point (see Ppq_fort_m.f90's comment) so
+  ! Ppq_region_NR/ER's own signature never changes.
+  module procedure Ppq_region_NR_with_error
+      type(detector_params_t) :: pars
+
+      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
+      call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+                              pars, .false., res, error_estimate)
+  end procedure Ppq_region_NR_with_error
+
+  module procedure Ppq_region_ER_with_error
+      type(detector_params_t) :: pars
+
+      ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
+      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+                              pars, .true., res, error_estimate)
+  end procedure Ppq_region_ER_with_error
 
   ! ---------------------------------------------------------------------
   ! Private helpers
@@ -565,12 +619,13 @@ contains
   !
   ! n_modes = 0 signals failure; the caller falls back to the original
   ! full-range grid.
-  pure subroutine locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, &
+  pure subroutine locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, table_hi, &
                                erecoil_m, sig_m, H_m, bnd_m, n_modes)
       real(c_double), intent(in) :: Ep, Eq
       type(detector_params_t), intent(in) :: pars
       real(c_double), intent(in) :: sp2, sq2
       logical, intent(in) :: is_ER
+      real(c_double), intent(in) :: table_hi
       real(c_double), intent(out) :: erecoil_m(max_modes), sig_m(max_modes), H_m(max_modes)
       logical, intent(out) :: bnd_m(max_modes)
       integer, intent(out) :: n_modes
@@ -598,7 +653,11 @@ contains
       logical :: ok, duplicate
 
       n_modes = 0
-      maxx_scan = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
+      ! Clipped to table_hi (huge(1.0d0), a no-op, when no table is loaded
+      ! for this band -- see table_hi_bound): the scan below queries
+      ! PErecoil_NR_impl/ER_impl at every xs(ik), which error-stops past a
+      ! loaded table's edge.
+      maxx_scan = min(max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0), table_hi)
 
       dlx = (log(maxx_scan) - log(x_scan_min)) / (n_scan - 1)
       do ik = 1, n_scan
@@ -647,7 +706,7 @@ contains
               ! Boundary mode: integrand decays away from the low-Erecoil edge
               x = xs(1)
               d = 1.0d-5
-              H1 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_ER) &
+              H1 = (log_integrand_approx(min(x + d, table_hi), Ep, Eq, pars, sp2, sq2, is_ER) &
                   - Hs(1)) / d
               if (H1 >= 0.0d0) cycle
               n_modes = n_modes + 1
@@ -664,13 +723,13 @@ contains
               ! Accept the scan point with finite-difference curvature if usable
               x = xs(ik)
               d = max(1.0d-5, 1.0d-5 * x)
-              H2 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_ER) &
+              H2 = (log_integrand_approx(min(x + d, table_hi), Ep, Eq, pars, sp2, sq2, is_ER) &
                   - 2.0d0 * Hs(ik) &
-                  + log_integrand_approx(x - d, Ep, Eq, pars, sp2, sq2, is_ER)) / d**2
+                  + log_integrand_approx(max(x - d, 0.0d0), Ep, Eq, pars, sp2, sq2, is_ER)) / d**2
               if (H2 >= 0.0d0) cycle
           end if
           sig = 1.0d0 / sqrt(-H2)
-          Hv  = log_integrand_approx(x, Ep, Eq, pars, sp2, sq2, is_ER)
+          Hv  = log_integrand_approx(min(x, table_hi), Ep, Eq, pars, sp2, sq2, is_ER)
           if (sig /= sig .or. sig <= 1.0d-6 .or. sig > maxx_scan) cycle
 
           ! Drop refinements that landed on an already-recorded mode
@@ -718,9 +777,15 @@ contains
           H2_out = 0.0d0
           do it = 1, 60
               dd = max(1.0d-4, 1.0d-4 * xx)
-              Hm = log_integrand_approx(xx - dd, Ep, Eq, pars, sp2, sq2, is_ER)
-              H0 = log_integrand_approx(xx,      Ep, Eq, pars, sp2, sq2, is_ER)
-              Hp = log_integrand_approx(xx + dd, Ep, Eq, pars, sp2, sq2, is_ER)
+              ! Clamped to table_hi (a no-op when no table is loaded for
+              ! this band): xx's own speculative Newton steps below are
+              ! only sanity-checked against 1.5*maxx_scan AFTER being
+              ! taken, so without this, a probe here could already be
+              ! well past a loaded table's edge before that check ever
+              ! fires.
+              Hm = log_integrand_approx(max(xx - dd, 0.0d0), Ep, Eq, pars, sp2, sq2, is_ER)
+              H0 = log_integrand_approx(min(xx,      table_hi), Ep, Eq, pars, sp2, sq2, is_ER)
+              Hp = log_integrand_approx(min(xx + dd, table_hi), Ep, Eq, pars, sp2, sq2, is_ER)
               H1_out = (Hp - Hm) / (2.0d0 * dd)
               H2_out = (Hp - 2.0d0 * H0 + Hm) / dd**2
               if (H2_out >= 0.0d0) return
@@ -731,6 +796,7 @@ contains
               else
                   xx = xx + step
               end if
+              xx = min(xx, table_hi)
               if (xx > 1.5d0 * maxx_scan) return
               if (abs(step) < 1.0d-4) then
                   converged = .true.
@@ -809,7 +875,7 @@ contains
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_ER
       real(c_double) :: res
-      real(c_double) :: sp2, sq2, maxx_scan, resolution
+      real(c_double) :: sp2, sq2, maxx_scan, resolution, table_hi
       real(c_double) :: erecoil_m(max_modes), sig_m(max_modes), H_m(max_modes)
       logical :: bnd_m(max_modes)
       real(c_double) :: w_lo(max_modes), w_hi(max_modes), w_ht(max_modes), w_sig(max_modes)
@@ -819,14 +885,15 @@ contains
 
       sp2 = sigp(Ep, pars%eps, pars%V, pars%p0, pars%p10)**2
       sq2 = sigq(Eq, pars%q0, pars%q10)**2
+      table_hi = table_hi_bound(is_ER)
 
-      call locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, &
+      call locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, table_hi, &
                         erecoil_m, sig_m, H_m, bnd_m, n_modes)
 
       if (n_modes == 0) then
           ! Last resort: the original fine grid over the full range.
           ! Guaranteed correct, rarely taken.
-          maxx_scan  = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
+          maxx_scan  = min(max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0), table_hi)
           resolution = merge(0.002d0, 0.01d0, maxx_scan < 15.0d0)
           npts = int((maxx_scan - erecoil_min) / resolution) + 1
           res  = integrate_window(erecoil_min, resolution, npts, Ep, Eq, pars, is_ER)
@@ -841,14 +908,17 @@ contains
 
       ! One window per mode: +/- 8 sigma around an interior peak; for a
       ! boundary decay, 35 decay lengths puts the truncated tail below
-      ! 1e-15 relative.
+      ! 1e-15 relative. Clipped to table_hi (a no-op when no table is
+      ! loaded for this band): a loaded table's real calibration data has
+      ! no guaranteed decaying tail the way the closed form does, so
+      ! these windows must never reach past where it ends.
       do m = 1, n_modes
           if (bnd_m(m)) then
               w_lo(m) = erecoil_min
-              w_hi(m) = erecoil_m(m) + 35.0d0 * sig_m(m)
+              w_hi(m) = min(erecoil_m(m) + 35.0d0 * sig_m(m), table_hi)
           else
               w_lo(m) = max(erecoil_min, erecoil_m(m) - 8.0d0 * sig_m(m))
-              w_hi(m) = erecoil_m(m) + 8.0d0 * sig_m(m)
+              w_hi(m) = min(erecoil_m(m) + 8.0d0 * sig_m(m), table_hi)
           end if
           w_ht(m)  = sig_m(m) / 6.0d0
           w_sig(m) = sig_m(m)
@@ -895,8 +965,8 @@ contains
           ! the full trapezoid weight of the union.
           lo_limit = erecoil_min
           if (m > 1) lo_limit = w_hi(m - 1)
-          hi_limit = huge(1.0d0)
-          if (m < n_win) hi_limit = w_lo(m + 1)
+          hi_limit = table_hi
+          if (m < n_win) hi_limit = min(hi_limit, w_lo(m + 1))
           w_lo(m) = max(w_lo(m), lo_limit)
 
           do guard = 1, 4
@@ -1241,18 +1311,32 @@ contains
   ! Doubling-verified driver for Ppq_region_NR/Ppq_region_ER:
   ! order 32 vs 64, then 64 vs 128, then 128 vs 256; accepts the finer
   ! estimate the first time two successive orders agree within
-  ! max(epsabs, epsrel*|result|), or fails loudly (error stop) if order
+  ! max(epsabs, epsrel*|result|), or returns NaN (see below) if order
   ! 256 still hasn't converged rather than silently returning an
   ! unverified number -- see the module header comment above for why this
   ! replaced an earlier Cuba/Cuhre implementation.  The outer Ep range is
   ! first split at any window-clipping breakpoints (find_window_breakpoints)
   ! so each Gauss-Legendre pass only ever integrates a smooth piece.
-  pure function region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      pars, is_ER) result(res)
+  !
+  ! A subroutine, not a function returning res: a pure FUNCTION's dummy
+  ! arguments must all be intent(in)/value (unlike a pure SUBROUTINE,
+  ! which may have intent(out) ones -- gfortran rejects the function form
+  ! with error_estimate as a second output), matching PpqFort_version's
+  ! own subroutine-not-function precedent for the same reason.
+  pure subroutine region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
+      pars, is_ER, res, error_estimate)
+      use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
       real(c_double), intent(in) :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_ER
-      real(c_double) :: res
+      real(c_double), intent(out) :: res
+      ! |result_2N - result_N| for whichever doubling pair converged (or,
+      ! on failure, the 128/256 pair) -- see
+      ! Ppq_region_NR_with_error/ER_with_error's own comment in
+      ! Ppq_fort_m.f90 for what this is and is not. Every caller gets
+      ! this computed (negligible cost next to the GL passes themselves);
+      ! Ppq_region_NR/ER just don't pass it on to their own caller.
+      real(c_double), intent(out) :: error_estimate
 
       real(c_double), parameter :: n_window_widths = 8.0d0
       integer, parameter :: n_tab = region_ridge_n_tab
@@ -1299,6 +1383,7 @@ contains
                                      gl_nodes_64, gl_weights_64, 64, gl_nodes_64, gl_weights_64, 64)
       if (gl_converged(res32, res64, epsrel, epsabs)) then
           res = res64
+          error_estimate = abs(res64 - res32)
           return
       end if
 
@@ -1307,6 +1392,7 @@ contains
                                       gl_nodes_128, gl_weights_128, 128, gl_nodes_128, gl_weights_128, 128)
       if (gl_converged(res64, res128, epsrel, epsabs)) then
           res = res128
+          error_estimate = abs(res128 - res64)
           return
       end if
 
@@ -1315,11 +1401,26 @@ contains
                                       gl_nodes_256, gl_weights_256, 256, gl_nodes_256, gl_weights_256, 256)
       if (gl_converged(res128, res256, epsrel, epsabs)) then
           res = res256
+          error_estimate = abs(res256 - res128)
           return
       end if
 
-      error stop "Ppq_region_NR/Ppq_region_ER: Gauss-Legendre doubling " // &
-                  "did not converge to the requested epsrel/epsabs by order 256"
-  end function region_integral_gl
+      ! NaN, not error stop: this is a legitimate, sometimes-expected
+      ! outcome (a tight epsrel/epsabs against a region with real
+      ! small-scale structure, e.g. a narrow bin over a tabulated
+      ! PErecoil's own statistical roughness -- see
+      ! python/internal/_Ppq_fort_bindings.py's table_hi_bound comments),
+      ! not a programming error like the validate_region_inputs guards
+      ! above. error stop would kill the whole process with no recourse
+      ! -- including a long MCMC run or table-building pass over a
+      ! single bad grid point. Ppq_region_NR/Ppq_region_ER's Python
+      ! wrapper turns this NaN into a catchable GLConvergenceError
+      ! instead, preserving the original "never return an unverified
+      ! number silently" guarantee while letting a caller (e.g.
+      ! goodness_of_fit.make_region_integral_NR/ER) decide to retry
+      ! with a looser tolerance rather than dying outright.
+      res = ieee_value(res, ieee_quiet_nan)
+      error_estimate = abs(res256 - res128)
+  end subroutine region_integral_gl
 
 end submodule Ppq_fort_s

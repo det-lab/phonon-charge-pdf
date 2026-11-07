@@ -24,13 +24,12 @@ test/python/test_erecoil_table.py). Wired into PDF/likelihood evaluation:
 pq_given_Erecoil_NR/ER and Ppq_inspect_NR/ER take a p_erecoil argument (a
 PErecoilTable overrides the closed-form default, with the scan/integration
 windows clipped to erecoil_range first -- see those functions' own
-docstrings), and Ppq_fort.py's compiled-library wrapper takes
-PErecoil_table_NR/PErecoil_table_ER constructor params (an HDF5 path or a
-PErecoilTable instance). NOT yet wired into event_generator.py's
-generate_events() -- that still only draws Erecoil from the closed-form
-biexponential (_sample_biexponential), with no parameter anywhere in its
-call chain for a table; an independent follow-up, not blocked by anything
-above.
+docstrings), Ppq_fort.py's compiled-library wrapper and
+_Ppq_fort_bindings.Ppq_densities take PErecoil_table_NR/PErecoil_table_ER
+constructor params (an HDF5 path or a PErecoilTable instance), and
+event_generator.generate_events() takes p_erecoil_NR/p_erecoil_ER (a
+PErecoilTable overrides the closed-form biexponential Erecoil draw via this
+module's own sample() method, below).
 """
 
 import os
@@ -191,6 +190,28 @@ class PErecoilTable:
         eval_cubic_table (src/Ppq_fort_s.f90) evaluates this identical form."""
         c = self._interp.c / self._norm
         return self._interp.x, c[0], c[1], c[2], c[3]
+
+    def sample(self, n, rng):
+        """n draws of Erecoil from this table's own normalized density, by
+        inverse-CDF sampling against the exact antiderivative of the same
+        piecewise-cubic interpolant __call__ evaluates -- not a histogram
+        approximation, and not restricted to the table's own breakpoints.
+
+        rng : numpy.random.Generator
+        """
+        antideriv = self._interp.antiderivative()
+        x = self._interp.x
+        cdf = (antideriv(x) - antideriv(self._lo)) / self._norm
+        cdf = np.clip(cdf, 0.0, 1.0)
+        cdf[0], cdf[-1] = 0.0, 1.0
+        # Flat stretches (zero density) make consecutive cdf values equal,
+        # which the inverse's own strictly-increasing-x requirement below
+        # can't take -- keep only the first of each run. The dropped knots
+        # sit under a zero-density interval anyway, so the inverse CDF
+        # never actually needs to resolve a point inside one.
+        keep = np.concatenate(([True], np.diff(cdf) > 0))
+        inverse_cdf = PchipInterpolator(cdf[keep], x[keep], extrapolate=False)
+        return inverse_cdf(rng.random(n))
 
     def __call__(self, Erecoil):
         Erecoil = float(Erecoil)

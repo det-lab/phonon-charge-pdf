@@ -32,7 +32,9 @@ Physical picture
 -----------------
 Each event starts from a true recoil energy Erecoil, drawn from the species'
 biexponential spectrum (PErecoil_ER for electron recoils, PErecoil_NR for nuclear
-recoils). Erecoil then produces a Fano-broadened number of e/h pairs N, which
+recoils) -- or, if p_erecoil_NR/p_erecoil_ER is given, from that tabulated
+spectrum instead (see erecoil_table.PErecoilTable). Erecoil then produces a
+Fano-broadened number of e/h pairs N, which
 in turn sets the phonon energy Ep (recoil + Neganov-Luke) and charge
 energy Eq (N * eps), each further smeared by its own detector resolution:
 
@@ -124,18 +126,27 @@ def _sample_N(Nbar_arr, F_arr, rng):
 def _generate_species_events(n_events, *, Nbar_func,
                               F0, eps, V, p0, p10, q0, q10,
                               mix_frac, scale_fast, scale_slow,
-                              seed):
+                              seed, p_erecoil=None):
     """
-    Shared generator: draws Erecoil from the biexponential mix_frac/scale_fast/
-    scale_slow spectrum and mean e/h pair count Nbar_func(Erecoil), then
-    simulates the rest of the detector chain. NR/ER differ only in
-    Nbar_func and which spectrum parameters they pass (see
-    generate_events_NR/generate_events_ER).
+    Shared generator: draws Erecoil, then simulates the rest of the
+    detector chain. NR/ER differ only in Nbar_func and which spectrum
+    parameters they pass (see generate_events_NR/generate_events_ER).
+
+    p_erecoil : None (default) or an object with a sample(n, rng) method
+        (e.g. erecoil_table.PErecoilTable). None draws Erecoil from the
+        closed-form mix_frac/scale_fast/scale_slow biexponential; a table
+        overrides that draw with table.sample(n_events, rng) instead, and
+        mix_frac/scale_fast/scale_slow go unused (still required, for the
+        same reason F0_ER is still required when fraction_ER=0.0 -- see
+        generate_events()'s own docstring).
     """
     rng = np.random.default_rng(seed)
 
-    Erecoil = _sample_biexponential(n_events, rng, mix_frac=mix_frac,
-                                scale_fast=scale_fast, scale_slow=scale_slow)
+    if p_erecoil is None:
+        Erecoil = _sample_biexponential(n_events, rng, mix_frac=mix_frac,
+                                    scale_fast=scale_fast, scale_slow=scale_slow)
+    else:
+        Erecoil = p_erecoil.sample(n_events, rng)
 
     Nbar = Nbar_func(Erecoil)                              # mean e/h pairs
     F_val = np.full_like(Erecoil, F0)                      # Fano factor (constant)
@@ -164,7 +175,7 @@ def generate_events_NR(n_events, *,
                         p0, p10,
                         q0, q10,
                         mix_frac, scale_fast, scale_slow,
-                        seed):
+                        seed, p_erecoil=None):
     """
     Generate (Ep, Eq) pairs distributed according to Ppq_NR -- no ROI
     cropping, no species mixing. Not exported: generate_events(fraction_ER=0.0)
@@ -175,7 +186,8 @@ def generate_events_NR(n_events, *,
     genuinely want the uncropped full physical model.
 
     mix_frac, scale_fast, scale_slow are PErecoil_NR's biexponential
-    true-recoil-energy spectrum parameters (see Ppq_py.py's PErecoil_NR).
+    true-recoil-energy spectrum parameters (see Ppq_py.py's PErecoil_NR),
+    used unless p_erecoil overrides them (see _generate_species_events).
 
     Returns
     -------
@@ -186,7 +198,8 @@ def generate_events_NR(n_events, *,
     return _generate_species_events(
         n_events, Nbar_func=lambda Erecoil: ppq.Nbar_NR(Erecoil, k=k, Z=Z, eps=eps),
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
+        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow,
+        seed=seed, p_erecoil=p_erecoil)
 
 
 def generate_events_ER(n_events, *,
@@ -195,7 +208,7 @@ def generate_events_ER(n_events, *,
                         p0, p10,
                         q0, q10,
                         mix_frac, scale_fast, scale_slow,
-                        seed):
+                        seed, p_erecoil=None):
     """
     Generate (Ep, Eq) pairs distributed according to Ppq_ER -- no ROI
     cropping, no species mixing. Not exported: generate_events(fraction_ER=1.0)
@@ -206,7 +219,8 @@ def generate_events_ER(n_events, *,
 
     Gamma / electron-recoil events have ionization yield Y = 1. mix_frac,
     scale_fast, scale_slow are PErecoil_ER's biexponential true-recoil-energy
-    spectrum parameters (see Ppq_py.py's PErecoil_ER).
+    spectrum parameters (see Ppq_py.py's PErecoil_ER), used unless
+    p_erecoil overrides them (see _generate_species_events).
 
     Returns
     -------
@@ -217,7 +231,8 @@ def generate_events_ER(n_events, *,
     return _generate_species_events(
         n_events, Nbar_func=lambda Erecoil: ppq.Nbar_ER(Erecoil, eps=eps),
         F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow, seed=seed)
+        mix_frac=mix_frac, scale_fast=scale_fast, scale_slow=scale_slow,
+        seed=seed, p_erecoil=p_erecoil)
 
 
 # Initial guess for each species' ROI acceptance rate, refined from batch 1
@@ -287,6 +302,7 @@ def generate_events(target_size, fraction_ER, seed, *,
                      k, Z, F0_NR, F0_ER, eps, V, p0, p10, q0, q10,
                      mix_frac_NR, scale_fast_NR, scale_slow_NR,
                      mix_frac_ER, scale_fast_ER, scale_slow_ER,
+                     p_erecoil_NR=None, p_erecoil_ER=None,
                      max_retries=40):
     """
     Generate target_size (Ep, Eq) events, fraction_ER of them (in expectation)
@@ -326,9 +342,16 @@ def generate_events(target_size, fraction_ER, seed, *,
         phonon/charge resolution parameters) -- see Ppq_py.py's
         sigp/sigq.
     mix_frac_NR, scale_fast_NR, scale_slow_NR : float
-        NR true-recoil-energy (PErecoil_NR) biexponential spectrum parameters.
+        NR true-recoil-energy (PErecoil_NR) biexponential spectrum parameters,
+        used unless p_erecoil_NR overrides them.
     mix_frac_ER, scale_fast_ER, scale_slow_ER : float
-        ER true-recoil-energy (PErecoil_ER) biexponential spectrum parameters.
+        ER true-recoil-energy (PErecoil_ER) biexponential spectrum parameters,
+        used unless p_erecoil_ER overrides them.
+    p_erecoil_NR, p_erecoil_ER : None (default) or an erecoil_table.PErecoilTable
+        Override the closed-form biexponential Erecoil draw for that species
+        with table.sample(n, rng) instead -- for validating the simulator
+        against a tabulated PErecoil the same way Ppq_compiled/Ppq_densities
+        can evaluate the PDF against one (see python/erecoil_table.py).
     max_retries : int
         Cap on retry batches per species before giving up with a warning.
 
@@ -354,12 +377,14 @@ def generate_events(target_size, fraction_ER, seed, *,
         n_ER, "ER", seed_ER, max_retries=max_retries, **roi,
         sampler=generate_events_ER,
         sampler_kwargs=dict(F0=F0_ER, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-                            mix_frac=mix_frac_ER, scale_fast=scale_fast_ER, scale_slow=scale_slow_ER))
+                            mix_frac=mix_frac_ER, scale_fast=scale_fast_ER, scale_slow=scale_slow_ER,
+                            p_erecoil=p_erecoil_ER))
     Ep_nr, Eq_nr, Erecoil_nr, N_nr = _species_in_roi(
         n_NR, "NR", seed_NR, max_retries=max_retries, **roi,
         sampler=generate_events_NR,
         sampler_kwargs=dict(k=k, Z=Z, F0=F0_NR, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
-                            mix_frac=mix_frac_NR, scale_fast=scale_fast_NR, scale_slow=scale_slow_NR))
+                            mix_frac=mix_frac_NR, scale_fast=scale_fast_NR, scale_slow=scale_slow_NR,
+                            p_erecoil=p_erecoil_NR))
 
     Ep = np.concatenate([Ep_er, Ep_nr])
     Eq = np.concatenate([Eq_er, Eq_nr])

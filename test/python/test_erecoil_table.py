@@ -8,7 +8,8 @@ exercise: a query past the table's range raises normgrid.OutOfBoxError
 integration/peak-scan machinery is allowed to probe -- still returns 0,
 matching PErecoil_NR/PErecoil_ER's own convention. Also checks the HDF5
 round trip (save_erecoil_table -> from_hdf5) preserves its detector/band/
-provenance metadata.
+provenance metadata. Also checks sample() against the table's own CDF
+(deciles, via a chi-square goodness-of-fit test).
 
 Needs h5py. No Fortran needed.
 
@@ -110,6 +111,35 @@ from scipy.integrate import quad
 integral, _ = quad(p_nr, 0.0, hi, limit=200)
 check("PErecoilTable(NR) integrates to ~1 over its own range", np.isclose(integral, 1.0, atol=1e-3),
       f"integral={integral!r}")
+
+# ---- sample(): inverse-CDF draws match the table's own CDF ----
+
+rng = np.random.default_rng(1234)
+n_sample = 20_000
+samples = p_nr.sample(n_sample, rng)
+check("sample(): returns the requested count", len(samples) == n_sample)
+check("sample(): all draws are finite", np.all(np.isfinite(samples)))
+check("sample(): all draws are within erecoil_range", bool(np.all((samples >= lo) & (samples <= hi))))
+
+# Deciles of the table's own CDF (9 interior quad integrals, not one per
+# sample): a correct inverse-CDF sampler should put ~10% of draws in each
+# decile bin -- checked with a chi-square goodness-of-fit test rather than
+# np.isclose on each count, since Poisson scatter at n_sample/10 ~ 2000
+# means a single bin landing a bit off is expected, not a bug.
+from scipy.optimize import brentq
+from scipy.stats import chisquare
+
+
+def _cdf_nr(x):
+    return quad(p_nr, lo, x, limit=200)[0]
+
+
+decile_edges = ([lo] + [brentq(lambda x, q=q: _cdf_nr(x) - q, lo, hi, xtol=1e-6)
+                        for q in np.linspace(0.1, 0.9, 9)] + [hi])
+decile_counts, _ = np.histogram(samples, bins=decile_edges)
+chi2_stat, chi2_p = chisquare(decile_counts, f_exp=np.full(10, n_sample / 10))
+check("sample(): deciles of the table's own CDF are ~uniformly populated",
+      chi2_p > 0.01, f"counts={decile_counts.tolist()} chi2_p={chi2_p!r}")
 
 # ---- edge behavior: negative Erecoil is 0 (not an error), past the table raises ----
 

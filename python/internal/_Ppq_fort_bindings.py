@@ -17,7 +17,11 @@ extrapolating when a precomputed table is used, and is what the rest of
 this file's docstrings assume you already have if you're reading them.
 Everything else here (Ppq_region_NR/ER, the ctypes setup) exists for
 Ppq_compiled, python/cli/normgrid.py, python/goodness_of_fit.py, and the
-test suite to build on.
+test suite to build on. GLConvergenceError (also re-exported from
+goodness_of_fit) is the one other public-ish name: the catchable
+exception Ppq_region_NR/ER raise when their Gauss-Legendre doubling
+can't certify the requested epsrel/epsabs, in place of the uncatchable
+Fortran `error stop` that used to kill the whole process on this.
 
 make_Ppq_densities_NR / make_Ppq_densities_ER build vectorized
 pdf_func(Ep_flat, Eq_flat) -> values_flat callables.  These are genuine
@@ -40,6 +44,7 @@ carries a similar share of expensive (high-energy) points.
 """
 
 import ctypes
+import math
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -154,6 +159,32 @@ def _load_library():
     ]
     _api.Ppq_region_ER.restype = ctypes.c_double
 
+    # Subroutines (not functions -- see Ppq_fort_m.f90's comment on why):
+    # res and error_estimate both come back via the two trailing
+    # ctypes.POINTER(c_double) out-arguments, restype=None, same pattern
+    # as PpqFort_version.
+    _api.Ppq_region_NR_with_error.argtypes = [
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # ep_min, ep_max, eq_min, eq_max
+        ctypes.c_double, ctypes.c_double,                                    # epsrel, epsabs
+        ctypes.c_double, ctypes.c_double, ctypes.c_double,                   # k, Z, F0
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
+        ctypes.c_double, ctypes.c_double,                                    # q0, q10
+        ctypes.POINTER(ctypes.c_double),                                    # res (out)
+        ctypes.POINTER(ctypes.c_double),                                    # error_estimate (out)
+    ]
+    _api.Ppq_region_NR_with_error.restype = None
+
+    _api.Ppq_region_ER_with_error.argtypes = [
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # ep_min, ep_max, eq_min, eq_max
+        ctypes.c_double, ctypes.c_double,                                    # epsrel, epsabs
+        ctypes.c_double,                                                     # F0
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
+        ctypes.c_double, ctypes.c_double,                                    # q0, q10
+        ctypes.POINTER(ctypes.c_double),                                    # res (out)
+        ctypes.POINTER(ctypes.c_double),                                    # error_estimate (out)
+    ]
+    _api.Ppq_region_ER_with_error.restype = None
+
     for name in ("PErecoil_set_table_NR", "PErecoil_set_table_ER"):
         fn = getattr(_api, name)
         fn.argtypes = [_DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int]
@@ -233,6 +264,29 @@ def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
 
+class GLConvergenceError(RuntimeError):
+    """Ppq_region_NR/Ppq_region_ER's Gauss-Legendre doubling could not
+    reach the requested epsrel/epsabs by order 256 -- the catchable
+    equivalent of "never return an unverified number": the Fortran side
+    (src/Ppq_fort_s.f90's region_integral_gl) returns NaN rather than
+    error-stopping the whole process on this, specifically so a caller
+    can catch this and retry with a looser tolerance instead of losing
+    an entire MCMC run or table-building pass over one bad bin/grid
+    point. See goodness_of_fit.make_region_integral_NR/ER for exactly
+    that retry, and erecoil_table.PErecoilTable's own OutOfBoxError for
+    the analogous catchable guard on the pure-Python path.
+
+    error_estimate (float or None): the Gauss-Legendre doubling residual
+    from the last attempt before giving up -- set only when raised by
+    Ppq_region_NR_with_error/ER_with_error (None from the plain
+    Ppq_region_NR/ER, which never compute it). "How close it got", not a
+    bound on the true error -- see those functions' own docstrings."""
+
+    def __init__(self, message, error_estimate=None):
+        super().__init__(message)
+        self.error_estimate = error_estimate
+
+
 def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
                  epsrel, epsabs,
                  k, Z, F0, eps, V, p0, p10, q0, q10):
@@ -248,14 +302,20 @@ def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
     epsrel/epsabs are required (no defaults): they set how tightly two
     successive doubled quadrature orders must agree before the result is
     trusted, and directly control the accuracy of a number that feeds a
-    likelihood normalization. The Fortran side error-stops rather than
-    returning an unverified number if that isn't reached by its highest
-    order.
+    likelihood normalization. Raises GLConvergenceError (see that
+    class's docstring), rather than returning an unverified number, if
+    that isn't reached by the highest order (256).
     """
     api = _load_library()
-    return api.Ppq_region_NR(ep_min, ep_max, eq_min, eq_max,
+    res = api.Ppq_region_NR(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
                             k, Z, F0, eps, V, p0, p10, q0, q10)
+    if math.isnan(res):
+        raise GLConvergenceError(
+            f"Ppq_region_NR: Gauss-Legendre doubling did not converge to epsrel={epsrel!r}, "
+            f"epsabs={epsabs!r} by order 256 over Ep in [{ep_min},{ep_max}], "
+            f"Eq in [{eq_min},{eq_max}] -- try a looser tolerance for this region.")
+    return res
 
 
 def Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, *,
@@ -263,9 +323,77 @@ def Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, *,
                  F0, eps, V, p0, p10, q0, q10):
     """Same as Ppq_region_NR but for Ppq_ER (electron-recoil band, Y=1)."""
     api = _load_library()
-    return api.Ppq_region_ER(ep_min, ep_max, eq_min, eq_max,
+    res = api.Ppq_region_ER(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
                             F0, eps, V, p0, p10, q0, q10)
+    if math.isnan(res):
+        raise GLConvergenceError(
+            f"Ppq_region_ER: Gauss-Legendre doubling did not converge to epsrel={epsrel!r}, "
+            f"epsabs={epsabs!r} by order 256 over Ep in [{ep_min},{ep_max}], "
+            f"Eq in [{eq_min},{eq_max}] -- try a looser tolerance for this region.")
+    return res
+
+
+def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
+                             epsrel, epsabs,
+                             k, Z, F0, eps, V, p0, p10, q0, q10):
+    """
+    Same as Ppq_region_NR, plus the achieved Gauss-Legendre doubling
+    residual: |result_2N - result_N| for whichever pair of successive
+    orders (32/64, 64/128, 128/256) satisfied epsrel/epsabs -- a
+    numerical convergence diagnostic in the same units as the returned
+    value, NOT a statistical uncertainty on the PErecoil model itself (a
+    tabulated PErecoil's own calibration-statistics uncertainty is a
+    separate question this says nothing about -- see erecoil_table.py).
+    By design this should be far smaller than the epsrel/epsabs asked
+    for; useful for confirming that numerical precision is negligible
+    against some other uncertainty (e.g. a likelihood's statistical
+    error), not normally expected to matter on its own.
+
+    Returns
+    -------
+    (value, error_estimate) : both float.
+
+    Raises GLConvergenceError exactly like Ppq_region_NR, but with
+    error_estimate set on the exception (the 128/256 residual from the
+    failing attempt) even on failure.
+    """
+    api = _load_library()
+    res = ctypes.c_double()
+    error_estimate = ctypes.c_double()
+    api.Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max,
+                                 epsrel, epsabs,
+                                 k, Z, F0, eps, V, p0, p10, q0, q10,
+                                 ctypes.byref(res), ctypes.byref(error_estimate))
+    if math.isnan(res.value):
+        raise GLConvergenceError(
+            f"Ppq_region_NR_with_error: Gauss-Legendre doubling did not converge to "
+            f"epsrel={epsrel!r}, epsabs={epsabs!r} by order 256 over Ep in [{ep_min},{ep_max}], "
+            f"Eq in [{eq_min},{eq_max}] (last residual: {error_estimate.value!r}) -- "
+            f"try a looser tolerance for this region.",
+            error_estimate=error_estimate.value)
+    return res.value, error_estimate.value
+
+
+def Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, *,
+                             epsrel, epsabs,
+                             F0, eps, V, p0, p10, q0, q10):
+    """Same as Ppq_region_NR_with_error but for Ppq_ER (electron-recoil band, Y=1)."""
+    api = _load_library()
+    res = ctypes.c_double()
+    error_estimate = ctypes.c_double()
+    api.Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max,
+                                 epsrel, epsabs,
+                                 F0, eps, V, p0, p10, q0, q10,
+                                 ctypes.byref(res), ctypes.byref(error_estimate))
+    if math.isnan(res.value):
+        raise GLConvergenceError(
+            f"Ppq_region_ER_with_error: Gauss-Legendre doubling did not converge to "
+            f"epsrel={epsrel!r}, epsabs={epsabs!r} by order 256 over Ep in [{ep_min},{ep_max}], "
+            f"Eq in [{eq_min},{eq_max}] (last residual: {error_estimate.value!r}) -- "
+            f"try a looser tolerance for this region.",
+            error_estimate=error_estimate.value)
+    return res.value, error_estimate.value
 
 
 def PErecoil_set_table_NR(x, c0, c1, c2, c3):

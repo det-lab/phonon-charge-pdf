@@ -14,9 +14,14 @@ per step.  This module is the whole pipeline:
   chunks                         split it into (start, stop) ranges, one per
                                  batch job
   run                            worker: evaluate a range of points, crash-
-                                 tolerant and resumable (Fortran `error stop`
-                                 kills the process, so a supervisor restarts
-                                 past the failing point and records it)
+                                 tolerant and resumable (a point whose
+                                 quadrature can't certify epsrel/epsabs
+                                 raises GLConvergenceError, uncaught here
+                                 by design -- same net effect as the old
+                                 Fortran `error stop` it replaced: this
+                                 kills the process, so a supervisor
+                                 restarts past the failing point and
+                                 records it)
   merge                          combine result files into one HDF5 table
   validate                       compare the interpolant against directly
                                  computed held-out points
@@ -333,9 +338,10 @@ def _worker(spec_path, out, todo_path, progress_path, epsrel):
 
 def run_range(spec_path, start, stop, out, retry_failed=False, epsrel=None, quiet=False):
     """Evaluate points [start, stop) into `out`, skipping any already done.
-    A point whose evaluation kills the process (Fortran `error stop`, e.g.
-    the quadrature not certifying epsrel) is recorded as nan and the worker
-    restarted after it; --retry-failed re-attempts recorded failures (use
+    A point whose evaluation kills the process (an uncaught
+    GLConvergenceError, e.g. the quadrature not certifying epsrel) is
+    recorded as nan and the worker restarted after it; --retry-failed
+    re-attempts recorded failures (use
     with a looser --epsrel)."""
     spec = load_spec(spec_path)
     stop = min(stop, n_points(spec))

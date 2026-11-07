@@ -100,9 +100,10 @@ between axes, which is why the held-out check is the gate.
 `table_building/test/test_build_table.sh` runs the whole chain locally against a mock `sbatch` and
 an analytic stand-in for the integrals.
 
-`run` is resumable and crash-tolerant: Fortran `error stop` (e.g. the quadrature not
-certifying `epsrel=1e-7`) kills the process, so a supervisor records that point as `nan`
-and restarts past it; re-run failures with a looser tolerance via
+`run` is resumable and crash-tolerant: a point whose quadrature can't certify
+`epsrel=1e-7` raises `GLConvergenceError`, uncaught by design -- same net effect as the
+Fortran `error stop` it replaced: this kills the process, so a supervisor records that
+point as `nan` and restarts past it; re-run failures with a looser tolerance via
 `run --retry-failed --epsrel 1e-6`. `merge` refuses to build a table with missing points.
 The HDF5 file records the `ep_range`/`eq_range`, fixed parameters, library version and git
 commit it was built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand

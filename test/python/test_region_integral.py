@@ -105,15 +105,16 @@ def run(band, params, region_func):
 
 
 def run_nonconvergence_check():
-    """Confirms the doubling loop's error stop fires (fails loudly)
-    rather than silently returning an unverified number when order 256
-    still can't meet an impossibly tight request -- the safety net this
-    whole design exists for must itself be proven to work, not assumed
-    to.  error stop terminates the process, so this runs in a subprocess
-    and checks the exit code and message rather than catching an
-    exception in-process."""
+    """Confirms GLConvergenceError fires (fails loudly) rather than
+    silently returning an unverified number when order 256 still can't
+    meet an impossibly tight request -- the safety net this whole design
+    exists for must itself be proven to work, not assumed to. Run in a
+    subprocess (not caught in-process) purely so an uncaught exception's
+    traceback -- not a crash -- is what's being confirmed here; unlike
+    the invalid-input guards below, this one IS a catchable Python
+    exception (see _Ppq_fort_bindings.GLConvergenceError's docstring)."""
     print(f"\n{'='*70}")
-    print("Safety net: error stop fires on a non-convergent request")
+    print("Safety net: GLConvergenceError fires on a non-convergent request")
     print(f"{'='*70}")
     script = (
         "import sys; sys.path.insert(0, 'python/internal'); "
@@ -128,7 +129,8 @@ def run_nonconvergence_check():
     fired = proc.returncode != 0 and "did not converge" in proc.stderr
     print(f"    exit code: {proc.returncode}")
     print(f"    stderr tail: {proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else '(empty)'}")
-    print(f"    {'PASS' if fired else 'FAIL'} -- error stop {'fired' if fired else 'did NOT fire'} as expected")
+    print(f"    {'PASS' if fired else 'FAIL'} -- GLConvergenceError "
+          f"{'fired' if fired else 'did NOT fire'} as expected")
     return fired
 
 

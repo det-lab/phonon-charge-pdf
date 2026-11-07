@@ -11,32 +11,43 @@ Workflow
 1. Generate a reference dataset; use equibin to define adaptive bins.
    The outer envelope of the bins is snapped to the declared region so
    every thrown event lands in exactly one bin.
-2. Compute expected counts per bin by integrating pdf_func over each bin
-   with adaptive quadrature, which is accurate regardless of bin size.
+2. Compute expected counts per bin -- either by integrating pdf_func over
+   each bin with adaptive quadrature (accurate regardless of bin size),
+   or, when region_integral_func is given, with a single dedicated
+   Fortran region integral per bin instead (see make_region_integral_NR/ER
+   and expected_counts_from_pdf's own docstring for why that's both
+   faster and more robust against a bumpy tabulated PErecoil than
+   treating the PDF as an opaque black box).
 3. In batches, generate n_throws independent datasets of n_events each,
    count events in each bin, and accumulate the Pearson chi-square:
        chi2 = sum( (observed - expected)^2 / expected )
 4. Return the array of chi-square values for downstream analysis.
 
-run_chisquare_test/expected_counts_from_pdf are PDF-agnostic: supply
-any pdf_func(Ep_flat, Eq_flat) -> values_flat callable and a matching
-sampler(n_events, seed=None) -> (Ep, Eq) callable that returns events
-already cropped to the region -- see run_chisquare_test's own docstring
-for why generate_events_NR/generate_events_ER can't be passed directly
-(they have no ROI cropping of their own) and docs/goodness-of-fit.md
-for a sampler that wraps one correctly.
+run_chisquare_test/expected_counts_from_pdf are PDF-agnostic in their
+quadrature path: supply any pdf_func(Ep_flat, Eq_flat) -> values_flat
+callable and a matching sampler(n_events, seed=None) -> (Ep, Eq)
+callable that returns events already cropped to the region -- see
+run_chisquare_test's own docstring for why generate_events_NR/
+generate_events_ER can't be passed directly (they have no ROI cropping
+of their own) and docs/goodness-of-fit.md for a sampler that wraps one
+correctly. The region_integral_func path is NR/ER-specific instead (it
+calls Ppq_region_NR/ER directly), which is exactly why it's optional
+rather than the only way to compute step 2.
 make_Ppq_densities_NR/make_Ppq_densities_ER and Ppq_densities (re-exported
 here from python/internal/_Ppq_fort_bindings.py -- see that module's
 docstring) build the pdf_func this package actually ships, optionally
 against a tabulated PErecoil (Ppq_densities), so they live here rather
 than at the top level: nothing else in this package needs arbitrary-point
-density evaluation.
+density evaluation. make_region_integral_NR/ER wrap Ppq_region_NR/ER the
+same way, for step 2's other path.
 
-Step 2's per-bin quadrature also requires an inner_points_func giving
-the band-ridge breakpoints (make_ridge_breakpoints_NR/ER below); the NR/ER
+Step 2's quadrature path also requires an inner_points_func giving the
+band-ridge breakpoints (make_ridge_breakpoints_NR/ER below); the NR/ER
 band PDFs are narrow ridges, for which plain adaptive quadrature over a
 wide bin can silently return ~0, so there is no "skip the breakpoints"
-option.
+option there. Ppq_region_NR/ER already know the ridge internally, so
+inner_points_func isn't needed (and is ignored) on the
+region_integral_func path.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -66,8 +77,17 @@ except ImportError:
     # re-export isn't needed here.
     pass
 
+# Unconditional (not the try/except re-export above): make_region_integral_NR/ER
+# below call these themselves, regardless of whether this module is loaded as
+# part of the package or standalone -- same sys.path pattern Ppq_fort.py uses
+# for the same cross-directory import.
+_INTERNAL_DIR = os.path.join(_PYTHON_DIR, "internal")
+sys.path.insert(0, _INTERNAL_DIR)
+from _Ppq_fort_bindings import GLConvergenceError, Ppq_region_ER, Ppq_region_NR
+
 __all__ = ["run_chisquare_test", "expected_counts_from_pdf", "debug_bin",
            "make_ridge_breakpoints_NR", "make_ridge_breakpoints_ER",
+           "make_region_integral_NR", "make_region_integral_ER", "GLConvergenceError",
            "make_Ppq_densities_NR", "make_Ppq_densities_ER", "Ppq_densities"]
 
 
@@ -225,25 +245,136 @@ def make_ridge_breakpoints_ER(*, eps, V,
         erecoil_max=erecoil_max, n_window_widths=n_window_widths)
 
 
+def _make_region_integral_with_retry(fort_func, *, epsrel, epsabs,
+                                     max_epsrel, max_epsabs, relax_factor, params):
+    """Shared retry logic for make_region_integral_NR/ER: try fort_func
+    (Ppq_region_NR/ER) at the caller's preferred (tightest) epsrel/epsabs
+    first, and only loosen -- by relax_factor per attempt, never past
+    max_epsrel/max_epsabs -- for the specific box that actually needs
+    it, with a warnings.warn naming the box and the tolerance that
+    worked. This is why the retry lives at the per-box call site rather
+    than as a single uniformly-loosened epsrel/epsabs picked in advance
+    to survive the worst box in the whole binning: most boxes converge
+    far tighter than the worst one needs (see session notes/
+    docs/goodness-of-fit.md), so a uniform loose tolerance would throw
+    away precision almost everywhere to accommodate a handful of bins.
+
+    max_epsrel/max_epsabs -- not a retry *count* -- are what's actually
+    meaningful here: the worst precision you're willing to accept,
+    independent of epsrel's starting point or relax_factor's step size
+    (a count couples those three in a way that's hard to reason about:
+    "4 relaxations at 10x" means something different starting from
+    1e-4 than from 1e-6). How many attempts that takes is just a
+    mechanical consequence of relax_factor and the gap between epsrel
+    and max_epsrel, not something to set directly.
+
+    Raises GLConvergenceError (unchanged) if even max_epsrel/max_epsabs
+    doesn't converge.
+    """
+    if relax_factor <= 1.0:
+        raise ValueError(f"relax_factor must be > 1.0, got {relax_factor!r}")
+    if max_epsrel < epsrel or max_epsabs < epsabs:
+        raise ValueError(f"max_epsrel/max_epsabs ({max_epsrel!r}/{max_epsabs!r}) must be >= "
+                         f"epsrel/epsabs ({epsrel!r}/{epsabs!r})")
+
+    def region_integral_func(ep_min, ep_max, eq_min, eq_max):
+        cur_epsrel, cur_epsabs = epsrel, epsabs
+        while True:
+            try:
+                return fort_func(ep_min, ep_max, eq_min, eq_max,
+                                 epsrel=cur_epsrel, epsabs=cur_epsabs, **params)
+            except GLConvergenceError:
+                if cur_epsrel >= max_epsrel and cur_epsabs >= max_epsabs:
+                    raise
+                cur_epsrel = min(cur_epsrel * relax_factor, max_epsrel)
+                cur_epsabs = min(cur_epsabs * relax_factor, max_epsabs)
+                warnings.warn(
+                    f"{fort_func.__name__}: did not converge over Ep in [{ep_min},{ep_max}], "
+                    f"Eq in [{eq_min},{eq_max}] at a tighter tolerance; relaxing to "
+                    f"epsrel={cur_epsrel:.1e}, epsabs={cur_epsabs:.1e} "
+                    f"(ceiling epsrel={max_epsrel:.1e}, epsabs={max_epsabs:.1e})")
+    return region_integral_func
+
+
+def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
+                            relax_factor=10.0, **params):
+    """
+    Build a region_integral_func(ep_min, ep_max, eq_min, eq_max) -> float
+    for expected_counts_from_pdf/run_chisquare_test, backed by Ppq_region_NR
+    (python/internal/_Ppq_fort_bindings.py) -- a dedicated Fortran,
+    doubling-verified Gauss-Legendre region integral for exactly this PDF,
+    already ridge-aware (no inner_points_func needed). Use this instead of
+    the default nested scipy.quad over pdf_func whenever you have the
+    compiled library: see expected_counts_from_pdf's region_integral_func
+    parameter for why it's both faster and (for a tabulated PErecoil, see
+    erecoil_table.PErecoilTable) more robust than treating pdf_func as an
+    opaque black box.
+
+    epsrel, epsabs : the tolerance to try first for every box -- see
+        Ppq_region_NR's own docstring for what they control. Ask for
+        what you actually want (e.g. 1e-4/1e-10, same as Ppq_compiled's
+        own normalization integral): this is tried as-is for every box,
+        not pre-loosened to survive whichever one is hardest.
+    max_epsrel, max_epsabs : the worst tolerance you're willing to accept
+        for a box that can't meet epsrel/epsabs (typically a handful of
+        bins over a tabulated PErecoil's own small-scale statistical
+        roughness, not most of them) -- see
+        _make_region_integral_with_retry's docstring for why this, not a
+        retry count, is the parameter that actually matters. Default
+        (None) is 100x looser than epsrel/epsabs, matching the two
+        orders of magnitude a real survey of this library's own test
+        tables needed (see docs/goodness-of-fit.md); pass your own if
+        that default isn't tight enough for what you're using this for.
+    relax_factor : multiplicative step between attempts (default 10x).
+    **params : k, Z, F0, eps, V, p0, p10, q0, q10 -- same physics
+        parameters as make_Ppq_densities_NR, required keyword-only.
+
+    If a PErecoil table is loaded (Ppq_densities/Ppq_compiled), this reads
+    from the same global Fortran state they set, exactly like
+    make_Ppq_densities_NR's pdf_func does -- load it first.
+    """
+    if max_epsrel is None:
+        max_epsrel = epsrel * 100.0
+    if max_epsabs is None:
+        max_epsabs = epsabs * 100.0
+    return _make_region_integral_with_retry(
+        Ppq_region_NR, epsrel=epsrel, epsabs=epsabs,
+        max_epsrel=max_epsrel, max_epsabs=max_epsabs, relax_factor=relax_factor, params=params)
+
+
+def make_region_integral_ER(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
+                            relax_factor=10.0, **params):
+    """Same as make_region_integral_NR but for the ER band (Ppq_region_ER)."""
+    if max_epsrel is None:
+        max_epsrel = epsrel * 100.0
+    if max_epsabs is None:
+        max_epsabs = epsabs * 100.0
+    return _make_region_integral_with_retry(
+        Ppq_region_ER, epsrel=epsrel, epsabs=epsabs,
+        max_epsrel=max_epsrel, max_epsabs=max_epsabs, relax_factor=relax_factor, params=params)
+
+
 # ---------------------------------------------------------------------------
 # Expected counts from the PDF
 # ---------------------------------------------------------------------------
 
-def expected_counts_from_pdf(pdf_func, bins, n_events, inner_points_func, *,
-                             n_workers=1):
+def expected_counts_from_pdf(pdf_func, bins, n_events, inner_points_func=None, *,
+                             region_integral_func=None, n_workers=1):
     """
-    Integrate pdf_func over each bin rectangle using adaptive quadrature
-    (scipy quad over Ep, nested quad over Eq).
+    Integrate pdf_func over each bin rectangle -- by default with nested
+    adaptive quadrature (scipy quad over Ep, nested quad over Eq); pass
+    region_integral_func for the Fortran alternative instead (see below).
 
     Parameters
     ----------
-    pdf_func : callable
-        pdf_func(Ep_flat, Eq_flat) -> values_flat
+    pdf_func : callable or None
+        pdf_func(Ep_flat, Eq_flat) -> values_flat. Ignored (may be None)
+        when region_integral_func is given.
     bins : list of (xmin, xmax, ymin, ymax)
         Bin definitions from equibin.BinningResult.bins.
     n_events : int
         Events per throw; scales the returned expected counts.
-    inner_points_func : callable
+    inner_points_func : callable or None
         inner_points_func(ep, ymin, ymax) -> sequence of Eq breakpoints.
         The NR/ER band PDFs are narrow ridges: plain adaptive
         quadrature starts from a fixed set of sample points, so a bin
@@ -251,35 +382,56 @@ def expected_counts_from_pdf(pdf_func, bins, n_events, inner_points_func, *,
         ~zero region on both sides and quad will confidently report a
         ~zero integral without ever subdividing toward the peak. Passing
         the ridge location as a breakpoint (see make_ridge_breakpoints_NR/ER)
-        forces a subdivision there, so this argument is required rather
-        than optional. Breakpoints outside (ymin, ymax) are dropped; an
-        empty result for a bin is fine (scipy's points-based quadrature
-        handles zero real breakpoints exactly like plain adaptive
-        quadrature).
+        forces a subdivision there, so this is required (raises if missing)
+        when region_integral_func is not given -- Ppq_region_NR/ER already
+        know the ridge internally, so it isn't needed (and is ignored, may
+        be None) there.
+    region_integral_func : callable or None
+        region_integral_func(xmin, xmax, ymin, ymax) -> float, replacing
+        pdf_func/inner_points_func/quad entirely for every bin -- see
+        make_region_integral_NR/ER above. Use this whenever pdf_func is
+        backed by the compiled library (make_Ppq_densities_NR/ER,
+        Ppq_densities): nested scipy.quad treats it as an opaque
+        black-box callable, paying one Python/ctypes round trip per
+        quadrature node and re-discovering the band ridge from scratch
+        every bin, where Ppq_region_NR/ER is a single Fortran call that
+        already knows the ridge and converges by doubling Gauss-Legendre
+        order -- far faster, and (unlike scipy.quad against a bumpy
+        tabulated PErecoil, see erecoil_table.PErecoilTable) not prone to
+        chasing the table's own small-scale roughness node by node.
     n_workers : int
-        Threads used to integrate bins concurrently. Only helps when
-        pdf_func releases the GIL (e.g. calls into a compiled library).
+        Threads used to integrate bins concurrently. Helps both paths:
+        scipy.quad releases the GIL while pdf_func is in the compiled
+        library, and region_integral_func's ctypes call releases it too.
 
     Returns
     -------
     expected : ndarray, shape (n_bins,)
         Expected event count in each bin for a throw of n_events.
     """
-    def integrate_bin(bin_rect):
-        xmin, xmax, ymin, ymax = bin_rect
+    if region_integral_func is not None:
+        def integrate_bin(bin_rect):
+            xmin, xmax, ymin, ymax = bin_rect
+            return max(region_integral_func(xmin, xmax, ymin, ymax), 0.0)
+    else:
+        if inner_points_func is None:
+            raise ValueError("inner_points_func is required when region_integral_func is not given")
 
-        def integrand(eq, ep):
-            return float(pdf_func(np.array([ep]), np.array([eq]))[0])
+        def integrate_bin(bin_rect):
+            xmin, xmax, ymin, ymax = bin_rect
 
-        def inner(ep):
-            pts = sorted(p for p in inner_points_func(ep, ymin, ymax)
-                        if ymin < p < ymax)
-            val, _ = quad(integrand, ymin, ymax, args=(ep,),
-                          points=pts, limit=200)
-            return val
+            def integrand(eq, ep):
+                return float(pdf_func(np.array([ep]), np.array([eq]))[0])
 
-        val, _ = quad(inner, xmin, xmax, limit=200)
-        return max(val, 0.0)
+            def inner(ep):
+                pts = sorted(p for p in inner_points_func(ep, ymin, ymax)
+                            if ymin < p < ymax)
+                val, _ = quad(integrand, ymin, ymax, args=(ep,),
+                              points=pts, limit=200)
+                return val
+
+            val, _ = quad(inner, xmin, xmax, limit=200)
+            return max(val, 0.0)
 
     if n_workers > 1:
         with ThreadPoolExecutor(max_workers=n_workers) as pool:
@@ -409,16 +561,17 @@ def debug_bin(pdf_func, bin_rect, inner_points_func, *,
 # ---------------------------------------------------------------------------
 
 def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
-                       n_events, n_throws, n_bins, inner_points_func,
-                       *, n_ref=None, n_workers=1,
+                       n_events, n_throws, n_bins, inner_points_func=None,
+                       *, region_integral_func=None, n_ref=None, n_workers=1,
                        batch_size=5_000, seed=0):
     """
     Run a chi-square distribution test for a 2D PDF.
 
     Parameters
     ----------
-    pdf_func : callable
-        pdf_func(Ep_flat, Eq_flat) -> values_flat
+    pdf_func : callable or None
+        pdf_func(Ep_flat, Eq_flat) -> values_flat. Ignored (may be None)
+        when region_integral_func is given.
     sampler_func : callable
         sampler_func(n, seed=None) -> (Ep, Eq), returning n events that are
         ALL already inside ep_range x eq_range. generate_events_NR/
@@ -445,10 +598,15 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
         Total number of chi-square values to compute (e.g. 100_000).
     n_bins : int
         Target number of equibin bins.
-    inner_points_func : callable
+    inner_points_func : callable or None
         Passed to expected_counts_from_pdf; see its docstring (and
-        make_ridge_breakpoints_NR/ER) for why this is required rather than
-        optional.
+        make_ridge_breakpoints_NR/ER) for why this is required when
+        region_integral_func is not given, and ignored (may be None) when
+        it is.
+    region_integral_func : callable or None
+        Passed to expected_counts_from_pdf -- see its own docstring and
+        make_region_integral_NR/ER. The faster, table-robust alternative
+        to pdf_func + inner_points_func + nested scipy.quad.
     n_ref : int or None
         Reference dataset size for computing bin boundaries.
         Defaults to max(50 * n_bins, 5 * n_events).
@@ -507,10 +665,11 @@ def run_chisquare_test(pdf_func, sampler_func, ep_range, eq_range,
                       f"values on one axis) -- dof below is {n_bins_actual - 1}, not n_bins - 1.")
 
     # --- step 2: expected counts from PDF ---
-    print(f"Integrating PDF over {n_bins_actual} bins "
-          f"(adaptive quadrature, {n_workers} workers)...")
+    method = "Fortran region integral" if region_integral_func is not None else "adaptive quadrature"
+    print(f"Integrating PDF over {n_bins_actual} bins ({method}, {n_workers} workers)...")
     expected = expected_counts_from_pdf(
-        pdf_func, bins, n_events, inner_points_func, n_workers=n_workers,
+        pdf_func, bins, n_events, inner_points_func,
+        region_integral_func=region_integral_func, n_workers=n_workers,
     )
 
     # --- step 3: batched chi-square throws ---
