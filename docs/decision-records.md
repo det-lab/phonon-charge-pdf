@@ -20,7 +20,7 @@ Current records:
 | `0005-openmp-is-the-thread-layer.md` | Proposed | `n_workers` defaults to 1; `set_threads()` for OpenMP |
 | `0006-one-flat-parameter-dict.md` | Proposed | one flat parameter dict through every method; mixture/joint docs |
 | `0007-runpath-origin.md` | Proposed | the shared library finds `libassert`/`libjulienne` itself |
-| `0008-no-per-call-data-shipping.md` | Proposed | workers build their own `Ppq_compiled`; it refuses to be pickled |
+| `0008-no-per-call-data-shipping.md` | Proposed | workers build their own `Ppq_compiled`; it refuses to be pickled and warns on unguarded scripts |
 | `0009-convergence-errors-in-likelihoods.md` | Proposed | likelihoods let `GLConvergenceError` propagate, never `-inf` |
 
 0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.

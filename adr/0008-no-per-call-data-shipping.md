@@ -1,4 +1,4 @@
-# 0008. Parallel workers build their own Ppq_compiled; it refuses to be pickled
+# 0008. Parallel workers build their own Ppq_compiled; it refuses to be pickled and flags unguarded scripts
 
 Status: Proposed
 Date: 2026-11-09
@@ -27,10 +27,17 @@ contiguous data isn't copied), **except** for how work gets to parallel workers:
 - **It's silent.** `Ppq_compiled` has no pickling hooks, so this just works,
   slowly. On a fast likelihood (small dataset), the transfer can exceed the
   evaluation itself.
-- **The docs don't show a pool at all**, so users invent one. And on Python
-  3.14, multiprocessing's default start method on Linux is now `forkserver`, so a
-  script without an `if __name__ == "__main__":` guard re-runs its top level
-  (table loading included) in every worker.
+- **The docs don't show a pool at all**, so users invent one.
+- **Unguarded scripts rebuild everything in every worker.** Since Python 3.14,
+  multiprocessing's default start method on Linux is `forkserver` (already
+  `spawn` on macOS/Windows). Either way, each worker imports the user's script
+  as a module named `__mp_main__` to find the pooled function, so a script
+  without an `if __name__ == "__main__":` guard re-runs its whole top level in
+  every worker: reading the data, loading and `chebfit`-ing the tables,
+  sometimes the sampler setup. multiprocessing does this, not this library, so
+  no library change can prevent it. Forcing the `fork` start method would hide
+  it, but forking after Intel/LLVM OpenMP has started its threads can deadlock
+  the child, which is why Python moved off `fork`.
 
 A smaller, related cost: with `n_workers > 1`, `_make_threaded_pdf` re-sorts the
 events by cost (`argsort`) and re-gathers every chunk on *every* call, although
@@ -53,6 +60,18 @@ the data are fixed for the lifetime of a `Ppq_compiled`.
 3. **Do fixed-data work once.** When `n_workers > 1`, `Ppq_compiled` computes the
    cost ordering and chunk index arrays at construction (data are fixed), and
    reuses one `ThreadPoolExecutor` rather than creating one per call.
+4. **Detect the unguarded script and say so.** `Ppq_compiled.__init__` (and
+   `Ppq_densities.__init__`) walk the call stack, and if any frame is
+   module-level code (`f_code.co_name == "<module>"`) of a module whose
+   `__name__` is `"__mp_main__"`, issue a `RuntimeWarning`: "Ppq_compiled is
+   being built by your script's top level inside a multiprocessing worker, so
+   every worker re-runs your whole setup. Put it under
+   `if __name__ == "__main__":` and build Ppq_compiled in the pool's
+   initializer. See docs/mcmc.md, 'Running in parallel'." This fires only for
+   the mistake: construction inside an initializer is a function frame, and
+   MPI ranks run the script as `__main__`. It's a warning, not an error,
+   because results are still correct, just slow. The library never changes the
+   start method.
 
 ## Consequences
 
@@ -62,6 +81,11 @@ the data are fixed for the lifetime of a `Ppq_compiled`.
   the region/table names, not the evaluator.
 - Item 3 matters only for `n_workers > 1`, which ADR 0005 makes opt-in. It's
   cheap to do and removes per-call allocation for gfortran users.
+- Item 4 costs one stack walk per construction (not per call). It relies on
+  CPython's `__mp_main__` naming, which has been stable since Python 3.4; if
+  that ever changes, the warning stops firing, but nothing breaks.
 - Verification: `pickle.dumps(fit_pdf)` raises with the message; the documented
   pool pattern runs under both `fork` and `forkserver` start methods; for
-  `n_workers > 1`, results are identical before and after item 3.
+  `n_workers > 1`, results are identical before and after item 3; an unguarded
+  script run with a `forkserver` pool emits item 4's warning once per worker,
+  and the documented (guarded, initializer) pattern emits none.
