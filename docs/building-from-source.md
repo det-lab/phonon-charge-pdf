@@ -33,50 +33,137 @@ The code parallelizes its integration loops with `do concurrent` using locality
 specifiers, including the Fortran 2023 `reduce` clause, so you need a recent compiler. The
 versions below have been verified via the docker containers in this repository:
 
-| Vendor | Version(s) | Build/Test Command |
-|---|---|---|
-| GNU | 15.2.0 | `fpm test --compiler gfortran --profile release --flag "-march=native -fopenmp -ftree-parallelize-loops=4 -fcoarray=single -fPIC"` |
-| Intel | 2025.2.1 | `fpm test --compiler ifx --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPORT=0" --profile release` |
-| LLVM | 22 | `fpm test --compiler flang --profile release --flag "-O3 -fopenmp -fdo-concurrent-to-openmp=host"` |
+| Vendor | Compiler | Version(s) | Use for |
+|---|---|---|---|
+| Intel | `ifx` | 2025.2.1 | Production (MCMC, likelihood fits) |
+| LLVM | `flang` | 22 | Production (MCMC, likelihood fits) |
+| GNU | `gfortran` | 15.2.0 | Verification only (~25x slower, see below) |
+
+Each compiler's commands are below, one block per command so they can be copied directly.
+`fpm test` builds and runs the test suite; `fpm install --prefix=.` builds the shared
+library the Python interface loads and places it in `./lib` (see
+[Shared library for the python interface](#shared-library-for-the-python-interface)).
+Run them from the repository root, after generating `src/version.f90.inc` as above.
+
+### Intel (`ifx`)
+
+Test (or `make test-ifx`):
+
+```bash
+fpm test --compiler ifx --profile release --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPORT=0"
+```
+
+Install (or `make install-ifx`):
+
+```bash
+FPM_LDFLAGS="-liomp5" fpm install --prefix=. --compiler ifx --profile release --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPORT=0"
+```
 
 Notes:
 
-- **GNU**: gfortran is slow. It has no option for mapping `do concurrent` onto threads
-  (the auto-parallelizer in `-ftree-parallelize-loops` cannot parallelize these loops
-  because they contain function calls), so the band integrals run **serially** in
-  gfortran builds — measured at 1.0 effective threads vs 17.6 for ifx on the same
-  machine, making per-event likelihood evaluation ~25x slower there (roughly the core
-  count times a ~1.5x per-core gap from the vector math library). The gfortran build is
-  fine for verifying the physics and the Python interface, but use ifx or flang for
-  production likelihood work (MCMC).
-- **Intel**: the shared library must also be linked against the Intel OpenMP runtime for
-  the Python ctypes interface to work; the Intel container does this by setting
-  `FPM_LDFLAGS="-liomp5"`. The `-fpp -DHAVE_MULTI_IMAGE_SUPPORT=0` flags are for the
-  Julienne dependency. `-qopenmp` maps `do concurrent` onto the OpenMP thread pool.
-- **LLVM**: the compiler is invoked as `flang`. `-fdo-concurrent-to-openmp=host` is what
-  parallelizes the `do concurrent` loops; without it they compile to serial loops. The
-  LLVM container sets `FPM_LDFLAGS="-fopenmp"` so the shared library links against
-  `libomp`. Intel and LLVM builds benchmark identically (~6 us per event in vector mode
-  on 18 emulated cores).
+- `-fpp -DHAVE_MULTI_IMAGE_SUPPORT=0` are for the Julienne dependency. `-qopenmp` maps
+  `do concurrent` onto the OpenMP thread pool.
+- `FPM_LDFLAGS="-liomp5"` links the shared library against the Intel OpenMP runtime;
+  without it the library builds but fails to load from python with undefined `__kmpc_*`
+  symbols. The Intel container sets this for you.
+- **ifx installed via conda** (`ifx_linux-64`, e.g. on a cluster): if every compile fails
+  with
+
+  ```
+  ifx: error #10417: Problem setting up the Intel(R) Compiler compilation environment. Requires 'install path' setting gathered from 'gcc'
+  ```
+
+  ifx's internal call to `gcc` is failing. Run `gcc --version` in the same directory to
+  see why. A common cause is a trailing colon in `LIBRARY_PATH` (`echo $LIBRARY_PATH`
+  shows `.../compiler/lib:`), left by the conda activation script. gcc treats the empty
+  entry as the current directory and looks there for a spec file named `specs`, so a
+  `specs` *directory* in the build directory breaks it (`cannot read spec file
+  './specs': Is a directory`). Remove the empty entry before building:
+
+  ```bash
+  export LIBRARY_PATH=$CONDA_PREFIX/compiler/lib
+  ```
+
+  If the build or tests then can't find Intel runtime libraries, also prepend
+  `$CONDA_PREFIX/lib` to `LD_LIBRARY_PATH`:
+
+  ```bash
+  export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+  ```
+
+### LLVM (`flang`)
+
+Test (or `make test-flang`):
+
+```bash
+fpm test --compiler flang --profile release --flag "-O3 -fopenmp -fdo-concurrent-to-openmp=host"
+```
+
+Install (or `make install-flang`):
+
+```bash
+FPM_LDFLAGS="-fopenmp" fpm install --prefix=. --compiler flang --profile release --flag "-O3 -fopenmp -fdo-concurrent-to-openmp=host"
+```
+
+Notes:
+
+- `-fdo-concurrent-to-openmp=host` is what parallelizes the `do concurrent` loops; without
+  it they compile to serial loops.
+- `FPM_LDFLAGS="-fopenmp"` links the shared library against `libomp`; without it the
+  library fails to load from python with undefined `__kmpc_*` symbols. The LLVM container
+  sets this for you.
+- Intel and LLVM builds benchmark identically (~6 us per event in vector mode on 18
+  emulated cores).
+
+### GNU (`gfortran`) — verification only
+
+Test (or `make test-gfortran`):
+
+```bash
+fpm test --compiler gfortran --profile release --flag "-march=native -fopenmp -ftree-parallelize-loops=4 -fcoarray=single -fPIC"
+```
+
+Install (or `make install-gfortran`):
+
+```bash
+fpm install --prefix=. --compiler gfortran --profile release --flag "-march=native -fopenmp -ftree-parallelize-loops=4 -fcoarray=single -fPIC"
+```
+
+Notes:
+
+- gfortran is slow. It has no option for mapping `do concurrent` onto threads (the
+  auto-parallelizer in `-ftree-parallelize-loops` cannot parallelize these loops because
+  they contain function calls), so the band integrals run **serially** in gfortran
+  builds — measured at 1.0 effective threads vs 17.6 for ifx on the same machine, making
+  per-event likelihood evaluation ~25x slower there (roughly the core count times a
+  ~1.5x per-core gap from the vector math library). The gfortran build is fine for
+  verifying the physics and the Python interface, but use ifx or flang for production
+  likelihood work (MCMC).
 
 ## Shared library for the python interface
 
-The python wrappers load `lib/libphonon_charge_pdf.so`, which `fpm install` builds and
-places under the repository root. Use the same flags as the test commands above; for
-Intel and LLVM, `FPM_LDFLAGS` must also be set so the *shared library* links its OpenMP
-runtime — without it the library builds but fails to load from python with undefined
-`__kmpc_*` symbols:
+The python wrappers load `lib/libphonon_charge_pdf.so`, which the `fpm install --prefix=.`
+command for your compiler (above) builds and places under the repository root. For Intel
+and LLVM, keep the `FPM_LDFLAGS` setting shown there: it makes the *shared library* link
+its OpenMP runtime, and without it the library builds but fails to load from python with
+undefined `__kmpc_*` symbols.
+
+At run time — interactively or in a batch job script — the library and its compiler
+runtime must be on the loader path. Outside the containers (which set this in their
+environment), from the repository root:
 
 ```bash
-# Intel
-FPM_LDFLAGS="-liomp5" fpm install --prefix=. --compiler ifx --profile release --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPORT=0"
-
-# LLVM
-FPM_LDFLAGS="-fopenmp" fpm install --prefix=. --compiler flang --profile release --flag "-O3 -fopenmp -fdo-concurrent-to-openmp=host"
-
-# GNU (verification only -- see the notes above)
-fpm install --prefix=. --compiler gfortran --profile release --flag "-march=native -fopenmp -ftree-parallelize-loops=4 -fcoarray=single -fPIC"
+export LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH
 ```
+
+For a conda-installed ifx, also add the conda environment's runtime libraries
+(`libiomp5` etc.):
+
+```bash
+export LD_LIBRARY_PATH=$PWD/lib:$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+```
+
+(`DYLD_LIBRARY_PATH` instead of `LD_LIBRARY_PATH` on macOS.)
 
 ## Docker/Apptainer images
 
