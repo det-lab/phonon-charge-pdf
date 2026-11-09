@@ -9,8 +9,21 @@ are recorded in `adr/` at the repo root, not under `docs/`. That's deliberate: `
 sits outside mkdocs' `docs_dir`, so it's never part of this rendered site. These records
 are for whoever is reading the source later, not for a user of the library.
 
-`adr/0001-batched-fortran-quadrature.md` is the first one, covering why `Ppq_compiled`
-uses a batched Fortran quadrature instead of calling `scipy.integrate.quad` per point.
+Current records:
+
+| record | status | subject |
+|---|---|---|
+| `0001-batched-fortran-quadrature.md` | Accepted | batched Fortran quadrature instead of per-point `scipy.integrate.quad` |
+| `0002-normalization-tables-record-perecoil.md` | Proposed | normalization tables record (and check) the PErecoil they were built with |
+| `0003-per-instance-perecoil-tables.md` | Proposed | PErecoil tables per instance, not process-global (joint Cf + Ba fits) |
+| `0004-reject-data-outside-region.md` | Proposed | `Ppq_compiled` rejects events outside its region |
+| `0005-openmp-is-the-thread-layer.md` | Proposed | `n_workers` defaults to 1; `set_threads()` for OpenMP |
+| `0006-one-flat-parameter-dict.md` | Proposed | one flat parameter dict through every method; mixture/joint docs |
+| `0007-runpath-origin.md` | Proposed | the shared library finds `libassert`/`libjulienne` itself |
+| `0008-no-per-call-data-shipping.md` | Proposed | workers build their own `Ppq_compiled`; it refuses to be pickled |
+| `0009-convergence-errors-in-likelihoods.md` | Proposed | likelihoods let `GLConvergenceError` propagate, never `-inf` |
+
+0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.
 
 ## Writing one
 
