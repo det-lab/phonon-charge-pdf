@@ -39,6 +39,10 @@ Eq_arr = np.array([100.0, 100.0, 100.0], dtype=np.float64)
 Ep_arr = np.array([347.0, 346.0, 348.0], dtype=np.float64)
 n = Ep_arr.size
 
+# table_handle = 0 means the closed-form spectrum -- see
+# adr/0003-per-instance-perecoil-tables.md. An explicit trailing argument
+# of every real evaluation call now, not ambient state.
+
 # Set argtypes and restype for the function Ppq_vector_NR
 api.Ppq_vector_NR.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS"),  # Ep_arr
@@ -47,6 +51,7 @@ api.Ppq_vector_NR.argtypes = [
     ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ctypes.c_double, ctypes.c_double,  # scalar params
+    ctypes.c_int,              # table_handle
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")   # res_arr (output)
 ]
 api.Ppq_vector_NR.restype = None
@@ -55,7 +60,7 @@ api.Ppq_vector_NR.restype = None
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, 0, res_arr)
 
 print("Vectorized result of Ppq_vector_NR:", res_arr)
 
@@ -63,14 +68,14 @@ print("Vectorized result of Ppq_vector_NR:", res_arr)
 # same (Ep, Eq) -- the vectorized call must agree exactly with calling the
 # scalar function once per point, since it's the same underlying evaluation
 # just batched.
-api.Ppq_NR.argtypes = [ctypes.c_double] * 11
+api.Ppq_NR.argtypes = [ctypes.c_double] * 11 + [ctypes.c_int]
 api.Ppq_NR.restype = ctypes.c_double
 for i in range(n):
     scalar_val = api.Ppq_NR(ctypes.c_double(Ep_arr[i]), ctypes.c_double(Eq_arr[i]),
                           ctypes.c_double(k), ctypes.c_double(Z),
                           ctypes.c_double(F0), ctypes.c_double(eps),
                           ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
-                          ctypes.c_double(q0), ctypes.c_double(q10))
+                          ctypes.c_double(q0), ctypes.c_double(q10), ctypes.c_int(0))
     check(f"Ppq_vector_NR[{i}] vs Ppq_NR", res_arr[i], scalar_val)
 
 # Set argtypes and restype for the function Ppq_vector_ER
@@ -80,6 +85,7 @@ api.Ppq_vector_ER.argtypes = [
     ctypes.c_int,                                                        # n
     ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # scalar params
+    ctypes.c_int,                                                        # table_handle
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")       # res_arr (output)
 ]
 api.Ppq_vector_ER.restype = None
@@ -93,17 +99,17 @@ n = Ep_arr.size
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, 0, res_arr)
 
 print("Vectorized result of Ppq_vector_ER:", res_arr)
 
-api.Ppq_ER.argtypes = [ctypes.c_double] * 9
+api.Ppq_ER.argtypes = [ctypes.c_double] * 9 + [ctypes.c_int]
 api.Ppq_ER.restype = ctypes.c_double
 for i in range(n):
     scalar_val = api.Ppq_ER(ctypes.c_double(Ep_arr[i]), ctypes.c_double(Eq_arr[i]),
                           ctypes.c_double(F0), ctypes.c_double(eps),
                           ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
-                          ctypes.c_double(q0), ctypes.c_double(q10))
+                          ctypes.c_double(q0), ctypes.c_double(q10), ctypes.c_int(0))
     check(f"Ppq_vector_ER[{i}] vs Ppq_ER", res_arr[i], scalar_val)
 
 print("Parameters Are ####################")

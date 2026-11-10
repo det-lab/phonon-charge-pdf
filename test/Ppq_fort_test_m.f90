@@ -51,7 +51,7 @@ contains
     real(c_double), parameter :: tolerance(*) = expected_resNR/100
     real(c_double) resNR(size(Eq_arr))
 
-    call Ppq_vector_NR(Ep_arr, Eq_arr, ni, k, Z, F0, eps, V, p0, p10, q0, q10, resNR)
+    call Ppq_vector_NR(Ep_arr, Eq_arr, ni, k, Z, F0, eps, V, p0, p10, q0, q10, 0, resNR)
     test_diagnosis =  .all. ( resNR .approximates. expected_resNR .within. tolerance)  // ' (Ppq_NR)'
   end function
 
@@ -61,7 +61,7 @@ contains
     real(c_double), parameter :: tolerance(*) = expected_resER/100
     real(c_double) resER(size(Eq_arr))
 
-    call Ppq_vector_ER(Ep_arr, Eq_arr, ni, F0, eps, V, p0, p10, q0, q10, resER)
+    call Ppq_vector_ER(Ep_arr, Eq_arr, ni, F0, eps, V, p0, p10, q0, q10, 0, resER)
     test_diagnosis =  .all. ( resER .approximates. expected_resER .within. tolerance)  // ' (Ppq_ER)'
   end function
 

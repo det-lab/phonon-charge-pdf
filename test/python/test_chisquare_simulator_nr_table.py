@@ -199,8 +199,13 @@ chi2_vals, dof, bins, expected = run_chisquare_test(
     # tighter. make_region_integral_NR's retry (see its own docstring)
     # loosens only those specific bins, rather than giving up precision
     # everywhere to accommodate a handful of them.
+    # table_handle must match pq_densities' own nr_table_handle, explicitly
+    # -- adr/0003-per-instance-perecoil-tables.md's whole point is that
+    # this is no longer ambient state the two calls happen to share
+    # automatically; the normalization and the density must be told to
+    # use the same table.
     region_integral_func = make_region_integral_NR(
-        epsrel=1e-4, epsabs=1e-10, **PARAMS),
+        epsrel=1e-4, epsabs=1e-10, table_handle=pq_densities.nr_table_handle, **PARAMS),
     n_workers  = N_WORKERS,
     batch_size = 50,
     seed       = 42,

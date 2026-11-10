@@ -135,14 +135,16 @@ print('The python result is ', result_py)
 check("pq_given_Erecoil_ER", result_fort, result_py, rtol=1e-6, atol=1e-12)
 
 # Define argument and return types for the function Ppq_NR
-api.Ppq_NR.argtypes = [ctypes.c_double] * 11
+# table_handle=0 (closed form): an explicit trailing argument now, not
+# ambient state -- see adr/0003-per-instance-perecoil-tables.md.
+api.Ppq_NR.argtypes = [ctypes.c_double] * 11 + [ctypes.c_int]
 api.Ppq_NR.restype = ctypes.c_double
 
 result_fort = api.Ppq_NR(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(k), ctypes.c_double(Z),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
-                       ctypes.c_double(q0), ctypes.c_double(q10))
+                       ctypes.c_double(q0), ctypes.c_double(q10), ctypes.c_int(0))
 result_py = ppq.Ppq_inspect_NR(Ep, Eq, k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, erecoil_step=0.1)["value"]
 print('back in python after running function Ppq_NR')
 print('The fortran result is ', result_fort)
@@ -154,13 +156,13 @@ print('The python result is ', result_py)
 check("Ppq_NR", result_fort, result_py, rtol=1e-4, atol=1e-12)
 
 # Define argument and return types for the function Ppq_ER
-api.Ppq_ER.argtypes = [ctypes.c_double] * 9
+api.Ppq_ER.argtypes = [ctypes.c_double] * 9 + [ctypes.c_int]
 api.Ppq_ER.restype = ctypes.c_double
 
 result_fort = api.Ppq_ER(ctypes.c_double(Ep), ctypes.c_double(Eq),
                        ctypes.c_double(F0), ctypes.c_double(eps),
                        ctypes.c_double(V), ctypes.c_double(p0), ctypes.c_double(p10),
-                       ctypes.c_double(q0), ctypes.c_double(q10))
+                       ctypes.c_double(q0), ctypes.c_double(q10), ctypes.c_int(0))
 result_py = ppq.Ppq_inspect_ER(Ep, Eq, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10, erecoil_step=0.01)["value"]
 print('back in python after running function Ppq_ER')
 print('The fortran result is ', result_fort)
@@ -175,6 +177,7 @@ api.Ppq_vector_NR.argtypes = [
     ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ctypes.c_double, ctypes.c_double,  # scalar params
+    ctypes.c_int,              # table_handle
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")   # res_arr (output)
 ]
 api.Ppq_vector_NR.restype = None
@@ -188,7 +191,7 @@ n = Ep_arr.size
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, 0, res_arr)
 
 # Set argtypes and restype for the function Ppq_vector_ER
 api.Ppq_vector_ER.argtypes = [
@@ -197,6 +200,7 @@ api.Ppq_vector_ER.argtypes = [
     ctypes.c_int,                                                        # n
     ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # scalar params
+    ctypes.c_int,                                                        # table_handle
     np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")       # res_arr (output)
 ]
 api.Ppq_vector_ER.restype = None
@@ -210,7 +214,7 @@ n = Ep_arr.size
 res_arr = np.empty(n, dtype=np.float64)
 
 # Call the Fortran vectorized function
-api.Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr)
+api.Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, 0, res_arr)
 
 print("Vectorized result:", res_arr)
 

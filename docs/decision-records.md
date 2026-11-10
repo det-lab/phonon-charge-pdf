@@ -15,7 +15,7 @@ Current records:
 |---|---|---|
 | `0001-batched-fortran-quadrature.md` | Accepted | batched Fortran quadrature instead of per-point `scipy.integrate.quad` |
 | `0002-normalization-tables-record-perecoil.md` | Proposed | normalization tables record (and check) the PErecoil they were built with |
-| `0003-per-instance-perecoil-tables.md` | Proposed | PErecoil tables per instance, not process-global (joint Cf + Ba fits) |
+| `0003-per-instance-perecoil-tables.md` | Accepted | PErecoil tables per instance, stateless handle argument, not process-global (joint Cf + Ba fits) |
 | `0004-reject-data-outside-region.md` | Proposed | `Ppq_compiled` rejects events outside its region |
 | `0005-openmp-is-the-thread-layer.md` | Proposed | `n_workers` defaults to 1; `set_threads()` for OpenMP |
 | `0006-one-flat-parameter-dict.md` | Proposed | one flat parameter dict through every method; mixture/joint docs |

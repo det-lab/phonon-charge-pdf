@@ -129,11 +129,19 @@ expected = pdf.goodness_of_fit.expected_counts_from_pdf(
 
 `pdf_func`/`inner_points_func` are ignored (and may be `None`) on this path. This matters
 most once `PErecoil` is a real tabulated spectrum rather than the smooth closed form
-(`erecoil_table.PErecoilTable`, loaded via `Ppq_densities`/`Ppq_compiled`'s own
+(`erecoil_table.PErecoilTable`, registered via `Ppq_densities`/`Ppq_compiled`'s own
 `PErecoil_table_NR`/`_ER`): real calibration data has small-scale statistical roughness
 that generic adaptive quadrature chases node by node against an opaque `pdf_func`, which can
 be dramatically slower than against the closed form for no corresponding gain in accuracy —
 the same roughness, read through `Ppq_region_NR`/`ER` directly instead, is not.
+
+If `pdf_func` came from a `Ppq_densities` built against a table, pass that same instance's
+`table_handle` to `make_region_integral_NR`/`ER` too (`table_handle=pq_densities.nr_table_handle`):
+the table is an explicit argument now, not ambient state shared automatically between the two
+calls (`adr/0003-per-instance-perecoil-tables.md`), so leaving it out means the expected counts
+get computed against the closed form while the simulated/observed events are being compared
+against the table -- a real mismatch, not a cosmetic one, and nothing currently raises if you
+forget it.
 
 A handful of bins can still fail the order-256 doubling check at a tight `epsrel`/`epsabs`
 (typically wherever a table's own statistics are thinnest, not broadly) — `Ppq_region_NR`/`ER`

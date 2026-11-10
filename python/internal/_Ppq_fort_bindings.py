@@ -119,11 +119,16 @@ def _load_library():
             f"e.g.: LD_LIBRARY_PATH=lib python your_script.py"
         )
 
+    # table_handle (see PErecoil_table_register below): 0 for the
+    # closed-form spectrum, or a handle from registering a tabulated one
+    # -- an explicit argument of every real evaluation call, not ambient
+    # state (adr/0003-per-instance-perecoil-tables.md).
     _api.Ppq_vector_NR.argtypes = [
         _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int,
         ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double,
+        ctypes.c_int,                                                       # table_handle
         _DOUBLE_ARR,
     ]
     _api.Ppq_vector_NR.restype = None
@@ -132,6 +137,7 @@ def _load_library():
         _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int,
         ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
+        ctypes.c_int,                                                       # table_handle
         _DOUBLE_ARR,
     ]
     _api.Ppq_vector_ER.restype = None
@@ -147,6 +153,7 @@ def _load_library():
         ctypes.c_double, ctypes.c_double, ctypes.c_double,                   # k, Z, F0
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
         ctypes.c_double, ctypes.c_double,                                    # q0, q10
+        ctypes.c_int,                                                        # table_handle
     ]
     _api.Ppq_region_NR.restype = ctypes.c_double
 
@@ -156,6 +163,7 @@ def _load_library():
         ctypes.c_double,                                                     # F0
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
         ctypes.c_double, ctypes.c_double,                                    # q0, q10
+        ctypes.c_int,                                                        # table_handle
     ]
     _api.Ppq_region_ER.restype = ctypes.c_double
 
@@ -169,6 +177,7 @@ def _load_library():
         ctypes.c_double, ctypes.c_double, ctypes.c_double,                   # k, Z, F0
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
         ctypes.c_double, ctypes.c_double,                                    # q0, q10
+        ctypes.c_int,                                                        # table_handle
         ctypes.POINTER(ctypes.c_double),                                    # res (out)
         ctypes.POINTER(ctypes.c_double),                                    # error_estimate (out)
     ]
@@ -180,20 +189,18 @@ def _load_library():
         ctypes.c_double,                                                     # F0
         ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,  # eps, V, p0, p10
         ctypes.c_double, ctypes.c_double,                                    # q0, q10
+        ctypes.c_int,                                                        # table_handle
         ctypes.POINTER(ctypes.c_double),                                    # res (out)
         ctypes.POINTER(ctypes.c_double),                                    # error_estimate (out)
     ]
     _api.Ppq_region_ER_with_error.restype = None
 
-    for name in ("PErecoil_set_table_NR", "PErecoil_set_table_ER"):
-        fn = getattr(_api, name)
-        fn.argtypes = [_DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int]
-        fn.restype = None
-
-    for name in ("PErecoil_clear_table_NR", "PErecoil_clear_table_ER"):
-        fn = getattr(_api, name)
-        fn.argtypes = []
-        fn.restype = None
+    # The only state-mutating entry point -- see PErecoil_table_register
+    # below and adr/0003-per-instance-perecoil-tables.md.
+    _api.PErecoil_table_register.argtypes = [
+        _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int,
+    ]
+    _api.PErecoil_table_register.restype = ctypes.c_int
 
     return _api
 
@@ -206,7 +213,7 @@ def version():
     return (major.value, minor.value, patch.value)
 
 
-def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, table_handle=0, n_workers=None):
     """
     Build pdf_func(Ep_flat, Eq_flat) -> values_flat backed by the Fortran
     Ppq_NR (nuclear recoil band PDF).  A genuine probability density, just
@@ -224,6 +231,14 @@ def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None)
       V              : bias voltage [V]
       p0, p10        : phonon resolution parameters
       q0, q10        : charge resolution parameters
+
+    table_handle : int
+        0 (default) for the closed-form PErecoil_NR spectrum, or a handle
+        from PErecoil_table_register for a tabulated one -- an explicit
+        argument of every call, not ambient state (see
+        adr/0003-per-instance-perecoil-tables.md). Ppq_densities passes
+        its own stored handle here automatically; nothing outside this
+        module and Ppq_fort.py should need to pass one directly.
 
     n_workers : int or None
         Threads used for large requests.  Defaults to os.cpu_count().
@@ -243,23 +258,23 @@ def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None)
     scalars = (k, Z, F0, eps, V, p0, p10, q0, q10)
 
     def _eval_chunk(ep, eq, out):
-        api.Ppq_vector_NR(ep, eq, ep.size, *scalars, out)
+        api.Ppq_vector_NR(ep, eq, ep.size, *scalars, table_handle, out)
 
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
 
-def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, table_handle=0, n_workers=None):
     """Same as make_Ppq_densities_NR but for the Fortran Ppq_ER (gamma /
     ER band).  The yield is fixed at Y = 1 internally, so k and Z are not
     taken.  Also a full-plane density, not yet renormalized to a region --
-    see that function's docstring."""
+    see that function's docstring, including for table_handle."""
     api = _load_library()
     if n_workers is None:
         n_workers = os.cpu_count()
     scalars = (F0, eps, V, p0, p10, q0, q10)
 
     def _eval_chunk(ep, eq, out):
-        api.Ppq_vector_ER(ep, eq, ep.size, *scalars, out)
+        api.Ppq_vector_ER(ep, eq, ep.size, *scalars, table_handle, out)
 
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
@@ -289,7 +304,7 @@ class GLConvergenceError(RuntimeError):
 
 def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
                  epsrel, epsabs,
-                 k, Z, F0, eps, V, p0, p10, q0, q10):
+                 k, Z, F0, eps, V, p0, p10, q0, q10, table_handle=0):
     """
     Integral of Ppq_NR over [ep_min,ep_max] x [eq_min,eq_max], computed
     entirely in Fortran (a single call, no per-point ctypes round trips)
@@ -305,11 +320,16 @@ def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
     likelihood normalization. Raises GLConvergenceError (see that
     class's docstring), rather than returning an unverified number, if
     that isn't reached by the highest order (256).
+
+    table_handle : int
+        0 (default) for the closed-form PErecoil_NR spectrum, or a handle
+        from PErecoil_table_register -- see make_Ppq_densities_NR's own
+        docstring.
     """
     api = _load_library()
     res = api.Ppq_region_NR(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
-                            k, Z, F0, eps, V, p0, p10, q0, q10)
+                            k, Z, F0, eps, V, p0, p10, q0, q10, table_handle)
     if math.isnan(res):
         raise GLConvergenceError(
             f"Ppq_region_NR: Gauss-Legendre doubling did not converge to epsrel={epsrel!r}, "
@@ -320,12 +340,12 @@ def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
 
 def Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, *,
                  epsrel, epsabs,
-                 F0, eps, V, p0, p10, q0, q10):
+                 F0, eps, V, p0, p10, q0, q10, table_handle=0):
     """Same as Ppq_region_NR but for Ppq_ER (electron-recoil band, Y=1)."""
     api = _load_library()
     res = api.Ppq_region_ER(ep_min, ep_max, eq_min, eq_max,
                             epsrel, epsabs,
-                            F0, eps, V, p0, p10, q0, q10)
+                            F0, eps, V, p0, p10, q0, q10, table_handle)
     if math.isnan(res):
         raise GLConvergenceError(
             f"Ppq_region_ER: Gauss-Legendre doubling did not converge to epsrel={epsrel!r}, "
@@ -336,7 +356,7 @@ def Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, *,
 
 def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
                              epsrel, epsabs,
-                             k, Z, F0, eps, V, p0, p10, q0, q10):
+                             k, Z, F0, eps, V, p0, p10, q0, q10, table_handle=0):
     """
     Same as Ppq_region_NR, plus the achieved Gauss-Legendre doubling
     residual: |result_2N - result_N| for whichever pair of successive
@@ -349,6 +369,11 @@ def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
     for; useful for confirming that numerical precision is negligible
     against some other uncertainty (e.g. a likelihood's statistical
     error), not normally expected to matter on its own.
+
+    table_handle : int
+        0 (default) for the closed-form PErecoil_NR spectrum, or a handle
+        from PErecoil_table_register -- see make_Ppq_densities_NR's own
+        docstring.
 
     Returns
     -------
@@ -363,7 +388,7 @@ def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
     error_estimate = ctypes.c_double()
     api.Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max,
                                  epsrel, epsabs,
-                                 k, Z, F0, eps, V, p0, p10, q0, q10,
+                                 k, Z, F0, eps, V, p0, p10, q0, q10, table_handle,
                                  ctypes.byref(res), ctypes.byref(error_estimate))
     if math.isnan(res.value):
         raise GLConvergenceError(
@@ -377,14 +402,14 @@ def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
 
 def Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, *,
                              epsrel, epsabs,
-                             F0, eps, V, p0, p10, q0, q10):
+                             F0, eps, V, p0, p10, q0, q10, table_handle=0):
     """Same as Ppq_region_NR_with_error but for Ppq_ER (electron-recoil band, Y=1)."""
     api = _load_library()
     res = ctypes.c_double()
     error_estimate = ctypes.c_double()
     api.Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max,
                                  epsrel, epsabs,
-                                 F0, eps, V, p0, p10, q0, q10,
+                                 F0, eps, V, p0, p10, q0, q10, table_handle,
                                  ctypes.byref(res), ctypes.byref(error_estimate))
     if math.isnan(res.value):
         raise GLConvergenceError(
@@ -396,58 +421,32 @@ def Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, *,
     return res.value, error_estimate.value
 
 
-def PErecoil_set_table_NR(x, c0, c1, c2, c3):
-    """Switch the compiled library's PErecoil_NR to a tabulated spectrum:
-    x (breakpoints, n points) and c0/c1/c2/c3 (per-interval power-basis
-    cubic coefficients, n-1 points each) -- see
+def PErecoil_table_register(x, c0, c1, c2, c3):
+    """Register a tabulated true-recoil-energy spectrum and return its
+    handle: x (breakpoints, n points) and c0/c1/c2/c3 (per-interval
+    power-basis cubic coefficients, n-1 points each) -- see
     erecoil_table.PErecoilTable.fortran_table for exactly this shape, and
-    its own docstring for the convention. GLOBAL, process-wide state (see
-    the module-level comment on nr_table_x in src/Ppq_fort_s.f90): call
-    this once per Ppq_compiled construction, never concurrently with
-    another Ppq_compiled's density calls in the same process."""
+    its own docstring for the convention. Pass the returned handle to
+    make_Ppq_densities_NR/ER, Ppq_region_NR/ER(_with_error), etc. to
+    evaluate against this table. The only state-mutating call -- see
+    adr/0003-per-instance-perecoil-tables.md -- call once per table a
+    Ppq_compiled/Ppq_densities registers at construction; the handle it
+    returns then works correctly for the rest of the process's lifetime,
+    including interleaved with other instances' own handles."""
     api = _load_library()
     x = np.ascontiguousarray(np.asarray(x, dtype=np.float64))
     c0 = np.ascontiguousarray(np.asarray(c0, dtype=np.float64))
     c1 = np.ascontiguousarray(np.asarray(c1, dtype=np.float64))
     c2 = np.ascontiguousarray(np.asarray(c2, dtype=np.float64))
     c3 = np.ascontiguousarray(np.asarray(c3, dtype=np.float64))
-    api.PErecoil_set_table_NR(x, c0, c1, c2, c3, x.size)
-
-
-def PErecoil_clear_table_NR():
-    """Undo PErecoil_set_table_NR: PErecoil_NR goes back to the closed-form
-    biexponential. See its docstring for why this is global, process-wide
-    state."""
-    api = _load_library()
-    api.PErecoil_clear_table_NR()
-
-
-def PErecoil_set_table_ER(x, c0, c1, c2, c3):
-    """Same as PErecoil_set_table_NR but for PErecoil_ER."""
-    api = _load_library()
-    x = np.ascontiguousarray(np.asarray(x, dtype=np.float64))
-    c0 = np.ascontiguousarray(np.asarray(c0, dtype=np.float64))
-    c1 = np.ascontiguousarray(np.asarray(c1, dtype=np.float64))
-    c2 = np.ascontiguousarray(np.asarray(c2, dtype=np.float64))
-    c3 = np.ascontiguousarray(np.asarray(c3, dtype=np.float64))
-    api.PErecoil_set_table_ER(x, c0, c1, c2, c3, x.size)
-
-
-def PErecoil_clear_table_ER():
-    """Same as PErecoil_clear_table_NR but for PErecoil_ER."""
-    api = _load_library()
-    api.PErecoil_clear_table_ER()
+    return api.PErecoil_table_register(x, c0, c1, c2, c3, x.size)
 
 
 def _load_erecoil_table(table, band, *, ep_max, eq_max):
     """Validate table's erecoil_range against a region reaching up to
-    (ep_max, eq_max), then load it into the compiled library
-    (PErecoil_set_table_NR/ER) or, if table is None, explicitly clear
-    that band's table (PErecoil_clear_table_NR/ER) -- every caller
-    (Ppq_compiled.__init__, Ppq_densities.__init__) sets-or-clears both
-    bands every time, rather than silently inheriting whatever a
-    previous caller in this process left loaded (see
-    PErecoil_set_table_NR's own docstring on why this state is global).
+    (ep_max, eq_max), then register it (PErecoil_table_register) and
+    return (table, handle) -- or (None, 0) if table is None, meaning the
+    closed form for this band.
 
     Unlike Ppq_py.py's prototype (integrate_inspect's erecoil_bounds),
     nothing dynamically checks Erecoil against the table at run time in
@@ -459,11 +458,8 @@ def _load_erecoil_table(table, band, *, ep_max, eq_max):
     that plus _ERECOIL_MARGIN_KEV), is what makes that unreachable in
     practice -- fails now, not hours into a run.
     """
-    set_table, clear_table = ((PErecoil_set_table_NR, PErecoil_clear_table_NR) if band == "NR"
-                               else (PErecoil_set_table_ER, PErecoil_clear_table_ER))
     if table is None:
-        clear_table()
-        return None
+        return None, 0
     sys.path.insert(0, _PYTHON_DIR)
     from erecoil_table import PErecoilTable
     if not isinstance(table, PErecoilTable):
@@ -482,8 +478,8 @@ def _load_erecoil_table(table, band, *, ep_max, eq_max):
             f"PErecoil_table_{band}: erecoil_range only reaches {hi!r} keV, but this region "
             f"(up to {max(ep_max, eq_max)!r} keV) needs it to reach at least {needed!r} keV -- "
             "rebuild the table with a wider range, or narrow the region.")
-    set_table(*table.fortran_table)
-    return table
+    handle = PErecoil_table_register(*table.fortran_table)
+    return table, handle
 
 
 class Ppq_densities:
@@ -503,13 +499,14 @@ class Ppq_densities:
     it explicit here keeps that check possible rather than implicit.
 
     PErecoil_table_NR, PErecoil_table_ER : None (default -- closed-form
-    biexponential) or a PErecoilTable / HDF5 path. Loaded (or cleared)
-    into the compiled library's global state here, at construction, via
-    the exact same mechanism Ppq_compiled uses -- density_NR/density_ER
-    themselves call the unmodified make_Ppq_densities_NR/ER, which know
-    nothing about tables; they just see whatever is currently loaded
-    globally. Same "two instances with different tables can't coexist in
-    one process" caveat as Ppq_compiled (see that class's own docstring).
+    biexponential) or a PErecoilTable / HDF5 path. Registered once here,
+    at construction (PErecoil_table_register, via _load_erecoil_table),
+    and the resulting handle(s) stored (self.nr_table_handle/
+    er_table_handle) and passed explicitly into every density_NR/density_ER
+    call after that -- not ambient state, so two Ppq_densities (or
+    Ppq_compiled) instances with different tables coexist in one process
+    fine, under any concurrency pattern. See
+    adr/0003-per-instance-perecoil-tables.md.
     """
 
     def __init__(self, ep_range, eq_range, *,
@@ -517,18 +514,20 @@ class Ppq_densities:
         self.ep_min, self.ep_max = ep_range
         self.eq_min, self.eq_max = eq_range
         self.n_workers = n_workers
-        self.PErecoil_table_NR = _load_erecoil_table(PErecoil_table_NR, "NR",
-                                                      ep_max=self.ep_max, eq_max=self.eq_max)
-        self.PErecoil_table_ER = _load_erecoil_table(PErecoil_table_ER, "ER",
-                                                      ep_max=self.ep_max, eq_max=self.eq_max)
+        self.PErecoil_table_NR, self.nr_table_handle = _load_erecoil_table(
+            PErecoil_table_NR, "NR", ep_max=self.ep_max, eq_max=self.eq_max)
+        self.PErecoil_table_ER, self.er_table_handle = _load_erecoil_table(
+            PErecoil_table_ER, "ER", ep_max=self.ep_max, eq_max=self.eq_max)
 
     def density_NR(self, ep_flat, eq_flat, *, k, Z, F0, eps, V, p0, p10, q0, q10):
         return make_Ppq_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
-                                     q0=q0, q10=q10, n_workers=self.n_workers)(ep_flat, eq_flat)
+                                     q0=q0, q10=q10, table_handle=self.nr_table_handle,
+                                     n_workers=self.n_workers)(ep_flat, eq_flat)
 
     def density_ER(self, ep_flat, eq_flat, *, F0, eps, V, p0, p10, q0, q10):
         return make_Ppq_densities_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
-                                     q0=q0, q10=q10, n_workers=self.n_workers)(ep_flat, eq_flat)
+                                     q0=q0, q10=q10, table_handle=self.er_table_handle,
+                                     n_workers=self.n_workers)(ep_flat, eq_flat)
 
 
 def _make_threaded_pdf(eval_chunk, n_workers):

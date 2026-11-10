@@ -185,8 +185,8 @@ class PErecoilTable:
         cubic coefficients -- scipy's own PPoly convention (value at Erecoil
         in [x[i], x[i+1]) is ((c0[i]*dx + c1[i])*dx + c2[i])*dx + c3[i],
         dx = Erecoil - x[i]), already divided by this table's own
-        normalization. Exactly what Ppq_fort.py needs to load this table
-        into the compiled library via PErecoil_set_table_NR/ER, whose
+        normalization. Exactly what Ppq_fort.py needs to register this
+        table with the compiled library via PErecoil_table_register, whose
         eval_cubic_table (src/Ppq_fort_s.f90) evaluates this identical form."""
         c = self._interp.c / self._norm
         return self._interp.x, c[0], c[1], c[2], c[3]

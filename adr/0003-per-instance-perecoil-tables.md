@@ -1,6 +1,6 @@
 # 0003. PErecoil tables are per-instance, not process-global
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-09
 
 ## Context
@@ -24,35 +24,85 @@ MPI and process pools don't help: each rank holds both datasets' terms.
 
 ## Decision
 
-Make the table an argument of the evaluation, not ambient state.
+Make the table an explicit argument of every evaluation call, not ambient
+state of any kind -- fully stateless at the Fortran boundary. Two other
+shapes were considered and rejected; both are worth recording since they're
+likely to come up again:
 
-- The Fortran entry points that evaluate densities or region integrals
-  (`Ppq_vector_NR/ER`, `Ppq_region_NR/ER`, `Ppq_NR/ER`) take the PErecoil table
-  explicitly: either a small integer handle returned by a
-  `PErecoil_table_register(x, y, n) -> handle` routine (the library keeps a list
-  of registered tables, never overwriting one), or the arrays themselves
-  (pointer + length). Handle 0 / null means closed-form.
-- `Ppq_compiled` and `Ppq_densities` register their tables at construction and
-  pass their own handle on every call.
-- Registration is the only mutation of library state, and it's append-only, so
-  instances can't interfere, and nothing is shared across threads except
-  read-only table data.
+- **A raw pointer + length instead of a handle.** C-interoperable derived
+  types can't hold Fortran allocatable arrays, only `c_ptr`s, which would mean
+  Fortran holding raw pointers into memory numpy/Python owns rather than its
+  own copy. If that array is ever garbage-collected or reallocated while
+  Fortran still holds a pointer to it, that's silent memory corruption, not a
+  catchable error -- a real regression versus today's design, which already
+  copies the data in (`PErecoil_set_table_NR`'s current behavior). Rejected on
+  that basis alone.
+- **An "activate" call that sets which table is current, leaving the real
+  compute functions argument-free.** Appealing (fewer arguments on the
+  functions that do real work), and close to a prior sketch of this record.
+  Rejected because it reintroduces exactly the bug this record exists to fix,
+  just moved somewhere harder to catch: `Ppq_densities`/`make_Ppq_densities_NR`
+  already evaluates one call's points concurrently across a `ThreadPoolExecutor`
+  (`_make_threaded_pdf`). If a second instance's "activate" runs on another
+  Python thread while the first instance's pool is still mid-flight -- the
+  exact joint-Cf+Ba-fit scenario motivating this record -- it can overwrite the
+  active table underneath the first instance's still-running computation. A
+  thread-local "active handle" would dodge that specific race, but collides
+  with this library's own internal parallelism (`Ppq_vector_NR`'s
+  `do concurrent`, genuinely parallel under ifx/flang, serial under gfortran):
+  a freshly spawned worker thread doesn't automatically inherit the calling
+  thread's thread-local value without more OpenMP machinery, and behavior
+  would then differ by compiler. Passing the handle as a plain argument has
+  none of these hazards, for every concurrency pattern, by construction --
+  worth the extra argument.
 
-If the Fortran change has to wait, an interim guard is cheap: a global generation
-counter bumped on every load, recorded by each instance at construction and
-checked before each evaluation. The superseded instance then raises instead of
-computing with another instance's table. This guard is the minimum to ship
-before PErecoil tables are used in any fit.
+Concretely:
+
+- A new, non-pure entry point, `PErecoil_table_register(x, c0, c1, c2, c3, n)
+  -> handle`: copies the table into a fixed-capacity, process-wide registry
+  (`type(perecoil_table_t)` array -- fixed size, not grown by reallocation, so
+  registering a new table can never invalidate another thread's in-progress
+  read of an already-registered one) and returns its slot index. Handle `0`
+  always means "use the closed-form spectrum", for both bands. Registration is
+  append-only: it never overwrites a slot another instance already holds a
+  handle to, so two instances with different tables coexist in one process,
+  including evaluated alternately.
+- Exactly the entry points that do real per-event or per-region work gain one
+  trailing `table_handle` argument: `Ppq_NR`/`Ppq_ER`, `Ppq_vector_NR`/`ER`,
+  `Ppq_region_NR`/`ER` (and `_with_error`). `Ppq_NR`/`ER` need it only because
+  `Ppq_vector_NR`/`ER`'s internal loop calls them per point and must forward
+  it, not because anything calls them directly with a table in mind.
+- `PErecoil_NR`/`ER` and `pq_given_Erecoil_NR`/`ER` are **not** touched. Their
+  own docstrings already say they're not a stable public API, used only by
+  `test_PpqFort.py` to cross-check the closed form against `Ppq_py.py`'s
+  reference implementation, and the real compute path (`Ppq_integrand`, inside
+  `integrate_Ppq`) never goes through them -- it calls the elemental
+  `PErecoil_NR_impl(Erecoil, handle)`/`ER_impl` helpers directly. Keeping
+  these two functions closed-form-only keeps the bind(c) surface that changes
+  as small as it can be.
+- `Ppq_compiled`/`Ppq_densities` register their table(s) once at construction
+  and store the returned handle(s); every method call on that instance
+  forwards its own stored handle automatically. Nothing about what a Python
+  caller writes changes -- the handle never appears in `Ppq_compiled`'s own
+  public methods, only in the ctypes plumbing underneath them.
 
 ## Consequences
 
-- Joint fits with per-dataset spectra work, which is the purpose of this change.
-- The `bind(c)` signatures change, so this touches `_Ppq_fort_bindings.py`'s
-  `argtypes`, the Fortran interfaces, and the ABI version
-  (`PpqFort_version`, so a stale library is detected).
-- A handle registry holds tables for the process lifetime. They're small (a few
-  thousand points), so not freeing them is acceptable; a `PErecoil_table_free`
-  can come later if needed.
+- Joint fits with per-dataset spectra work, under any concurrency pattern,
+  which is the purpose of this change.
+- The `bind(c)` signatures of the functions listed above change, so this
+  touches `_Ppq_fort_bindings.py`'s `argtypes`, the Fortran interfaces in
+  `Ppq_fort_m.f90`, and the ABI version (`PpqFort_version`, so a stale library
+  is detected) -- `PErecoil_set_table_NR/ER`/`PErecoil_clear_table_NR/ER` are
+  removed outright (no deprecation shim), since this is a pre-release feature
+  branch and nothing published depends on them.
+- A fixed-capacity registry (256 slots) holds tables for the process
+  lifetime; registering past capacity is a hard error rather than silently
+  growing or wrapping. They're small (a few thousand points each), so not
+  freeing them is acceptable; a `PErecoil_table_free` can come later if
+  needed, though it would have to contend with the same "don't invalidate a
+  concurrent reader" constraint that ruled out a growable array here.
 - Verification: a test with two instances holding different ER tables,
-  evaluated alternately, each matching what it gives when constructed alone in
-  a fresh process.
+  evaluated alternately (and, ideally, genuinely concurrently from two
+  threads), each matching what it gives when constructed alone in a fresh
+  process.

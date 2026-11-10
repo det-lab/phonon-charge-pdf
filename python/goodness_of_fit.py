@@ -297,7 +297,7 @@ def _make_region_integral_with_retry(fort_func, *, epsrel, epsabs,
 
 
 def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
-                            relax_factor=10.0, **params):
+                            relax_factor=10.0, table_handle=0, **params):
     """
     Build a region_integral_func(ep_min, ep_max, eq_min, eq_max) -> float
     for expected_counts_from_pdf/run_chisquare_test, backed by Ppq_region_NR
@@ -326,29 +326,34 @@ def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
         tables needed (see docs/goodness-of-fit.md); pass your own if
         that default isn't tight enough for what you're using this for.
     relax_factor : multiplicative step between attempts (default 10x).
+    table_handle : int
+        0 (default) for the closed-form PErecoil_NR spectrum, or a handle
+        from PErecoil_table_register/Ppq_densities.nr_table_handle for a
+        tabulated one -- an explicit argument, not ambient state (see
+        adr/0003-per-instance-perecoil-tables.md). If you already built a
+        Ppq_densities against this table for pdf_fort, pass its own
+        nr_table_handle here too, so both sides agree.
     **params : k, Z, F0, eps, V, p0, p10, q0, q10 -- same physics
         parameters as make_Ppq_densities_NR, required keyword-only.
-
-    If a PErecoil table is loaded (Ppq_densities/Ppq_compiled), this reads
-    from the same global Fortran state they set, exactly like
-    make_Ppq_densities_NR's pdf_func does -- load it first.
     """
     if max_epsrel is None:
         max_epsrel = epsrel * 100.0
     if max_epsabs is None:
         max_epsabs = epsabs * 100.0
+    params["table_handle"] = table_handle
     return _make_region_integral_with_retry(
         Ppq_region_NR, epsrel=epsrel, epsabs=epsabs,
         max_epsrel=max_epsrel, max_epsabs=max_epsabs, relax_factor=relax_factor, params=params)
 
 
 def make_region_integral_ER(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
-                            relax_factor=10.0, **params):
+                            relax_factor=10.0, table_handle=0, **params):
     """Same as make_region_integral_NR but for the ER band (Ppq_region_ER)."""
     if max_epsrel is None:
         max_epsrel = epsrel * 100.0
     if max_epsabs is None:
         max_epsabs = epsabs * 100.0
+    params["table_handle"] = table_handle
     return _make_region_integral_with_retry(
         Ppq_region_ER, epsrel=epsrel, epsabs=epsabs,
         max_epsrel=max_epsrel, max_epsabs=max_epsabs, relax_factor=relax_factor, params=params)

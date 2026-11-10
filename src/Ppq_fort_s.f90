@@ -37,24 +37,18 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! integration window; overlapping windows are merged.
   integer, parameter :: max_modes = 4
 
-  ! Tabulated PErecoil state (NR/ER independently): set once, before any
-  ! density evaluation, via PErecoil_set_table_NR/ER (the only non-pure
-  ! procedures in this file -- everything else here stays pure because it
-  ! only ever *reads* this, never between two evaluations of the same
-  ! (Ep, Eq) point). *_loaded false means "use the closed-form
-  ! PErecoil_NR_impl/ER_impl below" -- the default, unchanged behavior.
-  !
-  ! This is GLOBAL, process-wide state, not per Ppq_compiled instance: the
-  ! compiled library has no per-instance handle anywhere else either (the
-  ! (Ep, Eq) normalization tables live entirely in Python's NormInterpolator
-  ! for exactly this reason -- PErecoil can't, since it's evaluated at every
-  ! quadrature node inside this file's own hot integration loop, not once
-  ! per likelihood call). Two Ppq_compiled instances -- or a Ppq_compiled
-  ! and a Ppq_densities, or two Ppq_densities -- with different Erecoil
-  ! tables cannot coexist in one process; both Python classes construct via
-  ! _Ppq_fort_bindings.py's shared _load_erecoil_table, which always
-  ! explicitly sets-or-clears both tables on every construction so this
-  ! stays deterministic, if not concurrent.
+  ! Tabulated PErecoil registry (adr/0003-per-instance-perecoil-tables.md):
+  ! the table is an explicit argument of evaluation (table_handle, carried
+  ! inside detector_params_t below), not ambient global state -- a
+  ! Ppq_compiled/Ppq_densities registers its own table(s) once at
+  ! construction (PErecoil_table_register, the only non-pure procedure in
+  ! this file) and passes its own handle on every call after that.
+  ! Registration is append-only: it never overwrites a slot another
+  ! instance is already holding a handle to, so two instances with
+  ! different Erecoil tables coexist in one process fine, including
+  ! evaluated alternately (a joint Cf + Ba fit, say). handle 0 always
+  ! means "use the closed-form PErecoil_NR_impl/ER_impl below", for
+  ! both bands.
   !
   ! x/c0/c1/c2/c3 are a piecewise cubic in power-basis form (scipy's
   ! PchipInterpolator.c convention, see erecoil_table.py): on
@@ -62,19 +56,36 @@ submodule(Ppq_fort_m) Ppq_fort_s
   !   ((c0(i)*dx + c1(i))*dx + c2(i))*dx + c3(i), dx = Erecoil - x(i).
   ! Pre-normalized on the Python side (erecoil_table.PErecoilTable already
   ! integrates to 1), so no extra normalization constant is carried here.
-  logical :: nr_table_loaded = .false.
-  logical :: er_table_loaded = .false.
-  real(c_double), allocatable :: nr_table_x(:), nr_table_c0(:), nr_table_c1(:), nr_table_c2(:), nr_table_c3(:)
-  real(c_double), allocatable :: er_table_x(:), er_table_c0(:), er_table_c1(:), er_table_c2(:), er_table_c3(:)
+  !
+  ! Fixed capacity, not a reallocate-to-grow array: avoids any risk of a
+  ! registration (slot table_registry_count+1) invalidating another
+  ! thread's in-progress read of an earlier, already-registered handle's
+  ! arrays via reallocation. One Ppq_compiled/Ppq_densities instance per
+  ! registered table, so 256 is generous -- registration is still meant
+  ! to happen at construction, before any concurrent evaluation begins,
+  ! same requirement PErecoil_set_table_NR/ER used to document.
+  integer(c_int), parameter :: max_perecoil_tables = 256
+  type :: perecoil_table_t
+      real(c_double), allocatable :: x(:), c0(:), c1(:), c2(:), c3(:)
+  end type perecoil_table_t
+  type(perecoil_table_t) :: table_registry(max_perecoil_tables)
+  integer(c_int) :: table_registry_count = 0
 
   ! Bundles the scalar model/detector constants that are fixed for one
   ! Ppq_NR/Ppq_ER/pq_given_Erecoil_NR call, so the internal engine below threads one
   ! argument instead of nine.  Internal-only: never crosses the bind(c)
-  ! boundary, so the public interface in Ppq_fort_m.f90 is unaffected.
+  ! boundary itself, so the public interface in Ppq_fort_m.f90 is
+  ! unaffected by this type's own shape -- table_handle (a plain
+  ! integer(c_int), which does cross it on every public entry point that
+  ! needs a PErecoil, per adr/0003) just rides along in here afterward so
+  ! the internal engine (integrate_Ppq, locate_modes, ...) reads it from
+  ! the one bundle it already threads everywhere instead of as a second,
+  ! separate argument.
   ! Zfac = Z**(-7/3) (not raw Z) since that's the form the hot path needs,
   ! computed once here rather than once per Erecoil sample.
   type :: detector_params_t
       real(c_double) :: k, Zfac, F0, eps, V, p0, p10, q0, q10
+      integer(c_int) :: table_handle
   end type detector_params_t
 
   ! ---------------------------------------------------------------------
@@ -116,9 +127,10 @@ contains
 
   ! Zfac is 0 (and unused downstream) when is_ER is .true.: Ppq_ER passes
   ! a placeholder Z that may be 0, and Z**(-7/3) would be invalid there.
-  pure function make_params(k, Z, F0, eps, V, p0, p10, q0, q10, is_ER) result(pars)
+  pure function make_params(k, Z, F0, eps, V, p0, p10, q0, q10, is_ER, table_handle) result(pars)
       real(c_double), intent(in) :: k, Z, F0, eps, V, p0, p10, q0, q10
       logical, intent(in) :: is_ER
+      integer(c_int), intent(in) :: table_handle
       type(detector_params_t) :: pars
 
       pars%k   = k
@@ -129,6 +141,7 @@ contains
       pars%p10 = p10
       pars%q0  = q0
       pars%q10 = q10
+      pars%table_handle = table_handle
       if (is_ER) then
           pars%Zfac = 0.0d0
       else
@@ -139,16 +152,18 @@ contains
   module procedure Ppq_vector_NR
       integer :: i
 
-      do concurrent(i = 1:n) default (none) shared(res_arr, Ep_arr, Eq_arr, k, Z, F0, eps, V, p0, p10, q0, q10)
-          res_arr(i) = Ppq_NR(Ep_arr(i), Eq_arr(i), k, Z, F0, eps, V, p0, p10, q0, q10)
+      do concurrent(i = 1:n) default (none) &
+          shared(res_arr, Ep_arr, Eq_arr, k, Z, F0, eps, V, p0, p10, q0, q10, table_handle)
+          res_arr(i) = Ppq_NR(Ep_arr(i), Eq_arr(i), k, Z, F0, eps, V, p0, p10, q0, q10, table_handle)
       end do
   end procedure Ppq_vector_NR
 
   module procedure Ppq_vector_ER
       integer :: i
 
-      do concurrent(i = 1:n) default (none) shared(res_arr, Ep_arr, Eq_arr, F0, eps, V, p0, p10, q0, q10)
-          res_arr(i) = Ppq_ER(Ep_arr(i), Eq_arr(i), F0, eps, V, p0, p10, q0, q10)
+      do concurrent(i = 1:n) default (none) &
+          shared(res_arr, Ep_arr, Eq_arr, F0, eps, V, p0, p10, q0, q10, table_handle)
+          res_arr(i) = Ppq_ER(Ep_arr(i), Eq_arr(i), F0, eps, V, p0, p10, q0, q10, table_handle)
       end do
   end procedure Ppq_vector_ER
 
@@ -166,7 +181,7 @@ contains
   module procedure Ppq_NR
       type(detector_params_t) :: pars
 
-      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
+      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false., table_handle)
       call validate_params(pars, .false.)
       res = integrate_Ppq(Ep, Eq, pars, .false.)
   end procedure Ppq_NR
@@ -176,7 +191,7 @@ contains
 
       ! k, Z are unused when is_ER is .true. (electron-recoil yield is
       ! always 1); the placeholders below are never read.
-      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true., table_handle)
       call validate_params(pars, .true.)
       res = integrate_Ppq(Ep, Eq, pars, .true.)
   end procedure Ppq_ER
@@ -208,16 +223,26 @@ contains
   ! The bind(c) module procedures cannot themselves be elemental, so the
   ! spectrum formulas live in elemental implementations that array-valued
   ! internal code (the mode scan) can evaluate in vectorizable form.
+  !
+  ! PErecoil_NR/ER themselves stay closed-form-only (table_handle=0,
+  ! hardcoded, not a parameter of these two) -- see
+  ! adr/0003-per-instance-perecoil-tables.md: their own docstrings already
+  ! say they're not a stable public API, used only by test_PpqFort.py to
+  ! cross-check the closed form against Ppq_py.py's reference, and the
+  ! real compute path (Ppq_integrand, below) calls PErecoil_NR_impl/ER_impl
+  ! directly with its own pars%table_handle instead of through these, so
+  ! keeping these two closed-form-only doesn't cost the real path anything
+  ! while keeping the bind(c) surface that changed as small as possible.
   module procedure PErecoil_NR
-      res = PErecoil_NR_impl(Erecoil)
+      res = PErecoil_NR_impl(Erecoil, 0)
   end procedure PErecoil_NR
 
   module procedure PErecoil_ER
-      res = PErecoil_ER_impl(Erecoil)
+      res = PErecoil_ER_impl(Erecoil, 0)
   end procedure PErecoil_ER
 
   ! Evaluate a piecewise cubic (power-basis, scipy PPoly convention: see the
-  ! module-level comment on nr_table_x/er_table_x above) at Erecoil. Shared
+  ! module-level comment on table_registry above) at Erecoil. Shared
   ! by both bands' table path -- not elemental itself (its array dummies are
   ! whole, un-sliced tables, never a per-element broadcast), only called
   ! from inside the elemental *_impl functions below, which each pass their
@@ -267,8 +292,12 @@ contains
       res = ((c0(lo) * dx + c1(lo)) * dx + c2(lo)) * dx + c3(lo)
   end function eval_cubic_table
 
-  elemental function PErecoil_NR_impl(Erecoil) result(res)
+  ! table_handle = 0 always means closed-form, for both bands -- see
+  ! adr/0003. Otherwise looks up table_registry(table_handle), populated
+  ! once by PErecoil_table_register below.
+  elemental function PErecoil_NR_impl(Erecoil, table_handle) result(res)
       real(c_double), intent(in) :: Erecoil
+      integer(c_int), intent(in) :: table_handle
       real(c_double) :: res
       real(c_double), parameter :: PNa = 0.53693208d0
       real(c_double), parameter :: PNb = 6.41515782d0
@@ -276,16 +305,18 @@ contains
       real(c_double), parameter :: PNa_over_PNb   = PNa / PNb
       real(c_double), parameter :: one_minus_PNa_over_PNd = (1.0d0 - PNa) / PNd
 
-      if (nr_table_loaded) then
-          res = eval_cubic_table(Erecoil, nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, &
-                                  nr_table_c3, size(nr_table_x))
+      if (table_handle > 0) then
+          associate (t => table_registry(table_handle))
+              res = eval_cubic_table(Erecoil, t%x, t%c0, t%c1, t%c2, t%c3, size(t%x))
+          end associate
           return
       end if
       res = PNa_over_PNb * exp(-Erecoil / PNb) + one_minus_PNa_over_PNd * exp(-Erecoil / PNd)
   end function PErecoil_NR_impl
 
-  elemental function PErecoil_ER_impl(Erecoil) result(res)
+  elemental function PErecoil_ER_impl(Erecoil, table_handle) result(res)
       real(c_double), intent(in) :: Erecoil
+      integer(c_int), intent(in) :: table_handle
       real(c_double) :: res
       real(c_double), parameter :: PGa = 0.573211975d0
       real(c_double), parameter :: PGb = 0.169520023d0
@@ -293,24 +324,25 @@ contains
       real(c_double), parameter :: PGa_over_PGb   = PGa / PGb
       real(c_double), parameter :: one_minus_PGa_over_PGd = (1.0d0 - PGa) / PGd
 
-      if (er_table_loaded) then
-          res = eval_cubic_table(Erecoil, er_table_x, er_table_c0, er_table_c1, er_table_c2, &
-                                  er_table_c3, size(er_table_x))
+      if (table_handle > 0) then
+          associate (t => table_registry(table_handle))
+              res = eval_cubic_table(Erecoil, t%x, t%c0, t%c1, t%c2, t%c3, size(t%x))
+          end associate
           return
       end if
       res = PGa_over_PGb * exp(-Erecoil / PGb) + one_minus_PGa_over_PGd * exp(-Erecoil / PGd)
   end function PErecoil_ER_impl
 
-  ! Upper edge of whichever table (NR/ER) is currently loaded for this
-  ! band, or no bound (huge) if the closed-form spectrum is in use.
-  ! locate_modes/integrate_Ppq clip their Erecoil search windows to this
-  ! so they never query eval_cubic_table past the table's own range: a
-  ! loaded table's density is real calibration data, not a closed form
-  ! with a known decaying tail, so the window-finding logic that works by
-  ! watching the closed-form integrand die off at the edges cannot be
-  ! trusted to stop itself before running off a table's end.
-  pure function table_hi_bound(is_ER) result(hi)
-      logical, intent(in) :: is_ER
+  ! Upper edge of table_handle's own table, or no bound (huge) if
+  ! table_handle is 0 (closed form). integrate_Ppq/locate_modes clip
+  ! their Erecoil search windows to this so they never query
+  ! eval_cubic_table past a loaded table's own range: a loaded table's
+  ! density is real calibration data, not a closed form with a known
+  ! decaying tail, so the window-finding logic that works by watching the
+  ! closed-form integrand die off at the edges cannot be trusted to stop
+  ! itself before running off a table's end.
+  pure function table_hi_bound(table_handle) result(hi)
+      integer(c_int), intent(in) :: table_handle
       ! Relative safety margin, well above float64 rounding (~1e-16): a
       ! window clipped to exactly the table's edge can still land a grid
       ! point a few ULPs past it once integrate_window's lo + (npts-1)*h
@@ -321,44 +353,34 @@ contains
       real(c_double) :: hi
 
       hi = huge(1.0d0)
-      if (is_ER) then
-          if (er_table_loaded) hi = er_table_x(size(er_table_x)) * (1.0d0 - edge_margin)
-      else
-          if (nr_table_loaded) hi = nr_table_x(size(nr_table_x)) * (1.0d0 - edge_margin)
-      end if
+      if (table_handle > 0) &
+          hi = table_registry(table_handle)%x(size(table_registry(table_handle)%x)) * (1.0d0 - edge_margin)
   end function table_hi_bound
 
-  module procedure PErecoil_set_table_NR
-      if (allocated(nr_table_x)) deallocate (nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, nr_table_c3)
-      allocate (nr_table_x(n), nr_table_c0(n - 1), nr_table_c1(n - 1), nr_table_c2(n - 1), nr_table_c3(n - 1))
-      nr_table_x = x
-      nr_table_c0 = c0
-      nr_table_c1 = c1
-      nr_table_c2 = c2
-      nr_table_c3 = c3
-      nr_table_loaded = .true.
-  end procedure PErecoil_set_table_NR
-
-  module procedure PErecoil_clear_table_NR
-      nr_table_loaded = .false.
-      if (allocated(nr_table_x)) deallocate (nr_table_x, nr_table_c0, nr_table_c1, nr_table_c2, nr_table_c3)
-  end procedure PErecoil_clear_table_NR
-
-  module procedure PErecoil_set_table_ER
-      if (allocated(er_table_x)) deallocate (er_table_x, er_table_c0, er_table_c1, er_table_c2, er_table_c3)
-      allocate (er_table_x(n), er_table_c0(n - 1), er_table_c1(n - 1), er_table_c2(n - 1), er_table_c3(n - 1))
-      er_table_x = x
-      er_table_c0 = c0
-      er_table_c1 = c1
-      er_table_c2 = c2
-      er_table_c3 = c3
-      er_table_loaded = .true.
-  end procedure PErecoil_set_table_ER
-
-  module procedure PErecoil_clear_table_ER
-      er_table_loaded = .false.
-      if (allocated(er_table_x)) deallocate (er_table_x, er_table_c0, er_table_c1, er_table_c2, er_table_c3)
-  end procedure PErecoil_clear_table_ER
+  ! The only non-pure procedure in this file: copies x/c0/c1/c2/c3 into a
+  ! new, append-only registry slot and returns its index as a handle --
+  ! see adr/0003-per-instance-perecoil-tables.md for why a handle (not a
+  ! raw pointer, not ambient "current table" state) and why the registry
+  ! is fixed-capacity rather than grown by reallocation. Call once per
+  ! PErecoil table a Ppq_compiled/Ppq_densities registers at construction,
+  ! never concurrently with another registration (ordinary evaluation
+  ! calls elsewhere, by any number of instances/threads, are unaffected
+  ! either way, since they only ever read an already-registered slot).
+  module procedure PErecoil_table_register
+      table_registry_count = table_registry_count + 1
+      if (table_registry_count > max_perecoil_tables) &
+          error stop "PErecoil_table_register: exceeded max_perecoil_tables PErecoil tables " // &
+              "registered in this process"
+      associate (t => table_registry(table_registry_count))
+          allocate (t%x(n), t%c0(n - 1), t%c1(n - 1), t%c2(n - 1), t%c3(n - 1))
+          t%x = x
+          t%c0 = c0
+          t%c1 = c1
+          t%c2 = c2
+          t%c3 = c3
+      end associate
+      handle = table_registry_count
+  end procedure PErecoil_table_register
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
   ! per Ppq_NR/Ppq_ER call (by integrate_Ppq) instead of recomputing the Z
@@ -387,7 +409,10 @@ contains
   module procedure pq_given_Erecoil_NR
       type(detector_params_t) :: pars
 
-      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
+      ! table_handle=0 (closed form): this is a test-only cross-check
+      ! against Ppq_py.py's own closed-form reference, not a real
+      ! compute-path entry point -- see adr/0003.
+      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false., 0)
       res = PpqCondN(Erecoil, Ep, Eq, pars, .false.) * PErecoil_NR(Erecoil)
   end procedure pq_given_Erecoil_NR
 
@@ -401,7 +426,8 @@ contains
       type(detector_params_t) :: pars
 
       ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
-      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      ! table_handle=0: see pq_given_Erecoil_NR's comment.
+      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true., 0)
       res = PpqCondN(Erecoil, Ep, Eq, pars, .true.) * PErecoil_ER(Erecoil)
   end procedure pq_given_Erecoil_ER
 
@@ -412,7 +438,7 @@ contains
       type(detector_params_t) :: pars
       real(c_double) :: unused_error_estimate
 
-      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
+      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false., table_handle)
       call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                               pars, .false., res, unused_error_estimate)
   end procedure Ppq_region_NR
@@ -422,7 +448,7 @@ contains
       real(c_double) :: unused_error_estimate
 
       ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
-      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true., table_handle)
       call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                               pars, .true., res, unused_error_estimate)
   end procedure Ppq_region_ER
@@ -434,7 +460,7 @@ contains
   module procedure Ppq_region_NR_with_error
       type(detector_params_t) :: pars
 
-      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false.)
+      pars = make_params(k, Z, F0, eps, V, p0, p10, q0, q10, .false., table_handle)
       call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                               pars, .false., res, error_estimate)
   end procedure Ppq_region_NR_with_error
@@ -443,7 +469,7 @@ contains
       type(detector_params_t) :: pars
 
       ! k, Z are unused when is_ER is .true.; placeholders as elsewhere.
-      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true.)
+      pars = make_params(0.0d0, 0.0d0, F0, eps, V, p0, p10, q0, q10, .true., table_handle)
       call region_integral_gl(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
                               pars, .true., res, error_estimate)
   end procedure Ppq_region_ER_with_error
@@ -544,10 +570,13 @@ contains
       real(c_double) :: res
 
       res = PpqCondN(Erecoil, Ep, Eq, pars, is_ER)
+      ! PErecoil_*_impl directly, not the closed-form-only public
+      ! PErecoil_NR/ER wrapper -- this is the real compute path, which
+      ! must respect pars%table_handle (see adr/0003).
       if (is_ER) then
-          res = res * PErecoil_ER(Erecoil)
+          res = res * PErecoil_ER_impl(Erecoil, pars%table_handle)
       else
-          res = res * PErecoil_NR(Erecoil)
+          res = res * PErecoil_NR_impl(Erecoil, pars%table_handle)
       end if
   end function Ppq_integrand
 
@@ -599,9 +628,9 @@ contains
 
       H = log_N_exponent(Erecoil, Ep, Eq, pars, sp2, sq2, is_ER)
       if (is_ER) then
-          H = H + log(PErecoil_ER_impl(Erecoil))
+          H = H + log(PErecoil_ER_impl(Erecoil, pars%table_handle))
       else
-          H = H + log(PErecoil_NR_impl(Erecoil))
+          H = H + log(PErecoil_NR_impl(Erecoil, pars%table_handle))
       end if
   end function log_integrand_approx
 
@@ -668,9 +697,9 @@ contains
       ! of the loop: everything the scan does is vectorizable.
       Hs = log_N_exponent(xs, Ep, Eq, pars, sp2, sq2, is_ER)
       if (is_ER) then
-          Hs = Hs + log(PErecoil_ER_impl(xs))
+          Hs = Hs + log(PErecoil_ER_impl(xs, pars%table_handle))
       else
-          Hs = Hs + log(PErecoil_NR_impl(xs))
+          Hs = Hs + log(PErecoil_NR_impl(xs, pars%table_handle))
       end if
 
       ! Candidate local maxima (including the low-Erecoil boundary)
@@ -885,7 +914,7 @@ contains
 
       sp2 = sigp(Ep, pars%eps, pars%V, pars%p0, pars%p10)**2
       sq2 = sigq(Eq, pars%q0, pars%q10)**2
-      table_hi = table_hi_bound(is_ER)
+      table_hi = table_hi_bound(pars%table_handle)
 
       call locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, table_hi, &
                         erecoil_m, sig_m, H_m, bnd_m, n_modes)
@@ -1273,6 +1302,9 @@ contains
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_ER
 
+      if (.not. (pars%table_handle >= 0 .and. pars%table_handle <= table_registry_count)) &
+          error stop "invalid parameters: table_handle is not 0 (closed form) or a handle " // &
+              "returned by PErecoil_table_register"
       if (.not. (pars%F0 > 0.0d0)) &
           error stop "invalid parameters: Fano factor F0 must be > 0"
       if (.not. (pars%eps > 0.0d0)) &

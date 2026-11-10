@@ -120,13 +120,14 @@ class Ppq_compiled:
         the density itself, not just its normalization. If the table's own
         metadata says a band, it must match this keyword's band. Checked
         once here (erecoil_range must reach 0 and cover
-        max(ep_range, eq_range) + 5 keV) and loaded into the compiled
-        library's GLOBAL, process-wide table state (see the module-level
-        comment on nr_table_x in src/Ppq_fort_s.f90): constructing a second
-        Ppq_compiled -- or a _Ppq_fort_bindings.Ppq_densities -- in the same
-        process, with or without its own PErecoil_table_NR/ER, replaces
-        this one's. Prototype stage -- see erecoil_table.py's own module
-        docstring.
+        max(ep_range, eq_range) + 5 keV) and registered once, at
+        construction, into a handle this instance stores and passes
+        explicitly on every call after that (adr/0003-per-instance-
+        perecoil-tables.md) -- not ambient state, so a second Ppq_compiled
+        or _Ppq_fort_bindings.Ppq_densities, with or without its own
+        PErecoil_table_NR/ER, coexists fine in the same process, including
+        evaluated alternately (a joint Cf + Ba fit, say). Prototype stage
+        -- see erecoil_table.py's own module docstring.
     prior_bounds : dict or None
         The MCMC prior's hard bounds, {param: (lo, hi)} for k (NR), V, p0,
         p10, q0, q10 (Z/eps may be given as their fixed values), flat --
@@ -165,10 +166,10 @@ class Ppq_compiled:
         self.n_workers = n_workers
         self.Ppq_table_NR = self._load_table(Ppq_table_NR, "NR")
         self.Ppq_table_ER = self._load_table(Ppq_table_ER, "ER")
-        self.PErecoil_table_NR = _load_erecoil_table(PErecoil_table_NR, "NR",
-                                                      ep_max=self.ep_max, eq_max=self.eq_max)
-        self.PErecoil_table_ER = _load_erecoil_table(PErecoil_table_ER, "ER",
-                                                      ep_max=self.ep_max, eq_max=self.eq_max)
+        self.PErecoil_table_NR, self.nr_table_handle = _load_erecoil_table(
+            PErecoil_table_NR, "NR", ep_max=self.ep_max, eq_max=self.eq_max)
+        self.PErecoil_table_ER, self.er_table_handle = _load_erecoil_table(
+            PErecoil_table_ER, "ER", ep_max=self.ep_max, eq_max=self.eq_max)
         if prior_bounds is not None:
             if not self._tables():
                 raise ValueError("prior_bounds is checked against the tables; no table was given")
@@ -258,7 +259,8 @@ class Ppq_compiled:
             return self.Ppq_table_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
         return Ppq_region_NR(self.ep_min, self.ep_max, self.eq_min, self.eq_max,
                             **self._quadrature_tolerances(),
-                            k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+                            k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
+                            table_handle=self.nr_table_handle)
 
     def _Ppq_densities_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
         """The full-plane density (see goodness_of_fit.make_Ppq_densities_NR) at the bound
@@ -267,7 +269,8 @@ class Ppq_compiled:
         fit/MCMC always divides by Ppq_integral_NR(...), never uses this
         alone."""
         pdf_func = make_Ppq_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,
-                                               q0=q0, q10=q10, n_workers=self.n_workers)
+                                               q0=q0, q10=q10, table_handle=self.nr_table_handle,
+                                               n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
     def Ppq_normalized_densities_NR(self, *, k, Z, F0, eps, V, p0, p10, q0, q10):
@@ -283,7 +286,8 @@ class Ppq_compiled:
             return self.Ppq_table_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
         return Ppq_region_ER(self.ep_min, self.ep_max, self.eq_min, self.eq_max,
                             **self._quadrature_tolerances(),
-                            F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10)
+                            F0=F0, eps=eps, V=V, p0=p0, p10=p10, q0=q0, q10=q10,
+                            table_handle=self.er_table_handle)
 
     def _Ppq_densities_ER(self, *, F0, eps, V, p0, p10, q0, q10):
         """The full-plane density (see goodness_of_fit.make_Ppq_densities_ER) at the bound
@@ -292,7 +296,8 @@ class Ppq_compiled:
         fit/MCMC always divides by Ppq_integral_ER(...), never uses this
         alone."""
         pdf_func = make_Ppq_densities_ER(F0=F0, eps=eps, V=V, p0=p0, p10=p10,
-                                               q0=q0, q10=q10, n_workers=self.n_workers)
+                                               q0=q0, q10=q10, table_handle=self.er_table_handle,
+                                               n_workers=self.n_workers)
         return pdf_func(self.ep_data, self.eq_data)
 
     def Ppq_normalized_densities_ER(self, *, F0, eps, V, p0, p10, q0, q10):

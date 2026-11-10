@@ -5,38 +5,58 @@ module Ppq_fort_m
 
   interface
 
-  pure module subroutine Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_NR")
+  pure module subroutine Ppq_vector_NR(Ep_arr, Eq_arr, n, k, Z, F0, eps, V, p0, p10, q0, q10, &
+      table_handle, res_arr) bind(c, name="Ppq_vector_NR")
     !! Ppq_NR evaluated at n (Ep, Eq) points via do concurrent, which compiles to
     !! genuine multi-threaded parallelism under ifx/flang but runs serially under
     !! gfortran. Measured at roughly 6 microseconds per point under ifx/flang (18
     !! threads, x86 emulation, over a representative grid); gfortran builds run this
     !! loop serially and are roughly 25x slower.
+    !!
+    !! table_handle: 0 for the closed-form PErecoil_NR spectrum, or a handle
+    !! returned by PErecoil_table_register for a tabulated one -- an
+    !! explicit argument of this call, not ambient state, so two callers
+    !! with different tables (e.g. a joint Cf + Ba fit's two Ppq_compiled
+    !! instances) can't interfere with each other, under any concurrency
+    !! pattern. See adr/0003-per-instance-perecoil-tables.md.
     integer(c_int), value :: n
     real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double), intent(out) :: res_arr(n)
   end subroutine Ppq_vector_NR
 
-  pure module subroutine Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, res_arr) bind(c, name="Ppq_vector_ER")
+  pure module subroutine Ppq_vector_ER(Ep_arr, Eq_arr, n, F0, eps, V, p0, p10, q0, q10, &
+      table_handle, res_arr) bind(c, name="Ppq_vector_ER")
     !! Same as Ppq_vector_NR but for Ppq_ER.
     integer(c_int), value :: n
     real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
     real(c_double), value :: F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double), intent(out) :: res_arr(n)
   end subroutine Ppq_vector_ER
 
-  pure module function Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_NR")
+  pure module function Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10, table_handle) &
+      result(res) bind(c, name="Ppq_NR")
     !! The nuclear-recoil band probability density at one (Ep, Eq) point. Integrates
     !! over a window placed around the located peak(s) of the Erecoil integrand
     !! rather than sampling the full physical range, since the ridge location/width
     !! is already known exactly (see Ppq_region_NR).
+    !!
+    !! table_handle: see Ppq_vector_NR's own comment -- this takes it only
+    !! because Ppq_vector_NR's per-point loop calls this and must forward
+    !! it, not because this is meant to be called directly with a table in
+    !! mind.
     real(c_double), value :: Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double) :: res
   end function Ppq_NR
 
-  pure module function Ppq_ER(Ep, Eq, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_ER")
+  pure module function Ppq_ER(Ep, Eq, F0, eps, V, p0, p10, q0, q10, table_handle) &
+      result(res) bind(c, name="Ppq_ER")
     !! Same as Ppq_NR but for the electron-recoil band (Y=1).
     real(c_double), value :: Ep, Eq, F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double) :: res
   end function Ppq_ER
 
@@ -72,34 +92,28 @@ module Ppq_fort_m
     real(c_double) :: res
   end function PErecoil_ER
 
-  module subroutine PErecoil_set_table_NR(x, c0, c1, c2, c3, n) bind(c, name="PErecoil_set_table_NR")
-    !! Switch PErecoil_NR to a tabulated true-recoil-energy spectrum: a
-    !! piecewise cubic in power-basis form (scipy PPoly convention; see
+  module function PErecoil_table_register(x, c0, c1, c2, c3, n) result(handle) &
+      bind(c, name="PErecoil_table_register")
+    !! Register a tabulated true-recoil-energy spectrum -- a piecewise
+    !! cubic in power-basis form (scipy PPoly convention; see
     !! erecoil_table.PErecoilTable, which builds x/c0..c3 with PCHIP and is
-    !! already normalized to integrate to 1), replacing the closed-form
-    !! biexponential until PErecoil_clear_table_NR is called. NOT pure: this
-    !! is global, process-wide state (see the module-level comment on
-    !! nr_table_x in Ppq_fort_s.f90) -- call it once, before any density
-    !! evaluation, never from inside a parallel region. x has n points
-    !! (strictly increasing); c0/c1/c2/c3 each have n-1, one per interval.
+    !! already normalized to integrate to 1) -- and return a handle for it:
+    !! 0 always means the closed-form spectrum instead, so a real
+    !! registration never returns 0. Pass the handle to Ppq_NR/ER,
+    !! Ppq_vector_NR/ER, or Ppq_region_NR/ER(_with_error) to evaluate
+    !! against this table instead of the closed form.
+    !!
+    !! The only non-pure procedure in this file: copies x/c0/c1/c2/c3 into
+    !! a new, append-only registry slot (never overwriting one an earlier
+    !! caller already holds a handle to -- see
+    !! adr/0003-per-instance-perecoil-tables.md), fixed capacity, not
+    !! grown by reallocation. Call once per table a Ppq_compiled/
+    !! Ppq_densities registers at construction; x has n points (strictly
+    !! increasing), c0/c1/c2/c3 each have n-1, one per interval.
     integer(c_int), value :: n
     real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
-  end subroutine PErecoil_set_table_NR
-
-  module subroutine PErecoil_clear_table_NR() bind(c, name="PErecoil_clear_table_NR")
-    !! Undo PErecoil_set_table_NR: PErecoil_NR goes back to the closed-form
-    !! biexponential. NOT pure; see PErecoil_set_table_NR.
-  end subroutine PErecoil_clear_table_NR
-
-  module subroutine PErecoil_set_table_ER(x, c0, c1, c2, c3, n) bind(c, name="PErecoil_set_table_ER")
-    !! Same as PErecoil_set_table_NR but for PErecoil_ER.
-    integer(c_int), value :: n
-    real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
-  end subroutine PErecoil_set_table_ER
-
-  module subroutine PErecoil_clear_table_ER() bind(c, name="PErecoil_clear_table_ER")
-    !! Same as PErecoil_clear_table_NR but for PErecoil_ER.
-  end subroutine PErecoil_clear_table_ER
+    integer(c_int) :: handle
+  end function PErecoil_table_register
 
   pure module function pq_given_Erecoil_NR(Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_NR")
     !! An internal bind(c) handle on the per-Erecoil N-integral piece of
@@ -117,7 +131,7 @@ module Ppq_fort_m
   end function pq_given_Erecoil_ER
 
   pure module function Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_region_NR")
+      k, Z, F0, eps, V, p0, p10, q0, q10, table_handle) result(res) bind(c, name="Ppq_region_NR")
     !! Integral of Ppq_NR over the rectangle [ep_min,ep_max] x [eq_min,eq_max],
     !! e.g. for normalizing a likelihood to its fit region.  Computed with
     !! a doubling-verified nested Gauss-Legendre quadrature: the ridge
@@ -137,21 +151,25 @@ module Ppq_fort_m
     !! NaN inputs) error-stop immediately instead of grinding -- that guard
     !! is a different, genuinely fatal case (a logic error in the caller),
     !! unlike ordinary non-convergence above.
+    !!
+    !! table_handle: see Ppq_vector_NR's own comment.
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double) :: res
   end function Ppq_region_NR
 
   pure module function Ppq_region_ER(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="Ppq_region_ER")
+      F0, eps, V, p0, p10, q0, q10, table_handle) result(res) bind(c, name="Ppq_region_ER")
     !! Same as Ppq_region_NR but for Ppq_ER (electron-recoil band, Y=1).
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double) :: res
   end function Ppq_region_ER
 
   pure module subroutine Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      k, Z, F0, eps, V, p0, p10, q0, q10, res, error_estimate) &
+      k, Z, F0, eps, V, p0, p10, q0, q10, table_handle, res, error_estimate) &
       bind(c, name="Ppq_region_NR_with_error")
     !! Same as Ppq_region_NR, plus the achieved Gauss-Legendre doubling
     !! residual in error_estimate: |result_2N - result_N| for whichever
@@ -174,16 +192,18 @@ module Ppq_fort_m
     !! as an ordinary argument instead.
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double), intent(out) :: res, error_estimate
   end subroutine Ppq_region_NR_with_error
 
   pure module subroutine Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, epsrel, epsabs, &
-      F0, eps, V, p0, p10, q0, q10, res, error_estimate) &
+      F0, eps, V, p0, p10, q0, q10, table_handle, res, error_estimate) &
       bind(c, name="Ppq_region_ER_with_error")
     !! Same as Ppq_region_NR_with_error but for Ppq_ER (electron-recoil
     !! band, Y=1) -- see that function's comment.
     real(c_double), value :: ep_min, ep_max, eq_min, eq_max, epsrel, epsabs
     real(c_double), value :: F0, eps, V, p0, p10, q0, q10
+    integer(c_int), value :: table_handle
     real(c_double), intent(out) :: res, error_estimate
   end subroutine Ppq_region_ER_with_error
 
