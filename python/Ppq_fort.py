@@ -122,14 +122,17 @@ class Ppq_compiled:
         p10 >= p0 and q10 >= q0; raises normgrid.PriorNotCoveredError if it
         reaches outside one.
     n_workers : int or None
-        Threads used for large batched Ppq_vector_NR/Ppq_vector_ER calls;
-        see goodness_of_fit.make_Ppq_densities_NR.
+        Python threads used for large batched Ppq_vector_NR/Ppq_vector_ER
+        calls, on top of the library's own OpenMP threads (OMP_NUM_THREADS).
+        Default 1: OpenMP alone is the efficient choice for an ifx or flang
+        build; pass more only for a gfortran build, which has no OpenMP
+        parallelism.  See goodness_of_fit.make_Ppq_densities_NR.
     """
 
     def __init__(self, ep_range, eq_range, ep_data, eq_data, *,
                  norm_epsrel=None, norm_epsabs=None,
                  Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
-                 n_workers=None):
+                 n_workers=1):
         # A table only ever replaces the normalization integral, never the
         # per-event PDF evaluation (_Ppq_densities_NR/_Ppq_densities_ER always need
         # Ppq_vector_NR/Ppq_vector_ER) -- so every Ppq_compiled needs the compiled

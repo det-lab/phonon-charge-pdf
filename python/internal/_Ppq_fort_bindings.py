@@ -154,7 +154,7 @@ def version():
     return (major.value, minor.value, patch.value)
 
 
-def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=1):
     """
     Build pdf_func(Ep_flat, Eq_flat) -> values_flat backed by the Fortran
     Ppq_NR (nuclear recoil band PDF).  A genuine probability density, just
@@ -174,9 +174,18 @@ def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None)
       q0, q10        : charge resolution parameters
 
     n_workers : int or None
-        Threads used for large requests.  Defaults to os.cpu_count().
-        Requests of <= 16 points bypass the pool (e.g. scalar calls from
-        scipy quadrature).
+        Python threads splitting large requests into chunks, on top of the
+        library's own OpenMP threading inside each chunk.  Default 1: an
+        ifx or flang build already parallelizes each call over the events
+        with OpenMP (OMP_NUM_THREADS; nearly linear, ~100x on 128 cores),
+        and extra Python threads on top only add overhead -- each one
+        starts its own OpenMP team, so the default used to oversubscribe
+        the machine (os.cpu_count() threads x OMP_NUM_THREADS each; 20x
+        slower than OpenMP alone on a 128-core node).  A gfortran build has
+        no OpenMP parallelism (see "Building from source"), so there pass
+        n_workers > 1 (with OMP_NUM_THREADS=1) for any parallelism at all.
+        None means os.cpu_count().  Requests of <= 16 points bypass the
+        pool (e.g. scalar calls from scipy quadrature).
 
     Invalid physics parameters (e.g. p10 < p0) surface as NaN in the
     returned array rather than being silently zeroed -- Ppq_NR's own
@@ -196,7 +205,7 @@ def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, n_workers=None)
     return _make_threaded_pdf(_eval_chunk, n_workers)
 
 
-def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=None):
+def make_Ppq_densities_ER(*, F0, eps, V, p0, p10, q0, q10, n_workers=1):
     """Same as make_Ppq_densities_NR but for the Fortran Ppq_ER (gamma /
     ER band).  The yield is fixed at Y = 1 internally, so k and Z are not
     taken.  Also a full-plane density, not yet renormalized to a region --
