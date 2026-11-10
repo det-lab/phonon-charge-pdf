@@ -118,16 +118,18 @@ module Ppq_fort_m
     !!   and `c0/c1/c2` shape the cubic across that one interval. Already
     !!   normalized to integrate to 1 over `[x(1), x(n)]`.
     !!
-    !! Nobody hand-types `c0..c3` in practice -- they come from a spline
-    !! fit on real calibration data (PCHIP, Python side). Called directly
-    !! from Fortran, though, it looks like:
+    !! Nobody hand-types `c0..c3` in practice -- they come from PCHIP
+    !! interpolation of real calibration data (Python side). PCHIP
+    !! interpolates rather than fits: the resulting cubic passes exactly
+    !! through each tabulated point instead of approximating/smoothing
+    !! them. Called directly from Fortran, though, it looks like:
     !!
     !! ```fortran
     !! use iso_c_binding, only: c_double, c_int
     !! use Ppq_fort_m, only: PErecoil_table_register, Ppq_NR
     !! integer(c_int) :: handle
     !! real(c_double) :: x(n), c0(n-1), c1(n-1), c2(n-1), c3(n-1), density
-    !! ! ... fill x/c0/c1/c2/c3 from a spline fit ...
+    !! ! ... fill x/c0/c1/c2/c3 via PCHIP interpolation ...
     !! handle = PErecoil_table_register(x, c0, c1, c2, c3, n)   ! the RESULT
     !! density = Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10, handle)
     !! ```
