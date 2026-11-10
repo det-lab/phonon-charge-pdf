@@ -37,6 +37,12 @@
 #                 suggests when an MCMC prior reaches outside a table.  A custom
 #                 box gets its own build directory and table name (tag
 #                 suffix _box<hash>): study and held-out results depend on it.
+#   PERECOIL_TABLE=   a PErecoil table (erecoil_tables/<det>_<band>_<source>.h5)
+#                 to integrate with instead of the closed-form recoil spectrum
+#                 (adr/0002-normalization-tables-record-perecoil.md).  Used by
+#                 the study, the grid and the held-out points alike; its band
+#                 must match BAND.  The tag (build directory, table name) gets
+#                 the file's basename appended, e.g. NR_ep3-85_eq2-40_402_NR_Cf.
 #   ACCOUNT= PARTITION= TIME=   passed to sbatch when set
 #   PDF_SIF=/scratch/$USER/containers/pdf.sif   the container (as in
 #                 normgrid.sbatch); checked here before anything is submitted
@@ -60,6 +66,14 @@ if [[ -n "${BOX:-}" ]]; then
     read -r -a BOX_ARGS <<< "$BOX"
     # the hash of the sorted entries names the box: same box, same directory
     TAG+=_box$(printf '%s\n' "${BOX_ARGS[@]}" | sort | sha1sum | cut -c1-8)
+fi
+PERECOIL_ARGS=()
+if [[ -n "${PERECOIL_TABLE:-}" ]]; then
+    [[ -f "$PERECOIL_TABLE" ]] || { echo "PERECOIL_TABLE=$PERECOIL_TABLE: no such file" >&2; exit 2; }
+    PE_BAND=$("${PYTHON:-python3}" -c "import h5py, sys; print(h5py.File(sys.argv[1], 'r').attrs.get('band', ''))" "$PERECOIL_TABLE")
+    [[ "$PE_BAND" == "$BAND" ]] || { echo "PERECOIL_TABLE=$PERECOIL_TABLE is a band '$PE_BAND' spectrum, not $BAND" >&2; exit 2; }
+    PERECOIL_ARGS=(--perecoil-table "$PERECOIL_TABLE")
+    TAG+=_$(basename "$PERECOIL_TABLE" .h5)
 fi
 WORK=${WORKDIR:-build/$TAG}
 PLAN=$WORK/tol$TOL
@@ -114,8 +128,9 @@ check_tasks() {   # check_tasks JOB N: fail unless all N tasks of array JOB are 
 
 echo "== 1. study: how many nodes does each axis need? ($TAG)"
 "${NP[@]}" points --band "$BAND" --ep-range "${EP_RANGE[@]}" --eq-range "${EQ_RANGE[@]}" --epsrel "$EPSREL" ${BOXOPT[@]+"${BOXOPT[@]}"} \
-    --out "$WORK/study.json"
+    ${PERECOIL_ARGS[@]+"${PERECOIL_ARGS[@]}"} --out "$WORK/study.json"
 [[ -n "${BOX:-}" ]] && echo "   box: $BOX"
+[[ -n "${PERECOIL_TABLE:-}" ]] && echo "   PErecoil: $PERECOIL_TABLE"
 array "$WORK/study.json" "$STUDY_CHUNK" "$WORK/study_results"
 
 echo "== 2. plan: node counts for tol $TOL"
@@ -124,7 +139,7 @@ echo "== 2. plan: node counts for tol $TOL"
 
 echo "== 3. grid and held-out points"
 "${NG[@]}" make-random-spec --band "$BAND" --n "$HELDOUT" --ep-range "${EP_RANGE[@]}" --eq-range "${EQ_RANGE[@]}" --epsrel "$EPSREL" \
-    ${BOXOPT[@]+"${BOXOPT[@]}"} \
+    ${BOXOPT[@]+"${BOXOPT[@]}"} ${PERECOIL_ARGS[@]+"${PERECOIL_ARGS[@]}"} \
     --out "$WORK/held.json"
 array "$WORK/held.json" "$HELD_CHUNK" "$WORK/held_results" &
 held_pid=$!
@@ -140,7 +155,7 @@ else
     NEW_TOL=$("$PYTHON" -c "print(f'{$TOL / 4:.0e}')")
     echo "== FAILED the held-out check (worst error above ACCEPT=$ACCEPT); table kept at $OUT_TABLE" >&2
     echo "   the per-axis study cannot see cross terms; retry with more nodes:" >&2
-    echo "   TOL=$NEW_TOL sbatch table_building/slurm/build_table.job $BAND $EP_MIN $EP_MAX $EQ_MIN $EQ_MAX" >&2
+    echo "   TOL=$NEW_TOL${BOX:+ BOX=\"$BOX\"}${PERECOIL_TABLE:+ PERECOIL_TABLE=$PERECOIL_TABLE} sbatch table_building/slurm/build_table.job $BAND $EP_MIN $EP_MAX $EQ_MIN $EQ_MAX" >&2
     echo "   (the study and held-out points are reused)" >&2
     exit 1
 fi

@@ -64,6 +64,31 @@ BOX="k=0.1:0.2" WORKDIR=$TMP/bad table_building/slurm/build_table.sh ER 2.5 350 
 [[ $? -ne 0 ]] && grep -q "not an axis of the ER table" $TMP/badbox.log && [[ $(cat $MOCK_SLURM_DIR/last_job) == "$jobs_before" ]]
 check "bad box: fails before anything is submitted" $?
 
-# 7. bad usage
+# 7. a PErecoil table: tagged with its name, embedded in every spec and the table
+PE=erecoil_tables/402_ER_Ba.h5
+NORMGRID_FAKE=smooth PERECOIL_TABLE=$PE OUT_TABLE=$TMP/pe.h5 WORKDIR=$TMP/pe table_building/slurm/build_table.sh ER 2.5 350 0.75 200 > $TMP/pe.log 2>&1
+check "PErecoil table: chain succeeds" $?
+grep -q "(ER_ep2.5-350_eq0.75-200_402_ER_Ba)" $TMP/pe.log; check "PErecoil table: tag carries its name" $?
+$PYTHON - <<PY
+import json, sys, h5py
+sys.path.insert(0, "python")
+from erecoil_table import PErecoilTable
+sha = PErecoilTable.from_hdf5("$PE").sha256
+pes = [json.load(open(f"$TMP/pe/{f}"))["perecoil"] for f in ("study.json", "held.json", "tol1e-7/spec.json")]
+pes.append(json.loads(h5py.File("$TMP/pe.h5", "r").attrs["perecoil_json"]))
+sys.exit(0 if all(p["kind"] == "table" and p["sha256"] == sha for p in pes) else 1)
+PY
+check "PErecoil table: study, held-out, grid spec and table all record it" $?
+jobs_before=$(cat $MOCK_SLURM_DIR/last_job)
+PERECOIL_TABLE=erecoil_tables/402_NR_Cf.h5 WORKDIR=$TMP/peb table_building/slurm/build_table.sh ER 2.5 350 0.75 200 > $TMP/peband.log 2>&1
+[[ $? -eq 2 ]] && grep -q "is a band 'NR' spectrum, not ER" $TMP/peband.log && [[ $(cat $MOCK_SLURM_DIR/last_job) == "$jobs_before" ]]
+check "PErecoil table of the wrong band: fails before anything is submitted" $?
+# validate refuses held-out points computed with another spectrum
+$PYTHON python/cli/normgrid.py validate --table $TMP/pe.h5 --heldout-spec $TMP/w/held.json \
+    --results "$TMP/w/held_results/res_held_*.txt" > $TMP/pemix.log 2>&1
+[[ $? -ne 0 ]] && grep -q "rebuild the held-out spec with the same --perecoil-table" $TMP/pemix.log
+check "validate: held-out spectrum must match the table's" $?
+
+# 8. bad usage
 table_building/slurm/build_table.sh ER 2.5 350 0.75 > /dev/null 2>&1; [[ $? -eq 2 ]]; check "wrong argument count is a usage error" $?
 exit $fail

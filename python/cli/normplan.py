@@ -57,12 +57,17 @@ def baseline_fractions(axes, n_baselines):
     return fr[:n_baselines]
 
 
-def make_study_spec(band, ep_range, eq_range, epsrel, *, box=None, fixed=ng.DEFAULT_FIXED, n_baselines=3):
+def make_study_spec(band, ep_range, eq_range, epsrel, *, box=None, fixed=ng.DEFAULT_FIXED, n_baselines=3,
+                    perecoil=None):
     """A spec of kind "points": for axis i, baseline b, node j the point with
     axis i at its j-th node and every other axis at the baseline.  Point
-    index = (i * n_baselines + b) * STUDY_NODES + j."""
+    index = (i * n_baselines + b) * STUDY_NODES + j.  perecoil: as
+    normgrid.make_grid_spec's (None = closed form).  The study must use the
+    same recoil spectrum as the table it plans -- a tabulated spectrum can
+    need more nodes than the closed form -- and analyze() carries it on into
+    the grid spec."""
     spec = ng._base_spec("points", band, ep_range, eq_range, fixed, ng.default_box(band) if box is None else box,
-                         epsrel, 1e-13, {"kind": "closed_form"})
+                         epsrel, 1e-13, perecoil or {"kind": "closed_form"})
     axes = ng.BAND_AXES[band]
     fractions = baseline_fractions(axes, n_baselines)
     points = []
@@ -137,7 +142,7 @@ def analyze(study, result_paths, tol, safety=2.0, min_nodes=3, max_points=500_00
     spec = ng.make_grid_spec(study["band"], per_axis, ep_range=tuple(study["ep_range"]),
                              eq_range=tuple(study["eq_range"]), fixed=study["fixed"],
                              box={a: tuple(v) for a, v in study["box"].items()}, epsrel=study["epsrel"],
-                             epsabs=study["epsabs"])
+                             epsabs=study["epsabs"], perecoil=study.get("perecoil"))
     return spec, report
 
 
@@ -153,6 +158,9 @@ def main(argv=None):
     p.add_argument("--baselines", type=int, default=3)
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
                    help="replace axes of the band's default box, e.g. V=2.5:4 dq=0:0.42")
+    p.add_argument("--perecoil-table", default=None, metavar="PATH",
+                   help="PErecoil table HDF5 file (erecoil_table.py) to use instead of the closed-form "
+                        "recoil spectrum; the planned grid spec inherits it")
     p.add_argument("--out", required=True)
 
     p = sub.add_parser("analyze", help="study results -> grid spec + report")
@@ -170,7 +178,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == "points":
         spec = make_study_spec(a.band, tuple(a.ep_range), tuple(a.eq_range), a.epsrel, n_baselines=a.baselines,
-                               box=ng.parse_box(a.box, a.band) if a.box else None)
+                               box=ng.parse_box(a.box, a.band) if a.box else None,
+                               perecoil=ng._perecoil_from_path(a.perecoil_table))
         ng.save_spec(spec, a.out)
         print(f"{a.out}: {ng.n_points(spec)} study points ({len(spec['study']['axes'])} axes x "
               f"{a.baselines} baselines x {STUDY_NODES} nodes)")
