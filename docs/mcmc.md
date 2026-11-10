@@ -99,3 +99,126 @@ way [Fitting](fitting.md) does: `log_likelihood_NR(theta) + log_likelihood_ER(th
 from its own `fit_pdf.Ppq_normalized_densities_NR`/`_ER` call. A mixture model (one
 dataset, per-event fractional band membership) needs more than this — that's specific to
 your own analysis.
+
+## Running in parallel
+
+Each emcee step evaluates `log_prob` once per walker, and those evaluations can run at the
+same time on different cores: pass emcee a `pool`. emcee evaluates the walkers in two
+halves (each half's proposals depend on the other half's positions), so at most
+`n_walkers / 2` evaluations run at once. More workers than that sit idle.
+
+How you hand the work to a pool matters more than anything else in the parallel setup.
+**A pool sends the function and its argument to a worker for every evaluation**, by
+pickling them. Anything the function carries goes along every time. So:
+
+- **Never pass the data or `fit_pdf` along with `log_prob`.** Each of these ships the
+  dataset (and for `fit_pdf`, both normalization tables, about 1 MB) with every walker
+  evaluation: emcee's `args=(ep_data, eq_data)` or `args=(fit_pdf,)`,
+  `functools.partial(log_prob, fit_pdf=fit_pdf)`, and a method of `fit_pdf`.
+- **Instead, each worker builds its own `fit_pdf` once, when it starts**, and the pooled
+  function takes only `theta`. Each evaluation then ships a handful of numbers.
+- **Guard the script's setup with `if __name__ == "__main__":`.** Worker processes import
+  your script to find `log_prob`. On macOS and Windows, and on Linux since Python 3.14,
+  that re-runs everything at the script's top level in every worker, including reading
+  the data and loading the tables.
+
+### On one machine: a process pool
+
+```python
+# mcmc_parallel.py
+import os
+from multiprocessing import Pool
+
+import numpy as np
+import emcee
+import phonon_charge_pdf as pdf
+
+# Module level: cheap definitions only -- every worker imports this file.
+# ep_range, eq_range, BOUNDS, Z, EPS, P0_*/Q0_*, PARAM_NAMES, unpack() and
+# log_prior() exactly as in the walkthrough above.
+
+_fit_pdf = None                     # this process's own copy, set by init_worker
+
+
+def init_worker(ep_data, eq_data):
+    """Runs once in each worker process, when the pool starts it."""
+    global _fit_pdf
+    _fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
+                                Ppq_table_NR="NR_ep2.5-350_eq0.75-200",
+                                prior_bounds=BOUNDS,
+                                n_workers=1)       # threads: OpenMP only, see below
+
+
+def log_prob(theta):                # theta only: all a worker needs per evaluation
+    lp = log_prior(theta)
+    if not np.isfinite(lp):
+        return -np.inf
+    p = unpack(theta)
+    normalized = _fit_pdf.Ppq_normalized_densities_NR(
+        k=p["k"], Z=p["Z"], F0=p["F0_NR"], eps=p["eps"], V=p["V"],
+        p0=p["p0"], p10=p["p10"], q0=p["q0"], q10=p["q10"])
+    return lp + np.sum(np.log(normalized))
+
+
+if __name__ == "__main__":
+    ep_data, eq_data = ...          # your events, cut to the region (keV)
+    n_procs, threads_per_proc = 8, 4            # n_procs x threads_per_proc = your cores
+
+    # Each worker inherits this when the pool starts it, so set it first.
+    os.environ["OMP_NUM_THREADS"] = str(threads_per_proc)
+
+    init_worker(ep_data, eq_data)               # this process's copy, for setup checks
+    n_walkers, n_dim = 2 * n_procs, len(PARAM_NAMES)
+    start = theta0 + 1e-4 * np.random.default_rng(0).standard_normal((n_walkers, n_dim))
+    _fit_pdf.check_points({name: start[:, i] for i, name in enumerate(PARAM_NAMES)})
+
+    # initargs is sent once per worker, at startup -- not per evaluation.
+    with Pool(n_procs, initializer=init_worker, initargs=(ep_data, eq_data)) as pool:
+        sampler = emcee.EnsembleSampler(n_walkers, n_dim, log_prob, pool=pool)
+        sampler.run_mcmc(start, 5000, progress=True)
+```
+
+The library parallelizes each evaluation over the events itself (OpenMP,
+`OMP_NUM_THREADS`), so a process pool combines two kinds of parallelism. Keep
+`processes × OMP_NUM_THREADS` equal to the number of cores, and keep `n_workers=1`:
+Python threads on top of OpenMP only add overhead, and by default each one starts a full
+set of OpenMP threads of its own. OpenMP and walker-parallel processes are about equally
+efficient, but the number of steps a chain needs barely depends on the walker count, so
+**fewer walkers with more threads each finishes sooner**. Use enough walkers to sample
+the posterior well (a few per parameter), not as many as you have cores.
+
+### Across nodes: MPI
+
+On a cluster, [schwimmbad](https://schwimmbad.readthedocs.io/)'s `MPIPool` spreads the
+walkers over MPI processes ("ranks") on several nodes. It needs `mpi4py` built against
+the cluster's MPI (`MPICC=mpicc pip install --no-binary mpi4py mpi4py`). Same module-level
+definitions as above, but every rank runs the whole script, so every rank builds its own
+`fit_pdf` *before* the pool exists:
+
+```python
+import sys
+from schwimmbad import MPIPool
+
+if __name__ == "__main__":
+    ep_data, eq_data = ...          # every rank reads the events
+    init_worker(ep_data, eq_data)   # every rank: its own fit_pdf, once
+
+    with MPIPool() as pool:
+        if not pool.is_master():    # every rank but 0: evaluate log_prob until told to stop
+            pool.wait()
+            sys.exit(0)
+        # rank 0 only, from here: it runs emcee and sends each worker a theta
+        n_walkers = 2 * pool.size   # pool.size = worker ranks; at most n_walkers/2 are busy
+        ...                         # start, check_points, EnsembleSampler(..., pool=pool), run_mcmc
+```
+
+Launch it with one rank per walker evaluation plus rank 0, each with its share of a
+node's cores for OpenMP, e.g. under Slurm:
+
+```bash
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=32
+#SBATCH --cpus-per-task=4         # 32 ranks x 4 cores = 128 cores per node
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+srun --mpi=pmi2 python mcmc_parallel_mpi.py
+```
