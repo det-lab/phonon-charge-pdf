@@ -31,6 +31,14 @@ OpenMP also defaults to every core. On a 128-core node that's 128 × 128
 threads; at 1,000 events it measured 20× slower than OpenMP alone. Inside an
 MCMC with one process per walker, it's 128 processes each starting 128² threads.
 
+It can also crash outright. `test/python/test_region_integral.py` passes
+`n_workers=os.cpu_count()`; run on a 128-core Expanse node with
+`OMP_NUM_THREADS=128` (the value OpenMP uses anyway when it's unset) it aborts
+with `OMP: Error #34: System unable to allocate necessary resources for OMP
+thread`: 128 × 128 threads exceed the per-user thread limit. Tests that pass
+`n_workers=os.cpu_count()` explicitly should switch to `n_workers=1` along with
+the default.
+
 There's also no API for the OpenMP count. It's only read from
 `OMP_NUM_THREADS` when OpenMP first starts its threads, so a script has to set an
 environment variable before its first evaluation (`MCMC_demo/model.py`'s

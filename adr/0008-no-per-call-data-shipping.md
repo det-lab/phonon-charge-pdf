@@ -20,10 +20,12 @@ contiguous data isn't copied), **except** for how work gets to parallel workers:
   `args=(ep, eq)` ships the dataset. That was Joseph's original Expanse script
   (his "optimized" version replaced it with globals for this reason).
   `args=(fit_pdf,)`, `functools.partial(log_prob, fit_pdf=fit_pdf)` or a bound
-  method ship the whole `Ppq_compiled`: both normalization tables' Chebyshev
-  coefficients (~0.8 MB for the published pair) plus the data. That's per walker
-  evaluation: serialized on rank 0, sent, and unpickled on the worker, every
-  time.
+  method ship the whole `Ppq_compiled`: the normalization tables' Chebyshev
+  coefficients plus the data. That's per walker evaluation: serialized on rank
+  0, sent, and unpickled on the worker, every time. Measured (Expanse,
+  2,000 Cf events, NR table only, bytes pickled per task): θ only **279**;
+  `args=(ep, eq)` 32,323 (16 bytes/event, so ~265 KB for a full 16.5k-event Cf
+  set); `args=(fit_pdf,)` **623,621**, about 2,200× the θ-only pattern.
 - **It's silent.** `Ppq_compiled` has no pickling hooks, so this just works,
   slowly. On a fast likelihood (small dataset), the transfer can exceed the
   evaluation itself.
