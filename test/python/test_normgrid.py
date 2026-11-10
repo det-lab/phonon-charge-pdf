@@ -157,6 +157,11 @@ with tempfile.TemporaryDirectory() as d:
         v_direct = ng.read_results(out)[37][0]
         check("HDF5 table reproduces a stored grid point",
               abs(t(**{k: v for k, v in p.items() if k not in ("eps",)}, eps=p["eps"]) - v_direct) < 1e-12 * abs(v_direct))
+        check("read_results carries the fake evaluator's error_estimate (exact, 0.0)",
+              ng.read_results(out)[37][2] == 0.0)
+        with h5py.File(h5, "r") as f5:
+            check("merged table stores a per-point error_estimate dataset (all 0.0 for the fake evaluator)",
+                  "error_estimate" in f5 and np.all(f5["error_estimate"][:] == 0.0))
         check("HDF5 table knows its band/ep_range/eq_range/fixed",
               t.band == "ER" and t.ep_range == tuple(ng.DEFAULT_EP_RANGE) and t.eq_range == tuple(ng.DEFAULT_EQ_RANGE))
         check("a table merged with no perecoil= defaults to closed_form", t.perecoil == {"kind": "closed_form"})

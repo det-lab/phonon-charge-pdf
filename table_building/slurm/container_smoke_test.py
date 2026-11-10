@@ -29,8 +29,8 @@ import normgrid
 for band in ("NR", "ER"):
     spec = normgrid.make_grid_spec(band, {a: 1 for a in normgrid.BAND_AXES[band]})
     params = normgrid.physical_params(spec, normgrid.coords_at(spec, 0))
-    val = normgrid._evaluate(spec, params, epsrel=1e-4)
+    val, err = normgrid._evaluate(spec, params, epsrel=1e-4)
     assert val == val and val > 0, f"{band} region integral looks wrong: {val}"
-    print(f"{band} region integral OK: {val:.6g}")
+    print(f"{band} region integral OK: {val:.6g} (error_estimate {err:.3e})")
 
 print("normgrid axes", normgrid.AXES)

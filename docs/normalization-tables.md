@@ -106,8 +106,13 @@ Fortran `error stop` it replaced: this kills the process, so a supervisor record
 point as `nan` and restarts past it; re-run failures with a looser tolerance via
 `run --retry-failed --epsrel 1e-6`. `merge` refuses to build a table with missing points.
 The HDF5 file records the `ep_range`/`eq_range`, fixed parameters, library version and git
-commit it was built with — rebuild if any of those change. (`h5py` is in `environment.yaml`.) Then hand
-the tables to `Ppq_compiled`; nothing else in the fit changes:
+commit it was built with — rebuild if any of those change — plus, per grid point, the achieved
+Gauss-Legendre doubling residual (`error_estimate`, from `Ppq_region_NR_with_error`/`ER_with_error`):
+a numerical-convergence diagnostic, not a statistical uncertainty on the PErecoil model, recorded for
+inspection only (by design it should be far smaller than `epsrel_used`, the tolerance that was
+requested — nothing currently acts on it; see
+[adr/0010](https://github.com/det-lab/phonon-charge-pdf/blob/main/adr/0010-region-integral-precision-vs-dataset-size.md)).
+(`h5py` is in `environment.yaml`.) Then hand the tables to `Ppq_compiled`; nothing else in the fit changes:
 
 ```python
 # define the data region: must match what the tables were built for exactly

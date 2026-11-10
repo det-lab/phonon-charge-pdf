@@ -62,7 +62,7 @@ def make_study_spec(band, ep_range, eq_range, epsrel, *, box=None, fixed=ng.DEFA
     axis i at its j-th node and every other axis at the baseline.  Point
     index = (i * n_baselines + b) * STUDY_NODES + j."""
     spec = ng._base_spec("points", band, ep_range, eq_range, fixed, ng.default_box(band) if box is None else box,
-                         epsrel, 1e-13)
+                         epsrel, 1e-13, {"kind": "closed_form"})
     axes = ng.BAND_AXES[band]
     fractions = baseline_fractions(axes, n_baselines)
     points = []
@@ -101,7 +101,7 @@ def nodes_needed(values, target, min_nodes):
 
 def analyze(study, result_paths, tol, safety=2.0, min_nodes=3, max_points=500_000):
     """Study results -> (grid spec, report dict)."""
-    vals, _ = ng.gather_results(study, result_paths)
+    vals, _, _ = ng.gather_results(study, result_paths)
     bad = np.flatnonzero(np.isnan(vals))
     if len(bad):
         raise RuntimeError(f"{len(bad)} of {len(vals)} study points missing or failed (first: "

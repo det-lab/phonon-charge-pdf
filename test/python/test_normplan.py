@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory() as d:
     from numpy.polynomial import chebyshev as cheb
     lo, hi = nr["box"]["q0"]
     base = ng.coords_at(nr, (ng.axes_of(nr).index("q0") * 3 + 0) * 33)     # baseline 0, q0 at its lowest node
-    f = lambda q0: ng._evaluate(nr, ng.physical_params(nr, {**base, "q0": float(q0)}), EPSREL)
+    f = lambda q0: ng._evaluate(nr, ng.physical_params(nr, {**base, "q0": float(q0)}), EPSREL)[0]
     xn = ng.chebyshev_lobatto(lo, hi, n["q0"])
     c = cheb.chebfit(2 * (xn - lo) / (hi - lo) - 1, [f(x) for x in xn], n["q0"] - 1)
     xt = np.linspace(lo, hi, 201)

@@ -339,8 +339,12 @@ def _erecoil_handle_for(spec):
 
 
 def _evaluate(spec, params, epsrel):
-    """One region integral.  NORMGRID_FAKE=1 swaps in a cheap analytic stand-in
-    (for the tests); NORMGRID_FAKE_CRASH=<idx> is handled by the worker."""
+    """One region integral, plus the achieved Gauss-Legendre doubling
+    residual (see Ppq_region_NR_with_error's own docstring: a numerical
+    convergence diagnostic, not a statistical uncertainty) -- (value,
+    error_estimate), both float.  NORMGRID_FAKE=1 swaps in a cheap analytic
+    stand-in (for the tests, exact by construction, error_estimate=0.0);
+    NORMGRID_FAKE_CRASH=<idx> is handled by the worker."""
     fake = os.environ.get("NORMGRID_FAKE")
     if fake in ("smooth", "kink"):
         # analytic stand-ins with KNOWN convergence, in box-normalised coordinates u in [-1, 1]:
@@ -349,20 +353,22 @@ def _evaluate(spec, params, epsrel):
         c = {**params, "dp": params["p10"] - params["p0"], "dq": params["q10"] - params["q0"]}
         u = {a: 2 * (c[a] - lo) / (hi - lo) - 1 for a, (lo, hi) in spec["box"].items()}
         if fake == "kink":
-            return 1.0 + abs(u["q0"] - 0.13)
-        return math.exp(3 * u["V"] + 6 * u["q0"]) * (1 + 0.05 * sum(v for a, v in u.items() if a not in ("V", "q0")))
+            return 1.0 + abs(u["q0"] - 0.13), 0.0
+        return (math.exp(3 * u["V"] + 6 * u["q0"]) * (1 + 0.05 * sum(v for a, v in u.items() if a not in ("V", "q0"))),
+                0.0)
     if fake:
-        return 1.0 + sum(params[k] * (i + 1) for i, k in enumerate(sorted(params))) * 1e-3
+        return 1.0 + sum(params[k] * (i + 1) for i, k in enumerate(sorted(params))) * 1e-3, 0.0
     sys.path.insert(0, _INTERNAL_DIR)
-    from _Ppq_fort_bindings import Ppq_region_ER, Ppq_region_NR
-    fn = Ppq_region_NR if spec["band"] == "NR" else Ppq_region_ER
+    from _Ppq_fort_bindings import Ppq_region_ER_with_error, Ppq_region_NR_with_error
+    fn = Ppq_region_NR_with_error if spec["band"] == "NR" else Ppq_region_ER_with_error
     return fn(*spec["ep_range"], *spec["eq_range"], epsrel=epsrel, epsabs=spec["epsabs"],
-              table_handle=_erecoil_handle_for(spec), **params)
+             table_handle=_erecoil_handle_for(spec), **params)
 
 
 # ---------------------------------------------------------------------------
-# Worker: results files are append-only lines "index value epsrel" (value
-# nan = failed); the last line for an index wins.
+# Worker: results files are append-only lines "index value epsrel
+# error_estimate" (value nan = failed, error_estimate nan = not measured,
+# e.g. a crashed point); the last line for an index wins.
 # ---------------------------------------------------------------------------
 
 def read_results(path):
@@ -371,14 +377,14 @@ def read_results(path):
         with open(path) as f:
             for line in f:
                 parts = line.split()
-                if len(parts) >= 3 and not line.startswith("#"):
-                    out[int(parts[0])] = (float(parts[1]), float(parts[2]))
+                if len(parts) >= 4 and not line.startswith("#"):
+                    out[int(parts[0])] = (float(parts[1]), float(parts[2]), float(parts[3]))
     return out
 
 
-def _append(path, i, value, epsrel, note=""):
+def _append(path, i, value, epsrel, error_estimate=float("nan"), note=""):
     with open(path, "a") as f:
-        f.write(f"{i} {value!r} {epsrel!r}{'  # ' + note if note else ''}\n")
+        f.write(f"{i} {value!r} {epsrel!r} {error_estimate!r}{'  # ' + note if note else ''}\n")
 
 
 def _worker(spec_path, out, todo_path, progress_path, epsrel):
@@ -390,8 +396,8 @@ def _worker(spec_path, out, todo_path, progress_path, epsrel):
             f.write(str(i))
         if crash_at is not None and int(crash_at) == i:
             sys.exit(3)      # stand-in for a Fortran `error stop`
-        v = _evaluate(spec, physical_params(spec, coords_at(spec, i)), epsrel)
-        _append(out, i, float(v), epsrel)
+        v, err = _evaluate(spec, physical_params(spec, coords_at(spec, i)), epsrel)
+        _append(out, i, float(v), epsrel, error_estimate=float(err))
 
 
 def run_range(spec_path, start, stop, out, retry_failed=False, epsrel=None, quiet=False):
@@ -422,7 +428,7 @@ def run_range(spec_path, start, stop, out, retry_failed=False, epsrel=None, quie
             break
         bad = int(open(progress).read())
         attempted.add(bad)
-        _append(out, bad, float("nan"), epsrel, f"worker exited {rc}")
+        _append(out, bad, float("nan"), epsrel, note=f"worker exited {rc}")
         if not quiet:
             print(f"point {bad} failed (worker exit {rc}); recorded as nan, continuing", flush=True)
     for p in (progress, todo_path):
@@ -451,11 +457,12 @@ def _h5py():
 def gather_results(spec, paths):
     vals = np.full(n_points(spec), np.nan)
     eps = np.full(n_points(spec), np.nan)
+    errs = np.full(n_points(spec), np.nan)
     for p in paths:
-        for i, (v, e) in read_results(p).items():
+        for i, (v, e, err) in read_results(p).items():
             if i < len(vals) and (math.isnan(vals[i]) or not math.isnan(v)):
-                vals[i], eps[i] = v, e
-    return vals, eps
+                vals[i], eps[i], errs[i] = v, e, err
+    return vals, eps, errs
 
 
 def _git_commit():
@@ -470,7 +477,7 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
     spec = load_spec(spec_path)
     if spec["kind"] != "grid":
         raise ValueError("merge builds a table from a grid spec")
-    vals, eps = gather_results(spec, result_paths)
+    vals, eps, errs = gather_results(spec, result_paths)
     missing = np.flatnonzero(np.isnan(vals))
     if len(missing) and not allow_missing:
         raise RuntimeError(f"{len(missing)} of {len(vals)} grid points missing or failed (first: "
@@ -488,6 +495,14 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
     with h5py.File(out_path, "w") as f:
         f.create_dataset("values", data=vals.reshape(shape), compression="gzip")
         f.create_dataset("epsrel_used", data=eps.reshape(shape), compression="gzip")
+        # Achieved Gauss-Legendre doubling residual per point (|result_2N -
+        # result_N| for whichever pair converged) -- a numerical-convergence
+        # diagnostic, NOT a statistical uncertainty on the PErecoil model;
+        # see Ppq_region_NR_with_error's own docstring. By design this
+        # should be far smaller than epsrel_used; nothing here acts on it
+        # (adr/0010-region-integral-precision-vs-dataset-size.md leaves that
+        # open), it is recorded for inspection only.
+        f.create_dataset("error_estimate", data=errs.reshape(shape), compression="gzip")
         g = f.create_group("nodes")
         for a, n in nodes_of(spec).items():
             g.create_dataset(a, data=n)
@@ -503,7 +518,9 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
         f.attrs["created"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         f.attrs["n_missing"] = len(missing)
         f.attrs["perecoil_json"] = json.dumps(spec.get("perecoil", {"kind": "closed_form"}))
-    print(f"wrote {out_path}: shape {shape}, {len(missing)} missing")
+    max_err = np.nanmax(np.abs(errs)) if np.any(~np.isnan(errs)) else float("nan")
+    print(f"wrote {out_path}: shape {shape}, {len(missing)} missing, "
+          f"max |error_estimate|={max_err:.3e}")
 
 
 # ---------------------------------------------------------------------------
@@ -780,7 +797,7 @@ def validate(table_path, heldout_spec_path, result_paths, n_worst=5, accept=None
     that worst-case relative error (the CLI turns FAIL into exit status 1)."""
     table = NormInterpolator.from_hdf5(table_path)
     spec = load_spec(heldout_spec_path)
-    vals, _ = gather_results(spec, result_paths)
+    vals, _, _ = gather_results(spec, result_paths)
     errs, rows = [], []
     for i in np.flatnonzero(~np.isnan(vals)):
         c = coords_at(spec, int(i))
