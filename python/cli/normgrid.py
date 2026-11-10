@@ -60,7 +60,8 @@ from numpy.polynomial import chebyshev as cheb
 
 # _Ppq_fort_bindings.py is a sibling package, not a sibling file, now that the
 # CLI tools and the private ctypes layer live in their own subdirectories.
-_INTERNAL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "internal")
+_PYTHON_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_INTERNAL_DIR = os.path.join(_PYTHON_DIR, "internal")
 
 AXES = ("k", "F0", "V", "p0", "dp", "q0", "dq")
 BAND_AXES = {"NR": AXES, "ER": tuple(a for a in AXES if a != "k")}
@@ -134,11 +135,15 @@ DEFAULT_EP_RANGE = (2.0, 200.0)
 DEFAULT_EQ_RANGE = (4.0, 100.0)
 
 # Bump on any breaking change to the HDF5 attrs merge() writes/from_hdf5()
-# reads (e.g. 1 -> 2: flat "region" attr -> separate ep_range/eq_range).
-# from_hdf5() refuses a table below this rather than guess at its shape --
-# migrate it with migrate_table() (NormInterpolator.from_hdf5 of the old
-# file, re-merge of its own spec) or rebuild it.
-TABLE_FORMAT_VERSION = 2
+# reads (e.g. 1 -> 2: flat "region" attr -> separate ep_range/eq_range;
+# 2 -> 3: added perecoil_json, see adr/0002-normalization-tables-record-
+# perecoil.md). from_hdf5() refuses a table below this rather than guess at
+# its shape -- there is no migration path, rebuild it (make-spec/run/merge)
+# instead. A table rebuilt with the normal closed-form flow gets the new
+# attribute for free (make_grid_spec/make_random_spec default perecoil to
+# closed_form), so only a table that actually used a PErecoil table needs
+# --perecoil-table on the rebuild to keep using it.
+TABLE_FORMAT_VERSION = 3
 
 
 class OutOfBoxError(ValueError):
@@ -160,7 +165,7 @@ class PriorNotCoveredError(ValueError):
 # Specs: a grid, or a set of random held-out points, as plain JSON-able dicts
 # ---------------------------------------------------------------------------
 
-def _base_spec(kind, band, ep_range, eq_range, fixed, box, epsrel, epsabs):
+def _base_spec(kind, band, ep_range, eq_range, fixed, box, epsrel, epsabs, perecoil):
     if band not in BAND_AXES:
         raise ValueError(f"band must be 'NR' or 'ER', got {band!r}")
     box = {a: list(box[a]) for a in BAND_AXES[band]}
@@ -168,15 +173,24 @@ def _base_spec(kind, band, ep_range, eq_range, fixed, box, epsrel, epsabs):
     if band == "ER":
         fixed.pop("Z", None)
     return {"kind": kind, "band": band, "ep_range": list(ep_range), "eq_range": list(eq_range),
-            "fixed": fixed, "box": box, "epsrel": epsrel, "epsabs": epsabs}
+            "fixed": fixed, "box": box, "epsrel": epsrel, "epsabs": epsabs,
+            "perecoil": perecoil}
 
 
 def make_grid_spec(band, n_nodes, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT_EQ_RANGE,
-                   fixed=DEFAULT_FIXED, box=None, epsrel=1e-7, epsabs=1e-13):
+                   fixed=DEFAULT_FIXED, box=None, epsrel=1e-7, epsabs=1e-13, perecoil=None):
     """n_nodes: {axis: number of Chebyshev-Lobatto nodes} for every axis of
-    the band (1 pins an axis at its midpoint).  box: None = default_box(band)."""
+    the band (1 pins an axis at its midpoint).  box: None = default_box(band).
+    perecoil: None = closed form (erecoil_table.CLOSED_FORM_PERECOIL), or a
+    erecoil_table.PErecoilTable.perecoil_identity() -- embeds that table's
+    own (erecoil, counts) arrays directly, so the spec is self-contained for
+    any worker (see _erecoil_handle_for) -- every point is then evaluated
+    with that table's recoil spectrum instead of the closed form, and the
+    table this spec builds must only ever be used with a Ppq_compiled given
+    that same PErecoil table (adr/0002-normalization-tables-record-
+    perecoil.md)."""
     spec = _base_spec("grid", band, ep_range, eq_range, fixed, default_box(band) if box is None else box,
-                      epsrel, epsabs)
+                      epsrel, epsabs, perecoil or {"kind": "closed_form"})
     axes = BAND_AXES[band]
     if set(n_nodes) != set(axes):
         raise ValueError(f"n_nodes must give exactly the axes {axes}, got {sorted(n_nodes)}")
@@ -189,15 +203,17 @@ def make_grid_spec(band, n_nodes, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT
 def make_random_spec(band, n, seed, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT_EQ_RANGE,
                      fixed=DEFAULT_FIXED,
                      box=None, p10_range=(0.3, 0.6), q10_range=(0.2, 0.4),
-                     epsrel=1e-7, epsabs=1e-13):
+                     epsrel=1e-7, epsabs=1e-13, perecoil=None):
     """n held-out points, uniform over the axis box except F0, which
     alternates between log-uniform (even i; how a log-scale prior samples
     it) and uniform (odd i; the high-F0 end, where the dependence is
     strongest), restricted to the prior's p10 and q10 ranges (None = whole box).
     Point i depends only on (seed, i), so any subset can be computed
-    independently."""
+    independently.  perecoil: as make_grid_spec's -- pass the SAME value used
+    for the table this validates, or the held-out points check against the
+    wrong spectrum."""
     spec = _base_spec("random", band, ep_range, eq_range, fixed, default_box(band) if box is None else box,
-                      epsrel, epsabs)
+                      epsrel, epsabs, perecoil or {"kind": "closed_form"})
     spec.update(n=int(n), seed=int(seed),
                 p10_range=None if p10_range is None else list(p10_range),
                 q10_range=None if q10_range is None else list(q10_range))
@@ -281,6 +297,47 @@ def physical_params(spec, coords):
     return p
 
 
+# id(spec) -> Fortran table_handle, so a worker process that calls
+# _evaluate many times for the same spec registers its PErecoil table (if
+# any) once, not once per point.  Specs are loaded once per worker process
+# (_worker, validate) and never mutated, so id(spec) is stable for the
+# process's lifetime and this never grows beyond the handful of specs one
+# process actually uses.
+_erecoil_handle_cache = {}
+
+
+def _erecoil_handle_for(spec):
+    """The Fortran table_handle spec["perecoil"] names -- 0 (closed form) or
+    a handle for a PErecoilTable rebuilt from the (erecoil, counts) arrays
+    perecoil_identity() embeds directly in the spec, cached per spec object
+    so a worker evaluating many points from the same spec registers the
+    table once.  Rebuilding from the embedded arrays, rather than reloading
+    some external file, is what lets a spec run unchanged on any worker
+    node (Slurm/OSG) with no shared-filesystem path to the original
+    PErecoilTable file.  Raises ValueError if the embedded arrays don't
+    hash to the sha256 recorded alongside them (a corrupted/hand-edited
+    spec, not a stale file -- there is no file to go stale)."""
+    perecoil = spec.get("perecoil", {"kind": "closed_form"})
+    if perecoil["kind"] == "closed_form":
+        return 0
+    key = id(spec)
+    if key not in _erecoil_handle_cache:
+        sys.path.insert(0, _PYTHON_DIR)
+        from erecoil_table import PErecoilTable
+        sys.path.insert(0, _INTERNAL_DIR)
+        from _Ppq_fort_bindings import PErecoil_table_register
+        table = PErecoilTable(perecoil["erecoil"], perecoil["counts"], detector=perecoil.get("detector", ""),
+                              calibration_source=perecoil.get("calibration_source", ""),
+                              source=perecoil.get("source", ""))
+        if table.sha256 != perecoil["sha256"]:
+            raise ValueError(
+                f"this spec's embedded PErecoil table hashes to sha256={table.sha256}, but the "
+                f"spec itself records sha256={perecoil['sha256']!r} -- the spec file was corrupted "
+                "or hand-edited; regenerate it (make-spec/make-random-spec)")
+        _erecoil_handle_cache[key] = PErecoil_table_register(*table.fortran_table)
+    return _erecoil_handle_cache[key]
+
+
 def _evaluate(spec, params, epsrel):
     """One region integral.  NORMGRID_FAKE=1 swaps in a cheap analytic stand-in
     (for the tests); NORMGRID_FAKE_CRASH=<idx> is handled by the worker."""
@@ -299,7 +356,8 @@ def _evaluate(spec, params, epsrel):
     sys.path.insert(0, _INTERNAL_DIR)
     from _Ppq_fort_bindings import Ppq_region_ER, Ppq_region_NR
     fn = Ppq_region_NR if spec["band"] == "NR" else Ppq_region_ER
-    return fn(*spec["ep_range"], *spec["eq_range"], epsrel=epsrel, epsabs=spec["epsabs"], **params)
+    return fn(*spec["ep_range"], *spec["eq_range"], epsrel=epsrel, epsabs=spec["epsabs"],
+              table_handle=_erecoil_handle_for(spec), **params)
 
 
 # ---------------------------------------------------------------------------
@@ -444,48 +502,8 @@ def merge(spec_path, result_paths, out_path, allow_missing=False):
         f.attrs["git_commit"] = _git_commit()
         f.attrs["created"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         f.attrs["n_missing"] = len(missing)
+        f.attrs["perecoil_json"] = json.dumps(spec.get("perecoil", {"kind": "closed_form"}))
     print(f"wrote {out_path}: shape {shape}, {len(missing)} missing")
-
-
-def migrate_table(in_path, out_path):
-    """Rewrite an old-format table (format_version < TABLE_FORMAT_VERSION,
-    e.g. the flat "region" attr before ep_range/eq_range) at the current
-    format, bit-for-bit identical otherwise: same values/nodes/epsrel_used,
-    same spec other than the migrated field(s).  in_path == out_path
-    rewrites in place (via a temp file, so a crash mid-write cannot corrupt
-    the original)."""
-    h5py = _h5py()
-    with h5py.File(in_path, "r") as f:
-        version = f.attrs.get("format_version", 1)
-        if version >= TABLE_FORMAT_VERSION:
-            raise ValueError(f"{in_path}: already format_version={version}, nothing to migrate")
-        if version != 1:
-            raise ValueError(f"{in_path}: no migration path from format_version={version}")
-        spec = json.loads(f.attrs["spec_json"])
-        region = spec.pop("region")
-        spec["ep_range"], spec["eq_range"] = region[:2], region[2:]
-        attrs = {
-            "format_version": TABLE_FORMAT_VERSION, "spec_json": json.dumps(spec),
-            "axes": f.attrs["axes"], "band": f.attrs["band"],
-            "ep_range": np.array(spec["ep_range"]), "eq_range": np.array(spec["eq_range"]),
-            "fixed_json": f.attrs["fixed_json"], "library_version": f.attrs["library_version"],
-            "git_commit": f.attrs["git_commit"], "created": f.attrs["created"],
-            "n_missing": f.attrs["n_missing"],
-        }
-        values, epsrel_used = f["values"][:], f["epsrel_used"][:]
-        nodes = {a: f["nodes"][a][:] for a in json.loads(f.attrs["axes"])}
-
-    tmp_path = out_path + ".migrating"
-    with h5py.File(tmp_path, "w") as f:
-        f.create_dataset("values", data=values, compression="gzip")
-        f.create_dataset("epsrel_used", data=epsrel_used, compression="gzip")
-        g = f.create_group("nodes")
-        for a, n in nodes.items():
-            g.create_dataset(a, data=n)
-        for k, v in attrs.items():
-            f.attrs[k] = v
-    os.replace(tmp_path, out_path)
-    print(f"migrated {in_path} -> {out_path}: format_version {version} -> {TABLE_FORMAT_VERSION}")
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +523,7 @@ class NormInterpolator:
     Z/eps may be passed too, but must match what the table was built with.
     Raises OutOfBoxError rather than ever extrapolating."""
 
-    def __init__(self, axes, nodes, values, *, band, ep_range, eq_range, fixed, source=""):
+    def __init__(self, axes, nodes, values, *, band, ep_range, eq_range, fixed, source="", perecoil=None):
         self.axes = tuple(axes)
         self.nodes = [np.asarray(nodes[a], dtype=float) for a in self.axes]
         values = np.asarray(values, dtype=float)
@@ -514,6 +532,13 @@ class NormInterpolator:
         if not np.all(np.isfinite(values)):
             raise ValueError("table contains missing/failed points; refusing to build an interpolant")
         self.band, self.fixed, self.source = band, dict(fixed), source
+        # The PErecoil spectrum this table's region integral was computed
+        # with -- {"kind": "closed_form"} or {"kind": "table", "sha256",
+        # "detector", "source"} -- checked against Ppq_compiled's own
+        # PErecoil_table_NR/ER at construction (adr/0002-normalization-
+        # tables-record-perecoil.md). None (e.g. a table built directly from
+        # arrays, not from_hdf5) means closed_form.
+        self.perecoil = perecoil or {"kind": "closed_form"}
         self.ep_range, self.eq_range = tuple(ep_range), tuple(eq_range)
         self.box = {a: (n[0], n[-1]) for a, n in zip(self.axes, self.nodes)}
         # values at nodes -> Chebyshev coefficients, one axis at a time
@@ -537,13 +562,14 @@ class NormInterpolator:
             if version < TABLE_FORMAT_VERSION:
                 raise ValueError(
                     f"{path}: table format_version={version}, this code reads "
-                    f"{TABLE_FORMAT_VERSION} -- migrate it (normgrid.migrate_table) "
-                    f"or rebuild it")
+                    f"{TABLE_FORMAT_VERSION} -- there is no migration path, rebuild it "
+                    f"(make-spec/run/merge)")
             axes = json.loads(f.attrs["axes"])
             nodes = {a: f["nodes"][a][:] for a in axes}
             return cls(axes, nodes, f["values"][:], band=str(f.attrs["band"]),
                        ep_range=f.attrs["ep_range"], eq_range=f.attrs["eq_range"],
-                       fixed=json.loads(f.attrs["fixed_json"]), source=path)
+                       fixed=json.loads(f.attrs["fixed_json"]), source=path,
+                       perecoil=json.loads(f.attrs["perecoil_json"]))
 
     def _coords(self, k, Z, F0, eps, V, p0, p10, q0, q10):
         for name, given in (("Z", Z), ("eps", eps)):
@@ -781,6 +807,17 @@ def _parse_kv_ints(items):
     return {kv.split("=")[0]: int(kv.split("=")[1]) for kv in items}
 
 
+def _perecoil_from_path(path):
+    """None -> closed form; else the PErecoilTable HDF5 file at `path`'s own
+    perecoil_identity() -- embeds its (erecoil, counts) arrays directly, so
+    the spec this goes into is self-contained (see _erecoil_handle_for)."""
+    if path is None:
+        return {"kind": "closed_form"}
+    sys.path.insert(0, _PYTHON_DIR)
+    from erecoil_table import PErecoilTable
+    return PErecoilTable.from_hdf5(path).perecoil_identity()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -806,6 +843,12 @@ def main(argv=None):
                    help="quadrature convergence tolerance per point, e.g. 1e-7")
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
                    help="replace axes of the band's default box, e.g. V=2.5:4 dq=0:0.42")
+    p.add_argument("--perecoil-table", default=None, metavar="PATH",
+                   help="HDF5 PErecoilTable (erecoil_table.py) for this band: every grid point is "
+                        "then evaluated with its tabulated recoil spectrum instead of the closed "
+                        "form, and the resulting table must only be used with a Ppq_compiled given "
+                        "this same PErecoil table (adr/0002-normalization-tables-record-perecoil.md). "
+                        "Default: closed form, same as today.")
     p.add_argument("--out", required=True)
 
     p = sub.add_parser("make-random-spec", help="write a held-out validation point set")
@@ -820,6 +863,9 @@ def main(argv=None):
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
                    help="as make-spec's; the points are then drawn over the p10/q10 ranges that box "
                         "covers (x10_ranges) instead of the default prior's")
+    p.add_argument("--perecoil-table", default=None, metavar="PATH",
+                   help="as make-spec's -- pass the SAME file as the table this validates, or the "
+                        "held-out points check against the wrong spectrum")
     p.add_argument("--out", required=True)
 
     p = sub.add_parser("info", help="print a spec's size")
@@ -848,27 +894,26 @@ def main(argv=None):
     p.add_argument("--accept", type=float, default=None, metavar="REL_ERR",
                    help="exit status 1 if the worst held-out relative error exceeds this")
 
-    p = sub.add_parser("migrate", help="rewrite an old-format table at the current TABLE_FORMAT_VERSION")
-    p.add_argument("table")
-    p.add_argument("--out", default=None, help="default: overwrite TABLE in place")
-
     a = ap.parse_args(argv)
     expand = lambda pats: sorted({f for pat in pats for f in (glob.glob(pat) or [pat])})
 
     if a.cmd == "make-spec":
         nodes = _parse_kv_ints(a.nodes) if a.nodes else RECOMMENDED_NODES[a.band]
         spec = make_grid_spec(a.band, nodes, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel,
-                              box=parse_box(a.box, a.band) if a.box else None)
+                              box=parse_box(a.box, a.band) if a.box else None,
+                              perecoil=_perecoil_from_path(a.perecoil_table))
         save_spec(spec, a.out)
         print(f"{a.out}: {n_points(spec)} points, shape {grid_shape(spec)}")
     elif a.cmd == "make-random-spec":
+        perecoil = _perecoil_from_path(a.perecoil_table)
         if a.box:
             box = parse_box(a.box, a.band)
             p10, q10 = x10_ranges(box)
             spec = make_random_spec(a.band, a.n, a.seed, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel,
-                                    box=box, p10_range=p10, q10_range=q10)
+                                    box=box, p10_range=p10, q10_range=q10, perecoil=perecoil)
         else:
-            spec = make_random_spec(a.band, a.n, a.seed, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel)
+            spec = make_random_spec(a.band, a.n, a.seed, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel,
+                                    perecoil=perecoil)
         save_spec(spec, a.out)
         print(f"{a.out}: {a.n} held-out points")
     elif a.cmd == "info":
@@ -890,8 +935,6 @@ def main(argv=None):
         errs = validate(a.table, a.heldout_spec, expand(a.results), accept=a.accept)
         if a.accept is not None and errs.max() > a.accept:
             sys.exit(1)
-    elif a.cmd == "migrate":
-        migrate_table(a.table, a.out or a.table)
 
 
 if __name__ == "__main__":

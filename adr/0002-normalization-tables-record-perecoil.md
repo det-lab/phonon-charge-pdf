@@ -1,6 +1,6 @@
 # 0002. Normalization tables record the PErecoil they were built with
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-09
 
 ## Context
@@ -32,16 +32,28 @@ keep the `Ppq_table_*` names they were already passing.
 1. **Record it at build time.** `normgrid.py`'s spec and the table's HDF5
    attributes gain a `perecoil` entry for the band the table was built with:
    `{"kind": "closed_form"}`, or `{"kind": "table", "sha256": ..., "detector": ...,
-   "source": ...}` taken from the `PErecoilTable`'s file and metadata. `run`
-   loads that PErecoil table into the library before evaluating, so the table is
-   computed with the spectrum it says it used.
+   "calibration_source": ..., "source": ..., "erecoil": [...], "counts": [...]}`
+   (`erecoil_table.PErecoilTable.perecoil_identity()`). The raw `(erecoil, counts)`
+   arrays are embedded directly, not just referenced by path: a spec is
+   distributed to Slurm/OSG workers on other machines, which have no access to
+   whatever local path the table was loaded from, and a published table should
+   be able to say what spectrum it assumed on its own, indefinitely, without a
+   separate file that can move or disappear. `sha256` is still carried for the
+   cheap equality check at fit time (comparing it is just as valid as comparing
+   the arrays, and doesn't need the arrays decoded). A worker registers the
+   table (`PErecoil_table_register`) from the embedded arrays once per process
+   before evaluating, so the table is computed with the spectrum it says it used.
 2. **Check it at fit time.** `Ppq_compiled.__init__` compares each band's
    `PErecoil_table_*` (or its absence) with the normalization table's recorded
-   `perecoil`, and raises `ValueError` naming both on any mismatch.
-3. **Old tables.** A table without the attribute is closed-form by construction
-   (every existing table predates PErecoil tables). Read it as
-   `{"kind": "closed_form"}`, and bump `TABLE_FORMAT_VERSION` so
-   `normgrid.migrate_table` writes the attribute explicitly.
+   `perecoil` -- `kind` and, for `"table"`, `sha256` only, never the embedded
+   arrays themselves -- and raises `ValueError` naming both on any mismatch.
+3. **Old tables.** Bump `TABLE_FORMAT_VERSION`; `NormInterpolator.from_hdf5` then
+   refuses any table built before this outright, with no migration path --
+   rebuild it (`make-spec`/`run`/`merge`) instead. A table rebuilt with the
+   normal closed-form flow gets `perecoil={"kind": "closed_form"}` for free
+   (`make_grid_spec`/`make_random_spec` default to it), so only a table that
+   actually used a PErecoil table needs `--perecoil-table` on the rebuild to
+   keep using it.
 
 ## Consequences
 
@@ -58,3 +70,8 @@ keep the `Ppq_table_*` names they were already passing.
   table and checks that `Ppq_compiled` (a) accepts it with the same PErecoil
   table, (b) raises with none, (c) raises with a different one, and (d) still
   accepts every existing published table with no PErecoil table.
+- The `TABLE_FORMAT_VERSION` bump breaks the two tables already published to
+  Zenodo (`table_registry.json`) outright: they must be rebuilt from scratch
+  (not migrated -- there is no migration path) and re-published, with
+  `table_registry.json`'s sha256 updated to match, before anyone can fetch
+  them again.

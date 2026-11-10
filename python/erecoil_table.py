@@ -32,6 +32,7 @@ PErecoilTable overrides the closed-form biexponential Erecoil draw via this
 module's own sample() method, below).
 """
 
+import hashlib
 import os
 import sys
 import time
@@ -48,7 +49,12 @@ _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 # load time instead of being silently misread.
 TABLE_FORMAT_VERSION = 1
 
-__all__ = ["PErecoilTable", "save_erecoil_table"]
+# normgrid's `perecoil` provenance tag (adr/0002) for the closed-form
+# PErecoil spectrum, i.e. no PErecoilTable at all -- the counterpart to
+# PErecoilTable.perecoil_identity() below.
+CLOSED_FORM_PERECOIL = {"kind": "closed_form"}
+
+__all__ = ["PErecoilTable", "save_erecoil_table", "CLOSED_FORM_PERECOIL"]
 
 
 def _h5py():
@@ -143,6 +149,7 @@ class PErecoilTable:
         self.source_file = source_file
         self.provenance = provenance
         self.source = source
+        self._raw_erecoil, self._raw_counts = erecoil, counts
         self._lo, self._hi = float(erecoil[0]), float(erecoil[-1])
         self._interp = PchipInterpolator(erecoil, counts, extrapolate=False)
         # The exact integral of the piecewise cubic Hermite spline itself --
@@ -178,6 +185,42 @@ class PErecoilTable:
         """(lo, hi): the table's own Erecoil range in keV -- what a caller's
         integration window must be clipped to before this is ever called."""
         return self._lo, self._hi
+
+    @property
+    def sha256(self):
+        """sha256 of this table's raw (erecoil, counts) input arrays -- not
+        the PCHIP coefficients, the normalization, or any metadata -- so two
+        tables built from identical input data hash identically regardless
+        of filename/detector/provenance, and two built from different cuts
+        (even for the same detector/band) hash differently. Used by
+        normgrid's `perecoil` provenance tag (adr/0002-normalization-tables-
+        record-perecoil.md) to tell whether a normalization table's assumed
+        PErecoil spectrum matches a given PErecoilTable."""
+        h = hashlib.sha256()
+        h.update(self._raw_erecoil.tobytes())
+        h.update(self._raw_counts.tobytes())
+        return h.hexdigest()
+
+    def perecoil_identity(self):
+        """{"kind": "table", "sha256", "detector", "calibration_source",
+        "source", "erecoil", "counts"} -- this table's identity as
+        normgrid's `perecoil` provenance tag records it (adr/0002-
+        normalization-tables-record-perecoil.md). Embeds the raw (erecoil,
+        counts) input arrays themselves (as plain lists, JSON-able), not
+        just a reference to this table's file: a normgrid spec/HDF5 table
+        carrying this is then self-contained -- a build-time worker can
+        reconstruct an equivalent PErecoilTable with no dependency on this
+        table's own file still existing at `source`'s path (which may not
+        even be reachable from wherever the worker runs), and a published
+        norm table on Zenodo records exactly what spectrum it assumed with
+        nothing else to go look up. Only `kind`/`sha256` are compared for a
+        match (see Ppq_compiled._check_perecoil); `detector`/
+        `calibration_source`/`source` are carried along for a mismatch
+        error to name, not checked themselves, so a table moved to a new
+        file or re-tagged with corrected metadata still matches."""
+        return {"kind": "table", "sha256": self.sha256, "detector": self.detector,
+                "calibration_source": self.calibration_source, "source": self.source,
+                "erecoil": self._raw_erecoil.tolist(), "counts": self._raw_counts.tolist()}
 
     @property
     def fortran_table(self):

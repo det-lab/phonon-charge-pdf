@@ -136,6 +136,43 @@ getting a table listed there (`normtables.py register`) means a PR against this 
 this repo). There's no self-service way to register a table without that — if you're not
 on this project, your own table stays a local (or self-hosted) file path, not a name.
 
+## Tables built with a PErecoil table
+
+By default `normgrid.py` evaluates the region integral with the closed-form
+PErecoil spectrum, same as always. If a band instead uses a tabulated real
+recoil spectrum (`erecoil_table.py`), the normalization table built for it
+has to use the *same* spectrum, or `Ppq_compiled` divides a density computed
+from one spectrum by an integral computed from the other -- wrong, silently
+(`adr/0002-normalization-tables-record-perecoil.md`). Pass
+`--perecoil-table` (the same HDF5 file) to both `make-spec` and
+`make-random-spec`:
+
+```bash
+python python/cli/normgrid.py make-spec --band NR --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 \
+    --perecoil-table erecoil_tables/X17_NR_Cf.h5 --out spec_NR.json
+python python/cli/normgrid.py make-random-spec --band NR --n 200 --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 \
+    --perecoil-table erecoil_tables/X17_NR_Cf.h5 --out held_NR.json
+```
+
+The spec (and the merged HDF5 table) embed that table's own `(erecoil,
+counts)` arrays directly, not just a path to the file -- a worker needs no
+access to the original file (it runs on whatever Slurm/OSG node picked up
+the chunk), and the published table alone records what spectrum it assumed,
+indefinitely. Then pass the *same* `PErecoilTable` to `Ppq_compiled`'s
+`PErecoil_table_NR`/`PErecoil_table_ER` alongside `Ppq_table_NR`/`Ppq_table_ER`
+-- construction raises `ValueError`, naming both, if they don't match.
+
+This also bumped `normgrid.TABLE_FORMAT_VERSION` (2 -> 3): a table built
+before this records no `perecoil` at all, and `NormInterpolator.from_hdf5`
+now refuses anything older than the current version outright, with **no
+migration path** -- rebuild it from scratch (`make-spec`/`run`/`merge`)
+instead. A table rebuilt with the normal closed-form flow (no
+`--perecoil-table`) gets `perecoil={"kind": "closed_form"}` automatically,
+with nothing extra to do. This includes the two tables already published to
+Zenodo and listed in `table_registry.json`: they need a full rebuild and
+re-publish, with the registry's `sha256` updated to match, before they're
+usable from this version onward.
+
 ## Fits and MCMC with the tables
 
 A table covers a fixed box of parameters and never extrapolates, so the rule for a fit or

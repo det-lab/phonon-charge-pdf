@@ -110,7 +110,12 @@ class Ppq_compiled:
         Precomputed normalization table for that band (built by
         python/cli/normgrid.py for exactly this region), or a name registered in
         python/cli/table_registry.json.  If given, Ppq_integral_NR/Ppq_integral_ER
-        interpolate it instead of running the quadrature.
+        interpolate it instead of running the quadrature.  Each table records which
+        PErecoil spectrum it was built with (normgrid's `perecoil`); construction
+        raises ValueError if that doesn't match this band's own PErecoil_table_NR/ER
+        (or its absence), rather than silently normalizing a tabulated-spectrum
+        density with a closed-form integral or vice versa
+        (adr/0002-normalization-tables-record-perecoil.md).
     PErecoil_table_NR, PErecoil_table_ER : HDF5 path, erecoil_table.PErecoilTable, or None
         Tabulated true-recoil-energy spectrum for that band (see
         erecoil_table.py; built with erecoil_table.save_erecoil_table -- an
@@ -170,6 +175,8 @@ class Ppq_compiled:
             PErecoil_table_NR, "NR", ep_max=self.ep_max, eq_max=self.eq_max)
         self.PErecoil_table_ER, self.er_table_handle = _load_erecoil_table(
             PErecoil_table_ER, "ER", ep_max=self.ep_max, eq_max=self.eq_max)
+        self._check_perecoil("NR", self.Ppq_table_NR, self.PErecoil_table_NR)
+        self._check_perecoil("ER", self.Ppq_table_ER, self.PErecoil_table_ER)
         if prior_bounds is not None:
             if not self._tables():
                 raise ValueError("prior_bounds is checked against the tables; no table was given")
@@ -178,6 +185,34 @@ class Ppq_compiled:
 
     def _tables(self):
         return [t for t in (self.Ppq_table_NR, self.Ppq_table_ER) if t is not None]
+
+    @staticmethod
+    def _check_perecoil(band, norm_table, perecoil_table):
+        """Raise ValueError unless norm_table's recorded `perecoil`
+        (adr/0002-normalization-tables-record-perecoil.md) matches the
+        PErecoil_table_NR/ER this instance was actually given -- otherwise
+        the normalization integral and the density it divides would use
+        different Erecoil spectra, with no error. Only `sha256` is compared
+        for a "table" kind (not detector/source), so a table that is
+        regenerated with identical content still matches, and one from
+        different cuts correctly doesn't. No-op if norm_table is None (no
+        table for this band -> the quadrature path, which always uses
+        whatever PErecoil_table_NR/ER this instance was given)."""
+        if norm_table is None:
+            return
+        given = ({"kind": "closed_form"} if perecoil_table is None
+                 else perecoil_table.perecoil_identity())
+        recorded = norm_table.perecoil
+        matches = (given["kind"] == recorded["kind"]
+                   and (given["kind"] != "table" or given["sha256"] == recorded["sha256"]))
+        if not matches:
+            raise ValueError(
+                f"Ppq_table_{band}'s normalization was built with perecoil={recorded!r}, but this "
+                f"Ppq_compiled was given PErecoil_table_{band}'s perecoil={given!r} -- they must "
+                "match, or the normalization integral and the density it divides would use "
+                "different Erecoil spectra, silently (adr/0002-normalization-tables-record-"
+                "perecoil.md). Pass the matching PErecoil_table_NR/ER, or a normalization table "
+                "built for this one.")
 
     @staticmethod
     def _band_view(d, band):
