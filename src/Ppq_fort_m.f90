@@ -94,22 +94,50 @@ module Ppq_fort_m
 
   module function PErecoil_table_register(x, c0, c1, c2, c3, n) result(handle) &
       bind(c, name="PErecoil_table_register")
-    !! Register a tabulated true-recoil-energy spectrum -- a piecewise
-    !! cubic in power-basis form (scipy PPoly convention; see
-    !! erecoil_table.PErecoilTable, which builds x/c0..c3 with PCHIP and is
-    !! already normalized to integrate to 1) -- and return a handle for it:
-    !! 0 always means the closed-form spectrum instead, so a real
-    !! registration never returns 0. Pass the handle to Ppq_NR/ER,
+    !! Register a tabulated true-recoil-energy spectrum and get back a
+    !! **handle** -- that's `handle`, this function's *return value*
+    !! (`result(handle)` above), not any of the six listed arguments.
+    !! `n` is just the point count; see below for what it and the arrays
+    !! actually hold. Pass the returned handle, in place of `0` (which
+    !! always means the closed-form spectrum instead), to Ppq_NR/ER,
     !! Ppq_vector_NR/ER, or Ppq_region_NR/ER(_with_error) to evaluate
-    !! against this table instead of the closed form.
+    !! against this table.
+    !!
+    !! Arguments, concretely:
+    !!
+    !! - `n`: how many tabulated points, i.e. `size(x)`.
+    !! - `x(n)`: the Erecoil breakpoints (keV), strictly increasing.
+    !! - `c0(n-1), c1(n-1), c2(n-1), c3(n-1)`: one cubic polynomial's
+    !!   coefficients *per interval* between consecutive breakpoints
+    !!   (power-basis form -- the same convention as scipy's
+    !!   `PPoly`/`PchipInterpolator`, which is what actually produces
+    !!   these on the Python side: erecoil_table.PErecoilTable.fortran_table).
+    !!   For Erecoil in `[x(i), x(i+1))`, the table's density there is
+    !!   `((c0(i)*dx + c1(i))*dx + c2(i))*dx + c3(i)`, `dx = Erecoil - x(i)`
+    !!   -- so `c3(i)` is just the density value at `x(i)` itself (dx=0),
+    !!   and `c0/c1/c2` shape the cubic across that one interval. Already
+    !!   normalized to integrate to 1 over `[x(1), x(n)]`.
+    !!
+    !! Nobody hand-types `c0..c3` in practice -- they come from a spline
+    !! fit on real calibration data (PCHIP, Python side). Called directly
+    !! from Fortran, though, it looks like:
+    !!
+    !! ```fortran
+    !! use iso_c_binding, only: c_double, c_int
+    !! use Ppq_fort_m, only: PErecoil_table_register, Ppq_NR
+    !! integer(c_int) :: handle
+    !! real(c_double) :: x(n), c0(n-1), c1(n-1), c2(n-1), c3(n-1), density
+    !! ! ... fill x/c0/c1/c2/c3 from a spline fit ...
+    !! handle = PErecoil_table_register(x, c0, c1, c2, c3, n)   ! the RESULT
+    !! density = Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10, handle)
+    !! ```
     !!
     !! The only non-pure procedure in this file: copies x/c0/c1/c2/c3 into
     !! a new, append-only registry slot (never overwriting one an earlier
     !! caller already holds a handle to -- see
     !! adr/0003-per-instance-perecoil-tables.md), fixed capacity, not
     !! grown by reallocation. Call once per table a Ppq_compiled/
-    !! Ppq_densities registers at construction; x has n points (strictly
-    !! increasing), c0/c1/c2/c3 each have n-1, one per interval.
+    !! Ppq_densities registers at construction.
     integer(c_int), value :: n
     real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
     integer(c_int) :: handle
