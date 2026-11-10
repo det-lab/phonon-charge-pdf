@@ -135,13 +135,15 @@ that generic adaptive quadrature chases node by node against an opaque `pdf_func
 be dramatically slower than against the closed form for no corresponding gain in accuracy —
 the same roughness, read through `Ppq_region_NR`/`ER` directly instead, is not.
 
-If `pdf_func` came from a `Ppq_densities` built against a table, pass that same instance's
-`table_handle` to `make_region_integral_NR`/`ER` too (`table_handle=pq_densities.nr_table_handle`):
-the table is an explicit argument now, not ambient state shared automatically between the two
-calls (`adr/0003-per-instance-perecoil-tables.md`), so leaving it out means the expected counts
-get computed against the closed form while the simulated/observed events are being compared
-against the table -- a real mismatch, not a cosmetic one, and nothing currently raises if you
-forget it.
+If `pdf_func` came from a `Ppq_densities` built against a table, pass that same instance as
+`density=` to `make_region_integral_NR`/`ER` too (`density=pq_densities`) rather than passing
+its `table_handle` by hand: the table is an explicit argument now, not ambient state shared
+automatically between the two calls (`adr/0003-per-instance-perecoil-tables.md`), and
+`density=` pulls it from the one `Ppq_densities` already in the picture instead of giving you
+a second, independent place for it to drift out of sync -- passing a bare `table_handle=` that
+doesn't match `density`'s own raises instead of silently picking one. Leaving both out means
+the expected counts get computed against the closed form while the simulated/observed events
+are being compared against the table -- a real mismatch, not a cosmetic one.
 
 A handful of bins can still fail the order-256 doubling check at a tight `epsrel`/`epsabs`
 (typically wherever a table's own statistics are thinnest, not broadly) — `Ppq_region_NR`/`ER`

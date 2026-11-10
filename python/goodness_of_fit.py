@@ -296,8 +296,36 @@ def _make_region_integral_with_retry(fort_func, *, epsrel, epsabs,
     return region_integral_func
 
 
+def _resolve_table_handle(density, table_handle, *, attr, func_name):
+    """Shared helper for make_region_integral_NR/ER: resolve the single
+    table_handle to actually use from density (a Ppq_densities instance)
+    and/or an explicit table_handle.
+
+    Pulling it from density is the point: a region_integral_func built
+    without this, paired with a Ppq_densities-backed pdf_func built
+    separately, has two independent places the table_handle could drift
+    out of sync -- exactly the bug this was added after (session notes:
+    a Ppq_densities built against a real table, paired with a
+    region_integral_func left at the default table_handle=0, silently
+    computed expected counts against the closed form while the density
+    it was being compared to used the table). Passing density= makes
+    that impossible instead of just less likely: there's only one place
+    the handle comes from. If both are given, they must agree -- a loud
+    ValueError, not a silent pick-one, since disagreeing is itself a
+    sign of exactly that kind of drift.
+    """
+    density_handle = getattr(density, attr) if density is not None else None
+    if density is not None and table_handle is not None and table_handle != density_handle:
+        raise ValueError(
+            f"{func_name}: table_handle={table_handle!r} does not match "
+            f"density.{attr}={density_handle!r} -- pass only one, or make them agree.")
+    if density is not None:
+        return density_handle
+    return 0 if table_handle is None else table_handle
+
+
 def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
-                            relax_factor=10.0, table_handle=0, **params):
+                            relax_factor=10.0, density=None, table_handle=None, **params):
     """
     Build a region_integral_func(ep_min, ep_max, eq_min, eq_max) -> float
     for expected_counts_from_pdf/run_chisquare_test, backed by Ppq_region_NR
@@ -326,13 +354,20 @@ def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
         tables needed (see docs/goodness-of-fit.md); pass your own if
         that default isn't tight enough for what you're using this for.
     relax_factor : multiplicative step between attempts (default 10x).
-    table_handle : int
-        0 (default) for the closed-form PErecoil_NR spectrum, or a handle
-        from PErecoil_table_register/Ppq_densities.nr_table_handle for a
-        tabulated one -- an explicit argument, not ambient state (see
-        adr/0003-per-instance-perecoil-tables.md). If you already built a
-        Ppq_densities against this table for pdf_fort, pass its own
-        nr_table_handle here too, so both sides agree.
+    density : _Ppq_fort_bindings.Ppq_densities or None
+        If given, its own nr_table_handle is used -- the recommended way
+        to get this right when pdf_func itself came from the same
+        Ppq_densities (density_NR), since then there's only one table in
+        the picture instead of two independently-specified ones that
+        could disagree.
+    table_handle : int or None
+        0/None (default, when density is not given) for the closed-form
+        PErecoil_NR spectrum, or a handle from PErecoil_table_register for
+        a tabulated one -- an explicit argument, not ambient state (see
+        adr/0003-per-instance-perecoil-tables.md). Pass this instead of
+        density only when you have a bare handle and no Ppq_densities
+        (e.g. a handle registered directly); giving both raises unless
+        they agree.
     **params : k, Z, F0, eps, V, p0, p10, q0, q10 -- same physics
         parameters as make_Ppq_densities_NR, required keyword-only.
     """
@@ -340,20 +375,23 @@ def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
         max_epsrel = epsrel * 100.0
     if max_epsabs is None:
         max_epsabs = epsabs * 100.0
-    params["table_handle"] = table_handle
+    params["table_handle"] = _resolve_table_handle(
+        density, table_handle, attr="nr_table_handle", func_name="make_region_integral_NR")
     return _make_region_integral_with_retry(
         Ppq_region_NR, epsrel=epsrel, epsabs=epsabs,
         max_epsrel=max_epsrel, max_epsabs=max_epsabs, relax_factor=relax_factor, params=params)
 
 
 def make_region_integral_ER(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
-                            relax_factor=10.0, table_handle=0, **params):
-    """Same as make_region_integral_NR but for the ER band (Ppq_region_ER)."""
+                            relax_factor=10.0, density=None, table_handle=None, **params):
+    """Same as make_region_integral_NR but for the ER band (Ppq_region_ER,
+    density.er_table_handle)."""
     if max_epsrel is None:
         max_epsrel = epsrel * 100.0
     if max_epsabs is None:
         max_epsabs = epsabs * 100.0
-    params["table_handle"] = table_handle
+    params["table_handle"] = _resolve_table_handle(
+        density, table_handle, attr="er_table_handle", func_name="make_region_integral_ER")
     return _make_region_integral_with_retry(
         Ppq_region_ER, epsrel=epsrel, epsabs=epsabs,
         max_epsrel=max_epsrel, max_epsabs=max_epsabs, relax_factor=relax_factor, params=params)
