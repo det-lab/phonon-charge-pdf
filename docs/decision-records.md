@@ -26,6 +26,9 @@ Current records:
 | `0011-recoil-spectrum-always-explicit.md` | Proposed | the recoil spectrum is a required argument, the same object for `generate_events` and `Ppq_compiled`; no silent Cf-252 default |
 
 0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.
+Wherever a record mentions `MCMC_demo/`, it means
+[`nrFanoII_paper2022/MCMC_demo/`](https://github.com/villano-lab/nrFanoII_paper2022/tree/master/MCMC_demo),
+the analysis repository that uses this library; it isn't part of this repository.
 0010 came out of validating `Ppq_densities`/`generate_events` against a real tabulated
 `PErecoil` on `feature/erecoil-table-pdf`.
 
