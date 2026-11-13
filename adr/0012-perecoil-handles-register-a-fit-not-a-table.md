@@ -34,17 +34,30 @@ more loosely than the closed form -- measured, not assumed:
   spectrum's own curvature (not just noise) becomes numerically significant
   exactly there.
 - A Poisson-noise-matched smoothing spline (replacing PCHIP's exact,
-  wiggle-preserving interpolation) only partly closed this gap -- it fixed
-  noise-driven spikes elsewhere in parameter space (10-1300x improvement at
-  specific points) but barely touched the `dp -> 0` floor itself (~1.5-2x),
-  because that floor isn't primarily a noise artifact: it's the integrand's
-  genuine local curvature mattering more once the window narrows, and
-  smoothing removes counting noise, not real shape.
+  wiggle-preserving interpolation, weighted by the real per-bin uncertainty
+  -- `counts` is a density from equal-count bins, so the correct weight is
+  constant *relative* error, `~1/sqrt(raw_count)`, not `1/sqrt(density)`)
+  substantially shrinks the floor (worst case 1.7e-7 vs. PCHIP's 8.1e-4 --
+  about 4700x better right at `dp = 0`) but does not remove its
+  `dp`-dependence: swept across the same range, the smoothed
+  representation's own relative residual still spans nearly 4 orders of
+  magnitude (1.7e-7 down to 1.9e-11), because smoothing removes counting
+  noise, not the integrand's real local curvature -- which is what the
+  floor actually tracks once the window narrows near `dp -> 0`.
 - A **global, analytic fit** (no local/piecewise structure at any scale)
   closes it completely: fit to the same real data, registered the same way,
-  the relative residual is flat at ~1e-12 to 1e-13 across the *entire*
-  `dp` range -- parity with the closed form, ~8 orders of magnitude better
-  than the raw table at the worst point.
+  the relative residual stays flat at ~1e-12 to 1e-14 across the *entire*
+  `dp` range (max/min ratio 113x, vs. PCHIP's 1211x and the smoothing
+  spline's 9253x) -- parity with the closed form, with no `dp`-dependence
+  left to see.
+
+  Measured on `erecoil_tables/402_NR_Cf.h5`; reproduced by
+  `adr/0012_dp_scan_tables.py` (PCHIP/SMOOTH -- needs a checkout with
+  `PErecoil_table_register`, e.g. `ab45bb3`, since this ADR's own
+  implementation removes it) and `adr/0012_dp_scan_fit.py` (FITTED, current
+  HEAD), combined into
+  [`test/figures/adr0012_dp_scan.png`](../test/figures/adr0012_dp_scan.png)
+  by `adr/0012_dp_scan_plot.py`.
 
 The first fit family tried (the closed form's own 2-exponential family,
 fit per-detector) failed on real NR/Cf data: chi2/dof ~3-4, a real
