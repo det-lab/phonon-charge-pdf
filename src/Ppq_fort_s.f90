@@ -37,39 +37,46 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! integration window; overlapping windows are merged.
   integer, parameter :: max_modes = 4
 
-  ! Tabulated PErecoil registry (adr/0003-per-instance-perecoil-tables.md):
-  ! the table is an explicit argument of evaluation (table_handle, carried
-  ! inside detector_params_t below), not ambient global state -- a
-  ! Ppq_compiled/Ppq_densities registers its own table(s) once at
-  ! construction (PErecoil_table_register, the only non-pure procedure in
+  ! Fitted PErecoil registry (adr/0003-per-instance-perecoil-tables.md,
+  ! adr/0011-perecoil-handles-register-a-fit-not-a-table.md): the fit is
+  ! an explicit argument of evaluation (table_handle, carried inside
+  ! detector_params_t below), not ambient global state -- a
+  ! Ppq_compiled/Ppq_densities registers its own fit(s) once at
+  ! construction (PErecoil_fit_register, the only non-pure procedure in
   ! this file) and passes its own handle on every call after that.
   ! Registration is append-only: it never overwrites a slot another
   ! instance is already holding a handle to, so two instances with
-  ! different Erecoil tables coexist in one process fine, including
-  ! evaluated alternately (a joint Cf + Ba fit, say). handle 0 always
-  ! means "use the closed-form PErecoil_NR_impl/ER_impl below", for
-  ! both bands.
+  ! different fits coexist in one process fine, including evaluated
+  ! alternately (a joint Cf + Ba fit, say). handle 0 always means "use
+  ! the closed-form PErecoil_NR_impl/ER_impl below", for both bands.
   !
-  ! x/c0/c1/c2/c3 are a piecewise cubic in power-basis form (scipy's
-  ! PchipInterpolator.c convention, see erecoil_table.py): on
-  ! [x(i), x(i+1)), the table value is
-  !   ((c0(i)*dx + c1(i))*dx + c2(i))*dx + c3(i), dx = Erecoil - x(i).
-  ! Pre-normalized on the Python side (erecoil_table.PErecoilTable already
-  ! integrates to 1), so no extra normalization constant is carried here.
+  ! a/b/C describe a sum of exponentials plus a constant floor:
+  !   density(Erecoil) = sum(a(i) * exp(-Erecoil/b(i))) + C.
+  ! Deliberately a small, curated family rather than an arbitrary
+  ! user-specified function: every term is globally smooth (no local
+  ! structure at any scale, unlike a table built from real calibration
+  ! data), which is what this library's quadrature actually needs --
+  ! adr/0011 found that a table (even noise-free: smoothing the raw data
+  ! only partly helped) introduces a parameter-dependent Gauss-Legendre
+  ! precision floor near the phonon resolution model's degenerate edge
+  ! (p10 -> p0) that this family is immune to, same as the closed form.
+  ! Pre-normalized on the Python side, so no extra normalization constant
+  ! is carried here.
   !
   ! Fixed capacity, not a reallocate-to-grow array: avoids any risk of a
-  ! registration (slot table_registry_count+1) invalidating another
+  ! registration (slot fit_registry_count+1) invalidating another
   ! thread's in-progress read of an earlier, already-registered handle's
   ! arrays via reallocation. One Ppq_compiled/Ppq_densities instance per
-  ! registered table, so 256 is generous -- registration is still meant
+  ! registered fit, so 256 is generous -- registration is still meant
   ! to happen at construction, before any concurrent evaluation begins,
   ! same requirement PErecoil_set_table_NR/ER used to document.
-  integer(c_int), parameter :: max_perecoil_tables = 256
-  type :: perecoil_table_t
-      real(c_double), allocatable :: x(:), c0(:), c1(:), c2(:), c3(:)
-  end type perecoil_table_t
-  type(perecoil_table_t) :: table_registry(max_perecoil_tables)
-  integer(c_int) :: table_registry_count = 0
+  integer(c_int), parameter :: max_perecoil_fits = 256
+  type :: perecoil_fit_t
+      real(c_double), allocatable :: a(:), b(:)
+      real(c_double) :: C
+  end type perecoil_fit_t
+  type(perecoil_fit_t) :: fit_registry(max_perecoil_fits)
+  integer(c_int) :: fit_registry_count = 0
 
   ! Bundles the scalar model/detector constants that are fixed for one
   ! Ppq_NR/Ppq_ER/pq_given_Erecoil_NR call, so the internal engine below threads one
@@ -241,60 +248,35 @@ contains
       res = PErecoil_ER_impl(Erecoil, 0)
   end procedure PErecoil_ER
 
-  ! Evaluate a piecewise cubic (power-basis, scipy PPoly convention: see the
-  ! module-level comment on table_registry above) at Erecoil. Shared
-  ! by both bands' table path -- not elemental itself (its array dummies are
-  ! whole, un-sliced tables, never a per-element broadcast), only called
-  ! from inside the elemental *_impl functions below, which each pass their
-  ! own band's arrays.
+  ! Evaluate a sum of exponentials plus a constant floor at Erecoil (see
+  ! the module-level comment on fit_registry above). Shared by both
+  ! bands' fit path -- not elemental itself (its array dummies are
+  ! whole, un-sliced parameter vectors, never a per-element broadcast),
+  ! only called from inside the elemental *_impl functions below, which
+  ! each pass their own band's arrays.
   !
   ! Erecoil < 0 returns 0, matching the closed-form PErecoil_NR_impl/
   ! ER_impl's own convention (the integration/mode scan can transiently
-  ! probe just below zero). Anything else outside [x(1), x(n)] error-stops:
-  ! Ppq_fort.py's construction-time check (table's erecoil_range vs.
-  ! max(ep_range, eq_range)) catches a table that's too narrow for the
-  ! region up front, and locate_modes/integrate_Ppq clip every Erecoil
-  ! search window to table_hi_bound(is_ER) so they never probe past a
-  ! loaded table's own edge regardless of region size -- together these
-  ! should make this unreachable, so reaching it here means one of them
-  ! has a genuine bug -- see erecoil_table.PErecoilTable's own
-  ! OutOfBoxError for the catchable equivalent of this on the pure-Python
-  ! path.
-  pure function eval_cubic_table(Erecoil, x, c0, c1, c2, c3, n) result(res)
+  ! probe just below zero). No upper bound to enforce: unlike a table,
+  ! this family is defined (and smooth) for every Erecoil >= 0, which is
+  ! exactly the property adr/0011 needed -- see table_hi_bound below.
+  pure function eval_fit(Erecoil, a, b, C, n) result(res)
       real(c_double), intent(in) :: Erecoil
       integer, intent(in) :: n
-      real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
+      real(c_double), intent(in) :: a(n), b(n)
+      real(c_double), intent(in) :: C
       real(c_double) :: res
-      integer :: lo, hi, mid
-      real(c_double) :: dx
 
       if (Erecoil < 0.0d0) then
           res = 0.0d0
           return
       end if
-      if (Erecoil < x(1) .or. Erecoil > x(n)) then
-          error stop "PErecoil table: Erecoil outside the table's range -- " // &
-              "Ppq_fort.py's construction-time check should have caught this; this is a bug"
-      end if
-      ! Binary search for x(lo) <= Erecoil <= x(lo+1), same style as interp1d below.
-      lo = 1
-      hi = n
-      do while (hi - lo > 1)
-          mid = (lo + hi) / 2
-          if (x(mid) <= Erecoil) then
-              lo = mid
-          else
-              hi = mid
-          end if
-      end do
-      if (lo == n) lo = n - 1   ! Erecoil == x(n) exactly: use the last interval
-      dx = Erecoil - x(lo)
-      res = ((c0(lo) * dx + c1(lo)) * dx + c2(lo)) * dx + c3(lo)
-  end function eval_cubic_table
+      res = sum(a * exp(-Erecoil / b)) + C
+  end function eval_fit
 
   ! table_handle = 0 always means closed-form, for both bands -- see
-  ! adr/0003. Otherwise looks up table_registry(table_handle), populated
-  ! once by PErecoil_table_register below.
+  ! adr/0003. Otherwise looks up fit_registry(table_handle), populated
+  ! once by PErecoil_fit_register below.
   elemental function PErecoil_NR_impl(Erecoil, table_handle) result(res)
       real(c_double), intent(in) :: Erecoil
       integer(c_int), intent(in) :: table_handle
@@ -306,8 +288,8 @@ contains
       real(c_double), parameter :: one_minus_PNa_over_PNd = (1.0d0 - PNa) / PNd
 
       if (table_handle > 0) then
-          associate (t => table_registry(table_handle))
-              res = eval_cubic_table(Erecoil, t%x, t%c0, t%c1, t%c2, t%c3, size(t%x))
+          associate (f => fit_registry(table_handle))
+              res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a))
           end associate
           return
       end if
@@ -325,62 +307,51 @@ contains
       real(c_double), parameter :: one_minus_PGa_over_PGd = (1.0d0 - PGa) / PGd
 
       if (table_handle > 0) then
-          associate (t => table_registry(table_handle))
-              res = eval_cubic_table(Erecoil, t%x, t%c0, t%c1, t%c2, t%c3, size(t%x))
+          associate (f => fit_registry(table_handle))
+              res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a))
           end associate
           return
       end if
       res = PGa_over_PGb * exp(-Erecoil / PGb) + one_minus_PGa_over_PGd * exp(-Erecoil / PGd)
   end function PErecoil_ER_impl
 
-  ! Upper edge of table_handle's own table, or no bound (huge) if
-  ! table_handle is 0 (closed form). integrate_Ppq/locate_modes clip
-  ! their Erecoil search windows to this so they never query
-  ! eval_cubic_table past a loaded table's own range: a loaded table's
-  ! density is real calibration data, not a closed form with a known
-  ! decaying tail, so the window-finding logic that works by watching the
-  ! closed-form integrand die off at the edges cannot be trusted to stop
-  ! itself before running off a table's end.
+  ! No bound (huge) regardless of table_handle: neither the closed form
+  ! nor a registered fit (a sum of exponentials plus a constant, defined
+  ! for every Erecoil >= 0) has a finite range to clip to -- unlike a
+  ! table, which used to need this to avoid eval_cubic_table running off
+  ! its own edge (see adr/0011-perecoil-handles-register-a-fit-not-a-
+  ! table.md). Kept as a function, not inlined at every call site, so
+  ! integrate_Ppq/locate_modes don't need to change if a future handle
+  ! kind ever needs a real bound again.
   pure function table_hi_bound(table_handle) result(hi)
       integer(c_int), intent(in) :: table_handle
-      ! Relative safety margin, well above float64 rounding (~1e-16): a
-      ! window clipped to exactly the table's edge can still land a grid
-      ! point a few ULPs past it once integrate_window's lo + (npts-1)*h
-      ! arithmetic rounds, which eval_cubic_table's strict Erecoil > x(n)
-      ! check would reject. Negligible physically; keeps every clipped
-      ! point strictly inside the table.
-      real(c_double), parameter :: edge_margin = 1.0d-9
       real(c_double) :: hi
 
       hi = huge(1.0d0)
-      if (table_handle > 0) &
-          hi = table_registry(table_handle)%x(size(table_registry(table_handle)%x)) * (1.0d0 - edge_margin)
   end function table_hi_bound
 
-  ! The only non-pure procedure in this file: copies x/c0/c1/c2/c3 into a
-  ! new, append-only registry slot and returns its index as a handle --
-  ! see adr/0003-per-instance-perecoil-tables.md for why a handle (not a
-  ! raw pointer, not ambient "current table" state) and why the registry
-  ! is fixed-capacity rather than grown by reallocation. Call once per
-  ! PErecoil table a Ppq_compiled/Ppq_densities registers at construction,
-  ! never concurrently with another registration (ordinary evaluation
-  ! calls elsewhere, by any number of instances/threads, are unaffected
-  ! either way, since they only ever read an already-registered slot).
-  module procedure PErecoil_table_register
-      table_registry_count = table_registry_count + 1
-      if (table_registry_count > max_perecoil_tables) &
-          error stop "PErecoil_table_register: exceeded max_perecoil_tables PErecoil tables " // &
+  ! The only non-pure procedure in this file: copies a/b/C into a new,
+  ! append-only registry slot and returns its index as a handle -- see
+  ! adr/0003-per-instance-perecoil-tables.md for why a handle (not a raw
+  ! pointer, not ambient "current fit" state) and why the registry is
+  ! fixed-capacity rather than grown by reallocation. Call once per fit a
+  ! Ppq_compiled/Ppq_densities registers at construction, never
+  ! concurrently with another registration (ordinary evaluation calls
+  ! elsewhere, by any number of instances/threads, are unaffected either
+  ! way, since they only ever read an already-registered slot).
+  module procedure PErecoil_fit_register
+      fit_registry_count = fit_registry_count + 1
+      if (fit_registry_count > max_perecoil_fits) &
+          error stop "PErecoil_fit_register: exceeded max_perecoil_fits PErecoil fits " // &
               "registered in this process"
-      associate (t => table_registry(table_registry_count))
-          allocate (t%x(n), t%c0(n - 1), t%c1(n - 1), t%c2(n - 1), t%c3(n - 1))
-          t%x = x
-          t%c0 = c0
-          t%c1 = c1
-          t%c2 = c2
-          t%c3 = c3
+      associate (f => fit_registry(fit_registry_count))
+          allocate (f%a(n), f%b(n))
+          f%a = a
+          f%b = b
+          f%C = C
       end associate
-      handle = table_registry_count
-  end procedure PErecoil_table_register
+      handle = fit_registry_count
+  end procedure PErecoil_fit_register
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
   ! per Ppq_NR/Ppq_ER call (by integrate_Ppq) instead of recomputing the Z
@@ -682,10 +653,9 @@ contains
       logical :: ok, duplicate
 
       n_modes = 0
-      ! Clipped to table_hi (huge(1.0d0), a no-op, when no table is loaded
-      ! for this band -- see table_hi_bound): the scan below queries
-      ! PErecoil_NR_impl/ER_impl at every xs(ik), which error-stops past a
-      ! loaded table's edge.
+      ! Clipped to table_hi (always huge(1.0d0) -- see table_hi_bound,
+      ! kept as a no-op now that every registered handle, fit or closed
+      ! form, is defined for every Erecoil >= 0).
       maxx_scan = min(max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0), table_hi)
 
       dlx = (log(maxx_scan) - log(x_scan_min)) / (n_scan - 1)
@@ -806,8 +776,8 @@ contains
           H2_out = 0.0d0
           do it = 1, 60
               dd = max(1.0d-4, 1.0d-4 * xx)
-              ! Clamped to table_hi (a no-op when no table is loaded for
-              ! this band): xx's own speculative Newton steps below are
+              ! Clamped to table_hi (always a no-op now, see table_hi_bound):
+              ! xx's own speculative Newton steps below are
               ! only sanity-checked against 1.5*maxx_scan AFTER being
               ! taken, so without this, a probe here could already be
               ! well past a loaded table's edge before that check ever
@@ -937,10 +907,8 @@ contains
 
       ! One window per mode: +/- 8 sigma around an interior peak; for a
       ! boundary decay, 35 decay lengths puts the truncated tail below
-      ! 1e-15 relative. Clipped to table_hi (a no-op when no table is
-      ! loaded for this band): a loaded table's real calibration data has
-      ! no guaranteed decaying tail the way the closed form does, so
-      ! these windows must never reach past where it ends.
+      ! 1e-15 relative. Clipped to table_hi (always a no-op, see
+      ! table_hi_bound).
       do m = 1, n_modes
           if (bnd_m(m)) then
               w_lo(m) = erecoil_min
@@ -1302,9 +1270,9 @@ contains
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_ER
 
-      if (.not. (pars%table_handle >= 0 .and. pars%table_handle <= table_registry_count)) &
+      if (.not. (pars%table_handle >= 0 .and. pars%table_handle <= fit_registry_count)) &
           error stop "invalid parameters: table_handle is not 0 (closed form) or a handle " // &
-              "returned by PErecoil_table_register"
+              "returned by PErecoil_fit_register"
       if (.not. (pars%F0 > 0.0d0)) &
           error stop "invalid parameters: Fano factor F0 must be > 0"
       if (.not. (pars%eps > 0.0d0)) &
@@ -1438,10 +1406,11 @@ contains
       end if
 
       ! NaN, not error stop: this is a legitimate, sometimes-expected
-      ! outcome (a tight epsrel/epsabs against a region with real
-      ! small-scale structure, e.g. a narrow bin over a tabulated
-      ! PErecoil's own statistical roughness -- see
-      ! python/internal/_Ppq_fort_bindings.py's table_hi_bound comments),
+      ! outcome (a tight epsrel/epsabs against a region with genuinely
+      ! hard-to-resolve small-scale behavior -- adr/0011-perecoil-
+      ! handles-register-a-fit-not-a-table.md found exactly this near the
+      ! phonon resolution model's degenerate edge, p10 -> p0, which is
+      ! why a registered PErecoil must be a smooth fit, not a table),
       ! not a programming error like the validate_region_inputs guards
       ! above. error stop would kill the whole process with no recourse
       ! -- including a long MCMC run or table-building pass over a

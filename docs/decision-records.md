@@ -14,8 +14,8 @@ Current records:
 | record | status | subject |
 |---|---|---|
 | `0001-batched-fortran-quadrature.md` | Accepted | batched Fortran quadrature instead of per-point `scipy.integrate.quad` |
-| `0002-normalization-tables-record-perecoil.md` | Accepted | normalization tables embed the PErecoil spectrum (closed form, or a table's own (erecoil, counts) data) they were built with, checked against `Ppq_compiled`'s `PErecoil_table_NR`/`ER` at construction |
-| `0003-per-instance-perecoil-tables.md` | Accepted | PErecoil tables per instance, stateless handle argument, not process-global (joint Cf + Ba fits) |
+| `0002-normalization-tables-record-perecoil.md` | Accepted | normalization tables embed the PErecoil spectrum (closed form, or a fit's own family/coefficients) they were built with, checked against `Ppq_compiled`'s `PErecoil_fit_NR`/`ER` at construction |
+| `0003-per-instance-perecoil-tables.md` | Accepted | PErecoil per instance, stateless handle argument, not process-global (joint Cf + Ba fits) |
 | `0004-reject-data-outside-region.md` | Proposed | `Ppq_compiled` rejects events outside its region |
 | `0005-openmp-is-the-thread-layer.md` | Proposed | `n_workers` defaults to 1; `set_threads()` for OpenMP |
 | `0006-one-flat-parameter-dict.md` | Proposed | one flat parameter dict through every method; mixture/joint docs |
@@ -23,10 +23,12 @@ Current records:
 | `0008-no-per-call-data-shipping.md` | Proposed | workers build their own `Ppq_compiled`; it refuses to be pickled and warns on unguarded scripts |
 | `0009-convergence-errors-in-likelihoods.md` | Proposed | likelihoods let `GLConvergenceError` propagate, never `-inf` |
 | `0010-region-integral-precision-vs-dataset-size.md` | Proposed | a converged region integral's precision floor isn't checked against dataset size; the per-event term has no analog at all |
+| `0011-perecoil-handles-register-a-fit-not-a-table.md` | Accepted | a PErecoil handle registers a smooth, curated fit (sum of exponentials + constant), not an arbitrary table -- a table was found to reintroduce the precision floor 0010 measured |
 
 0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.
 0010 came out of validating `Ppq_densities`/`generate_events` against a real tabulated
-`PErecoil` on `feature/erecoil-table-pdf`.
+`PErecoil` on `feature/erecoil-table-pdf`; 0011 came out of following up on 0010's own
+measurement.
 
 ## Writing one
 

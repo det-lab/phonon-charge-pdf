@@ -128,25 +128,26 @@ expected = pdf.goodness_of_fit.expected_counts_from_pdf(
 ```
 
 `pdf_func`/`inner_points_func` are ignored (and may be `None`) on this path. This matters
-most once `PErecoil` is a real tabulated spectrum rather than the smooth closed form
-(`erecoil_table.PErecoilTable`, registered via `Ppq_densities`/`Ppq_compiled`'s own
-`PErecoil_table_NR`/`_ER`): real calibration data has small-scale statistical roughness
-that generic adaptive quadrature chases node by node against an opaque `pdf_func`, which can
-be dramatically slower than against the closed form for no corresponding gain in accuracy —
-the same roughness, read through `Ppq_region_NR`/`ER` directly instead, is not.
+most once `PErecoil` is a fitted spectrum rather than the closed form
+(`erecoil_fit.PErecoilFit`, registered via `Ppq_densities`/`Ppq_compiled`'s own
+`PErecoil_fit_NR`/`_ER` -- see `adr/0011-perecoil-handles-register-a-fit-not-a-table.md` for
+why a fit, not a table, backs this): a dedicated Fortran region integral
+(`Ppq_region_NR`/`ER`, already ridge-aware) is faster than treating `pdf_func` as an opaque
+callable regardless of representation, with no per-bin ridge rediscovery needed.
 
-If `pdf_func` came from a `Ppq_densities` built against a table, pass that same instance as
+If `pdf_func` came from a `Ppq_densities` built against a fit, pass that same instance as
 `density=` to `make_region_integral_NR`/`ER` too (`density=pq_densities`) rather than passing
-its `table_handle` by hand: the table is an explicit argument now, not ambient state shared
+its `table_handle` by hand: the fit is an explicit argument now, not ambient state shared
 automatically between the two calls (`adr/0003-per-instance-perecoil-tables.md`), and
 `density=` pulls it from the one `Ppq_densities` already in the picture instead of giving you
 a second, independent place for it to drift out of sync -- passing a bare `table_handle=` that
 doesn't match `density`'s own raises instead of silently picking one. Leaving both out means
 the expected counts get computed against the closed form while the simulated/observed events
-are being compared against the table -- a real mismatch, not a cosmetic one.
+are being compared against the fit -- a real mismatch, not a cosmetic one.
 
 A handful of bins can still fail the order-256 doubling check at a tight `epsrel`/`epsabs`
-(typically wherever a table's own statistics are thinnest, not broadly) — `Ppq_region_NR`/`ER`
+(a genuinely hard parameter region, not expected from PErecoil representation any more --
+`erecoil_fit.PErecoilFit` is globally smooth, see `adr/0011`) — `Ppq_region_NR`/`ER`
 raise `GLConvergenceError` rather than return an unverified number in that case.
 `make_region_integral_NR`/`ER` retry automatically (`max_epsrel`/`max_epsabs`, both
 defaulted to 100x `epsrel`/`epsabs` — the worst tolerance you'll accept, not a retry count),

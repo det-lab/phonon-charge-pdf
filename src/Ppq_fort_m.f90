@@ -14,11 +14,12 @@ module Ppq_fort_m
     !! loop serially and are roughly 25x slower.
     !!
     !! table_handle: 0 for the closed-form PErecoil_NR spectrum, or a handle
-    !! returned by PErecoil_table_register for a tabulated one -- an
+    !! returned by PErecoil_fit_register for a fitted one -- an
     !! explicit argument of this call, not ambient state, so two callers
-    !! with different tables (e.g. a joint Cf + Ba fit's two Ppq_compiled
+    !! with different fits (e.g. a joint Cf + Ba fit's two Ppq_compiled
     !! instances) can't interfere with each other, under any concurrency
-    !! pattern. See adr/0003-per-instance-perecoil-tables.md.
+    !! pattern. See adr/0003-per-instance-perecoil-tables.md and
+    !! adr/0011-perecoil-handles-register-a-fit-not-a-table.md.
     integer(c_int), value :: n
     real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
@@ -92,58 +93,64 @@ module Ppq_fort_m
     real(c_double) :: res
   end function PErecoil_ER
 
-  module function PErecoil_table_register(x, c0, c1, c2, c3, n) result(handle) &
-      bind(c, name="PErecoil_table_register")
-    !! Register a tabulated true-recoil-energy spectrum and get back a
+  module function PErecoil_fit_register(a, b, n, C) result(handle) &
+      bind(c, name="PErecoil_fit_register")
+    !! Register a fitted true-recoil-energy spectrum and get back a
     !! **handle** -- that's `handle`, this function's *return value*
-    !! (`result(handle)` above), not any of the six listed arguments.
-    !! `n` is just the point count; see below for what it and the arrays
-    !! actually hold. Pass the returned handle, in place of `0` (which
-    !! always means the closed-form spectrum instead), to Ppq_NR/ER,
-    !! Ppq_vector_NR/ER, or Ppq_region_NR/ER(_with_error) to evaluate
-    !! against this table.
+    !! (`result(handle)` above), not any of the four listed arguments.
+    !! Pass the returned handle, in place of `0` (which always means the
+    !! closed-form spectrum instead), to Ppq_NR/ER, Ppq_vector_NR/ER, or
+    !! Ppq_region_NR/ER(_with_error) to evaluate against this fit.
+    !!
+    !! The spectrum is a sum of `n` exponentials plus a constant floor:
+    !!
+    !! `density(Erecoil) = sum(a(i) * exp(-Erecoil / b(i)), i=1..n) + C`
+    !!
+    !! -- deliberately a *small, curated* family, not an arbitrary
+    !! user-specified function: every term is globally smooth (no local
+    !! structure at any scale), which is the actual property this
+    !! library's quadrature needs (see
+    !! adr/0011-perecoil-handles-register-a-fit-not-a-table.md). A
+    !! PCHIP-interpolated or smoothed *table* built from real calibration
+    !! data does not have that property, and was found to introduce a
+    !! parameter-dependent Gauss-Legendre precision floor near the phonon
+    !! resolution model's degenerate edge (p10 -> p0) -- this replaces
+    !! that table-registration path entirely (adr/0003's handle pattern
+    !! stays; what a handle now points at changes).
     !!
     !! Arguments, concretely:
     !!
-    !! - `n`: how many tabulated points, i.e. `size(x)`.
-    !! - `x(n)`: the Erecoil breakpoints (keV), strictly increasing.
-    !! - `c0(n-1), c1(n-1), c2(n-1), c3(n-1)`: one cubic polynomial's
-    !!   coefficients *per interval* between consecutive breakpoints
-    !!   (power-basis form -- the same convention as scipy's
-    !!   `PPoly`/`PchipInterpolator`, which is what actually produces
-    !!   these on the Python side: erecoil_table.PErecoilTable.fortran_table).
-    !!   For Erecoil in `[x(i), x(i+1))`, the table's density there is
-    !!   `((c0(i)*dx + c1(i))*dx + c2(i))*dx + c3(i)`, `dx = Erecoil - x(i)`
-    !!   -- so `c3(i)` is just the density value at `x(i)` itself (dx=0),
-    !!   and `c0/c1/c2` shape the cubic across that one interval. Already
-    !!   normalized to integrate to 1 over `[x(1), x(n)]`.
+    !! - `n`: number of exponential terms, i.e. `size(a) == size(b)`.
+    !! - `a(n)`, `b(n)`: each term's amplitude and decay length (keV).
+    !! - `C`: the constant floor.
     !!
-    !! Nobody hand-types `c0..c3` in practice -- they come from PCHIP
-    !! interpolation of real calibration data (Python side). PCHIP
-    !! interpolates rather than fits: the resulting cubic passes exactly
-    !! through each tabulated point instead of approximating/smoothing
-    !! them. Called directly from Fortran, though, it looks like:
+    !! Nobody hand-types `a`/`b`/`C` in practice -- they come from a
+    !! weighted least-squares fit to real calibration data, checked
+    !! against the data it was fit to (a Kolmogorov-Smirnov test against
+    !! the real, unbinned events is the recommended check -- see the
+    !! Python-side fit module). Called directly from Fortran, though, it
+    !! looks like:
     !!
     !! ```fortran
     !! use iso_c_binding, only: c_double, c_int
-    !! use Ppq_fort_m, only: PErecoil_table_register, Ppq_NR
+    !! use Ppq_fort_m, only: PErecoil_fit_register, Ppq_NR
     !! integer(c_int) :: handle
-    !! real(c_double) :: x(n), c0(n-1), c1(n-1), c2(n-1), c3(n-1), density
-    !! ! ... fill x/c0/c1/c2/c3 via PCHIP interpolation ...
-    !! handle = PErecoil_table_register(x, c0, c1, c2, c3, n)   ! the RESULT
+    !! real(c_double) :: a(n), b(n), C, density
+    !! ! ... a, b, C come from a weighted fit to real calibration data ...
+    !! handle = PErecoil_fit_register(a, b, n, C)   ! the RESULT
     !! density = Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10, handle)
     !! ```
     !!
-    !! The only non-pure procedure in this file: copies x/c0/c1/c2/c3 into
-    !! a new, append-only registry slot (never overwriting one an earlier
-    !! caller already holds a handle to -- see
-    !! adr/0003-per-instance-perecoil-tables.md), fixed capacity, not
-    !! grown by reallocation. Call once per table a Ppq_compiled/
-    !! Ppq_densities registers at construction.
+    !! The only non-pure procedure in this file: copies a/b/C into a new,
+    !! append-only registry slot (never overwriting one an earlier caller
+    !! already holds a handle to -- see adr/0003-per-instance-perecoil-
+    !! tables.md), fixed capacity, not grown by reallocation. Call once
+    !! per fit a Ppq_compiled/Ppq_densities registers at construction.
     integer(c_int), value :: n
-    real(c_double), intent(in) :: x(n), c0(n - 1), c1(n - 1), c2(n - 1), c3(n - 1)
+    real(c_double), intent(in) :: a(n), b(n)
+    real(c_double), value :: C
     integer(c_int) :: handle
-  end function PErecoil_table_register
+  end function PErecoil_fit_register
 
   pure module function pq_given_Erecoil_NR(Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_NR")
     !! An internal bind(c) handle on the per-Erecoil N-integral piece of

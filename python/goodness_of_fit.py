@@ -334,8 +334,8 @@ def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
     already ridge-aware (no inner_points_func needed). Use this instead of
     the default nested scipy.quad over pdf_func whenever you have the
     compiled library: see expected_counts_from_pdf's region_integral_func
-    parameter for why it's both faster and (for a tabulated PErecoil, see
-    erecoil_table.PErecoilTable) more robust than treating pdf_func as an
+    parameter for why it's both faster and (for a fitted PErecoil, see
+    erecoil_fit.PErecoilFit) more robust than treating pdf_func as an
     opaque black box.
 
     epsrel, epsabs : the tolerance to try first for every box -- see
@@ -344,9 +344,8 @@ def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
         own normalization integral): this is tried as-is for every box,
         not pre-loosened to survive whichever one is hardest.
     max_epsrel, max_epsabs : the worst tolerance you're willing to accept
-        for a box that can't meet epsrel/epsabs (typically a handful of
-        bins over a tabulated PErecoil's own small-scale statistical
-        roughness, not most of them) -- see
+        for a box that can't meet epsrel/epsabs (a handful of genuinely
+        hard-to-resolve bins, not most of them) -- see
         _make_region_integral_with_retry's docstring for why this, not a
         retry count, is the parameter that actually matters. Default
         (None) is 100x looser than epsrel/epsabs, matching the two
@@ -357,13 +356,13 @@ def make_region_integral_NR(*, epsrel, epsabs, max_epsrel=None, max_epsabs=None,
     density : _Ppq_fort_bindings.Ppq_densities or None
         If given, its own nr_table_handle is used -- the recommended way
         to get this right when pdf_func itself came from the same
-        Ppq_densities (density_NR), since then there's only one table in
+        Ppq_densities (density_NR), since then there's only one fit in
         the picture instead of two independently-specified ones that
         could disagree.
     table_handle : int or None
         0/None (default, when density is not given) for the closed-form
-        PErecoil_NR spectrum, or a handle from PErecoil_table_register for
-        a tabulated one -- an explicit argument, not ambient state (see
+        PErecoil_NR spectrum, or a handle from PErecoil_fit_register for
+        a fitted one -- an explicit argument, not ambient state (see
         adr/0003-per-instance-perecoil-tables.md). Pass this instead of
         density only when you have a bare handle and no Ppq_densities
         (e.g. a handle registered directly); giving both raises unless
@@ -439,9 +438,7 @@ def expected_counts_from_pdf(pdf_func, bins, n_events, inner_points_func=None, *
         quadrature node and re-discovering the band ridge from scratch
         every bin, where Ppq_region_NR/ER is a single Fortran call that
         already knows the ridge and converges by doubling Gauss-Legendre
-        order -- far faster, and (unlike scipy.quad against a bumpy
-        tabulated PErecoil, see erecoil_table.PErecoilTable) not prone to
-        chasing the table's own small-scale roughness node by node.
+        order -- far faster, with no per-bin ridge rediscovery to chase.
     n_workers : int
         Threads used to integrate bins concurrently. Helps both paths:
         scipy.quad releases the GIL while pdf_func is in the compiled

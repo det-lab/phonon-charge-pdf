@@ -1,7 +1,12 @@
 """phonon_charge_pdf.erecoil_table: a tabulated true-recoil-energy spectrum
-(PErecoil), PCHIP-interpolated, as a drop-in replacement for Ppq_py.PErecoil_NR/
-PErecoil_ER's closed-form biexponentials when the real spectrum is only known
-from counts at a set of Erecoil values.
+(PErecoil), PCHIP-interpolated, from counts at a set of Erecoil values --
+for simulation and for checking a fitted spectrum against the real data it
+summarizes. NOT used by the compiled Fortran quadrature path (Ppq_compiled,
+_Ppq_fort_bindings.Ppq_densities, normgrid.py) -- that takes a smooth,
+globally-analytic erecoil_fit.PErecoilFit instead (see that module's own
+docstring and adr/0011-perecoil-handles-register-a-fit-not-a-table.md for
+why: a table, even noise-free, was found to introduce a parameter-dependent
+Gauss-Legendre precision floor the quadrature doesn't have for a smooth fit).
 
 One file format only: HDF5, with detector/band/provenance metadata --
 mirrors normgrid.py's own table format (format_version, band, etc.) rather
@@ -20,19 +25,17 @@ Ppq_py.py, has no hard dependency on cli/ or the compiled library at import
 time).
 
 Validated against Ppq_py.PErecoil_NR/PErecoil_ER (see
-test/python/test_erecoil_table.py). Wired into PDF/likelihood evaluation:
-pq_given_Erecoil_NR/ER and Ppq_inspect_NR/ER take a p_erecoil argument (a
-PErecoilTable overrides the closed-form default, with the scan/integration
-windows clipped to erecoil_range first -- see those functions' own
-docstrings), Ppq_fort.py's compiled-library wrapper and
-_Ppq_fort_bindings.Ppq_densities take PErecoil_table_NR/PErecoil_table_ER
-constructor params (an HDF5 path or a PErecoilTable instance), and
-event_generator.generate_events() takes p_erecoil_NR/p_erecoil_ER (a
-PErecoilTable overrides the closed-form biexponential Erecoil draw via this
-module's own sample() method, below).
+test/python/test_erecoil_table.py). Used in two places: pq_given_Erecoil_NR/ER
+and Ppq_inspect_NR/ER (Ppq_py.py, the pure-Python reference implementation)
+take a p_erecoil argument (a PErecoilTable overrides the closed-form
+default, with the scan/integration windows clipped to erecoil_range first --
+see those functions' own docstrings), and event_generator.generate_events()
+takes p_erecoil_NR/p_erecoil_ER (a PErecoilTable overrides the closed-form
+biexponential Erecoil draw via this module's own sample() method, below) --
+the same simulated-events path erecoil_fit.check_fit_against_events compares
+a fit's own shape against, real events or a synthetic draw from here alike.
 """
 
-import hashlib
 import os
 import sys
 import time
@@ -43,18 +46,14 @@ from scipy.interpolate import PchipInterpolator
 _PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 
-# Table format version: bump this (and add a migration, mirroring
-# normgrid.migrate_table) if the HDF5 schema below ever changes
+# Table format version: bump this if the HDF5 schema below ever changes
 # incompatibly. A file newer than this code understands fails loudly at
-# load time instead of being silently misread.
+# load time instead of being silently misread; there is no migration
+# path for an older one either (same convention as normgrid.py's own
+# TABLE_FORMAT_VERSION) -- rebuild it instead.
 TABLE_FORMAT_VERSION = 1
 
-# normgrid's `perecoil` provenance tag (adr/0002) for the closed-form
-# PErecoil spectrum, i.e. no PErecoilTable at all -- the counterpart to
-# PErecoilTable.perecoil_identity() below.
-CLOSED_FORM_PERECOIL = {"kind": "closed_form"}
-
-__all__ = ["PErecoilTable", "save_erecoil_table", "CLOSED_FORM_PERECOIL"]
+__all__ = ["PErecoilTable", "save_erecoil_table"]
 
 
 def _h5py():
@@ -149,7 +148,6 @@ class PErecoilTable:
         self.source_file = source_file
         self.provenance = provenance
         self.source = source
-        self._raw_erecoil, self._raw_counts = erecoil, counts
         self._lo, self._hi = float(erecoil[0]), float(erecoil[-1])
         self._interp = PchipInterpolator(erecoil, counts, extrapolate=False)
         # The exact integral of the piecewise cubic Hermite spline itself --
@@ -185,54 +183,6 @@ class PErecoilTable:
         """(lo, hi): the table's own Erecoil range in keV -- what a caller's
         integration window must be clipped to before this is ever called."""
         return self._lo, self._hi
-
-    @property
-    def sha256(self):
-        """sha256 of this table's raw (erecoil, counts) input arrays -- not
-        the PCHIP coefficients, the normalization, or any metadata -- so two
-        tables built from identical input data hash identically regardless
-        of filename/detector/provenance, and two built from different cuts
-        (even for the same detector/band) hash differently. Used by
-        normgrid's `perecoil` provenance tag (adr/0002-normalization-tables-
-        record-perecoil.md) to tell whether a normalization table's assumed
-        PErecoil spectrum matches a given PErecoilTable."""
-        h = hashlib.sha256()
-        h.update(self._raw_erecoil.tobytes())
-        h.update(self._raw_counts.tobytes())
-        return h.hexdigest()
-
-    def perecoil_identity(self):
-        """{"kind": "table", "sha256", "detector", "calibration_source",
-        "source", "erecoil", "counts"} -- this table's identity as
-        normgrid's `perecoil` provenance tag records it (adr/0002-
-        normalization-tables-record-perecoil.md). Embeds the raw (erecoil,
-        counts) input arrays themselves (as plain lists, JSON-able), not
-        just a reference to this table's file: a normgrid spec/HDF5 table
-        carrying this is then self-contained -- a build-time worker can
-        reconstruct an equivalent PErecoilTable with no dependency on this
-        table's own file still existing at `source`'s path (which may not
-        even be reachable from wherever the worker runs), and a published
-        norm table on Zenodo records exactly what spectrum it assumed with
-        nothing else to go look up. Only `kind`/`sha256` are compared for a
-        match (see Ppq_compiled._check_perecoil); `detector`/
-        `calibration_source`/`source` are carried along for a mismatch
-        error to name, not checked themselves, so a table moved to a new
-        file or re-tagged with corrected metadata still matches."""
-        return {"kind": "table", "sha256": self.sha256, "detector": self.detector,
-                "calibration_source": self.calibration_source, "source": self.source,
-                "erecoil": self._raw_erecoil.tolist(), "counts": self._raw_counts.tolist()}
-
-    @property
-    def fortran_table(self):
-        """(x, c0, c1, c2, c3): breakpoints and per-interval power-basis
-        cubic coefficients -- scipy's own PPoly convention (value at Erecoil
-        in [x[i], x[i+1]) is ((c0[i]*dx + c1[i])*dx + c2[i])*dx + c3[i],
-        dx = Erecoil - x[i]), already divided by this table's own
-        normalization. Exactly what Ppq_fort.py needs to register this
-        table with the compiled library via PErecoil_table_register, whose
-        eval_cubic_table (src/Ppq_fort_s.f90) evaluates this identical form."""
-        c = self._interp.c / self._norm
-        return self._interp.x, c[0], c[1], c[2], c[3]
 
     def sample(self, n, rng):
         """n draws of Erecoil from this table's own normalized density, by

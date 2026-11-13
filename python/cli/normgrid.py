@@ -48,6 +48,7 @@ Fortran library loads, as with the other python/cli/ entry points)
 
 import argparse
 import glob
+import hashlib
 import json
 import math
 import os
@@ -141,8 +142,8 @@ DEFAULT_EQ_RANGE = (4.0, 100.0)
 # its shape -- there is no migration path, rebuild it (make-spec/run/merge)
 # instead. A table rebuilt with the normal closed-form flow gets the new
 # attribute for free (make_grid_spec/make_random_spec default perecoil to
-# closed_form), so only a table that actually used a PErecoil table needs
-# --perecoil-table on the rebuild to keep using it.
+# closed_form), so only a table that actually used a PErecoil fit needs
+# --perecoil-fit-json on the rebuild to keep using it.
 TABLE_FORMAT_VERSION = 3
 
 
@@ -181,14 +182,15 @@ def make_grid_spec(band, n_nodes, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT
                    fixed=DEFAULT_FIXED, box=None, epsrel=1e-7, epsabs=1e-13, perecoil=None):
     """n_nodes: {axis: number of Chebyshev-Lobatto nodes} for every axis of
     the band (1 pins an axis at its midpoint).  box: None = default_box(band).
-    perecoil: None = closed form (erecoil_table.CLOSED_FORM_PERECOIL), or a
-    erecoil_table.PErecoilTable.perecoil_identity() -- embeds that table's
-    own (erecoil, counts) arrays directly, so the spec is self-contained for
-    any worker (see _erecoil_handle_for) -- every point is then evaluated
-    with that table's recoil spectrum instead of the closed form, and the
-    table this spec builds must only ever be used with a Ppq_compiled given
-    that same PErecoil table (adr/0002-normalization-tables-record-
-    perecoil.md)."""
+    perecoil: None = closed form ({"kind": "closed_form"}), or an
+    erecoil_fit.PErecoilFit.perecoil_identity() -- embeds that fit's own
+    (family, a, b, C) directly, so the spec is self-contained for any
+    worker (see _erecoil_handle_for; no file for a worker to depend on,
+    unlike a table) -- every point is then evaluated with that fit's
+    recoil spectrum instead of the closed form, and the table this spec
+    builds must only ever be used with a Ppq_compiled given that same
+    PErecoil fit (adr/0002-normalization-tables-record-perecoil.md,
+    adr/0011-perecoil-handles-register-a-fit-not-a-table.md)."""
     spec = _base_spec("grid", band, ep_range, eq_range, fixed, default_box(band) if box is None else box,
                       epsrel, epsabs, perecoil or {"kind": "closed_form"})
     axes = BAND_AXES[band]
@@ -308,33 +310,44 @@ _erecoil_handle_cache = {}
 
 def _erecoil_handle_for(spec):
     """The Fortran table_handle spec["perecoil"] names -- 0 (closed form) or
-    a handle for a PErecoilTable rebuilt from the (erecoil, counts) arrays
-    perecoil_identity() embeds directly in the spec, cached per spec object
-    so a worker evaluating many points from the same spec registers the
-    table once.  Rebuilding from the embedded arrays, rather than reloading
-    some external file, is what lets a spec run unchanged on any worker
-    node (Slurm/OSG) with no shared-filesystem path to the original
-    PErecoilTable file.  Raises ValueError if the embedded arrays don't
-    hash to the sha256 recorded alongside them (a corrupted/hand-edited
-    spec, not a stale file -- there is no file to go stale)."""
+    a handle for a PErecoilFit registered from the (family, a, b, C)
+    perecoil_identity() embeds directly in the spec, cached per spec
+    object so a worker evaluating many points from the same spec
+    registers the fit once. Registering straight from the embedded
+    coefficients, rather than reloading some external file, is what lets
+    a spec run unchanged on any worker node (Slurm/OSG) with nothing
+    file-based to depend on -- a fit (unlike the table this used to be)
+    has no file format of its own at all (adr/0011-perecoil-handles-
+    register-a-fit-not-a-table.md). Raises ValueError if the embedded
+    coefficients don't hash to the sha256 recorded alongside them (a
+    corrupted/hand-edited spec, not a stale file -- there is no file to
+    go stale). The hash is recomputed the same way
+    erecoil_fit.PErecoilFit.sha256 does, not by reconstructing a
+    PErecoilFit here: perecoil["a"]/["C"] are already normalized (see
+    PErecoilFit.perecoil_identity()'s own docstring), and PErecoilFit's
+    constructor always re-normalizes against a fresh erecoil_max, which
+    would silently double-normalize them."""
     perecoil = spec.get("perecoil", {"kind": "closed_form"})
     if perecoil["kind"] == "closed_form":
         return 0
     key = id(spec)
     if key not in _erecoil_handle_cache:
-        sys.path.insert(0, _PYTHON_DIR)
-        from erecoil_table import PErecoilTable
         sys.path.insert(0, _INTERNAL_DIR)
-        from _Ppq_fort_bindings import PErecoil_table_register
-        table = PErecoilTable(perecoil["erecoil"], perecoil["counts"], detector=perecoil.get("detector", ""),
-                              calibration_source=perecoil.get("calibration_source", ""),
-                              source=perecoil.get("source", ""))
-        if table.sha256 != perecoil["sha256"]:
+        from _Ppq_fort_bindings import PErecoil_fit_register
+        a = np.asarray(perecoil["a"], dtype=np.float64)
+        b = np.asarray(perecoil["b"], dtype=np.float64)
+        C = float(perecoil["C"])
+        h = hashlib.sha256()
+        h.update(perecoil["family"].encode())
+        h.update(a.tobytes())
+        h.update(b.tobytes())
+        h.update(np.asarray(C, dtype=np.float64).tobytes())
+        if h.hexdigest() != perecoil["sha256"]:
             raise ValueError(
-                f"this spec's embedded PErecoil table hashes to sha256={table.sha256}, but the "
+                f"this spec's embedded PErecoil fit hashes to sha256={h.hexdigest()}, but the "
                 f"spec itself records sha256={perecoil['sha256']!r} -- the spec file was corrupted "
                 "or hand-edited; regenerate it (make-spec/make-random-spec)")
-        _erecoil_handle_cache[key] = PErecoil_table_register(*table.fortran_table)
+        _erecoil_handle_cache[key] = PErecoil_fit_register(a, b, C)
     return _erecoil_handle_cache[key]
 
 
@@ -550,11 +563,13 @@ class NormInterpolator:
             raise ValueError("table contains missing/failed points; refusing to build an interpolant")
         self.band, self.fixed, self.source = band, dict(fixed), source
         # The PErecoil spectrum this table's region integral was computed
-        # with -- {"kind": "closed_form"} or {"kind": "table", "sha256",
-        # "detector", "source"} -- checked against Ppq_compiled's own
-        # PErecoil_table_NR/ER at construction (adr/0002-normalization-
-        # tables-record-perecoil.md). None (e.g. a table built directly from
-        # arrays, not from_hdf5) means closed_form.
+        # with -- {"kind": "closed_form"} or {"kind": "fit", "family",
+        # "formula", "a", "b", "C", "sha256", "detector", "source"} --
+        # checked against Ppq_compiled's own PErecoil_fit_NR/ER at
+        # construction (adr/0002-normalization-tables-record-perecoil.md,
+        # adr/0011-perecoil-handles-register-a-fit-not-a-table.md). None
+        # (e.g. a table built directly from arrays, not from_hdf5) means
+        # closed_form.
         self.perecoil = perecoil or {"kind": "closed_form"}
         self.ep_range, self.eq_range = tuple(ep_range), tuple(eq_range)
         self.box = {a: (n[0], n[-1]) for a, n in zip(self.axes, self.nodes)}
@@ -824,15 +839,30 @@ def _parse_kv_ints(items):
     return {kv.split("=")[0]: int(kv.split("=")[1]) for kv in items}
 
 
-def _perecoil_from_path(path):
-    """None -> closed form; else the PErecoilTable HDF5 file at `path`'s own
-    perecoil_identity() -- embeds its (erecoil, counts) arrays directly, so
-    the spec this goes into is self-contained (see _erecoil_handle_for)."""
+def _perecoil_from_fit_json(path):
+    """None -> closed form; else build an erecoil_fit.PErecoilFit from the
+    small JSON file at `path` -- {"a": [...], "b": [...], "C": ...,
+    "erecoil_max": ..., "family": "sum_of_exponentials_plus_const",
+    "detector": "", "calibration_source": "", "source": ""} (family/
+    detector/calibration_source/source optional) -- and return its own
+    perecoil_identity(). A fit has no dedicated file format of its own
+    (unlike the table this used to be: a fit is 2*n+1 numbers, not worth
+    one -- adr/0011-perecoil-handles-register-a-fit-not-a-table.md); this
+    is deliberately the plainest thing that can hold them. `a`/`b`/`C`
+    here are the RAW (pre-normalization) fit coefficients and the Erecoil
+    range they were fit over -- exactly erecoil_fit.fit_sum_of_exponentials'
+    own return value's shape, not the already-normalized output of
+    perecoil_identity() (constructing a PErecoilFit always re-normalizes;
+    doing that to already-normalized coefficients would be wrong)."""
     if path is None:
         return {"kind": "closed_form"}
     sys.path.insert(0, _PYTHON_DIR)
-    from erecoil_table import PErecoilTable
-    return PErecoilTable.from_hdf5(path).perecoil_identity()
+    from erecoil_fit import PErecoilFit
+    with open(path) as f:
+        spec = json.load(f)
+    kwargs = {k: spec[k] for k in ("detector", "calibration_source", "source", "family") if k in spec}
+    fit = PErecoilFit(spec["a"], spec["b"], spec["C"], erecoil_max=spec["erecoil_max"], **kwargs)
+    return fit.perecoil_identity()
 
 
 def main(argv=None):
@@ -860,11 +890,13 @@ def main(argv=None):
                    help="quadrature convergence tolerance per point, e.g. 1e-7")
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
                    help="replace axes of the band's default box, e.g. V=2.5:4 dq=0:0.42")
-    p.add_argument("--perecoil-table", default=None, metavar="PATH",
-                   help="HDF5 PErecoilTable (erecoil_table.py) for this band: every grid point is "
-                        "then evaluated with its tabulated recoil spectrum instead of the closed "
+    p.add_argument("--perecoil-fit-json", default=None, metavar="PATH",
+                   help="small JSON file ({a, b, C, erecoil_max, ...}, see "
+                        "_perecoil_from_fit_json's docstring) for this band: every grid point is "
+                        "then evaluated with its fitted recoil spectrum instead of the closed "
                         "form, and the resulting table must only be used with a Ppq_compiled given "
-                        "this same PErecoil table (adr/0002-normalization-tables-record-perecoil.md). "
+                        "this same PErecoil fit (adr/0002-normalization-tables-record-perecoil.md, "
+                        "adr/0011-perecoil-handles-register-a-fit-not-a-table.md). "
                         "Default: closed form, same as today.")
     p.add_argument("--out", required=True)
 
@@ -880,8 +912,8 @@ def main(argv=None):
     p.add_argument("--box", nargs="+", default=None, metavar="AXIS=LO:HI",
                    help="as make-spec's; the points are then drawn over the p10/q10 ranges that box "
                         "covers (x10_ranges) instead of the default prior's")
-    p.add_argument("--perecoil-table", default=None, metavar="PATH",
-                   help="as make-spec's -- pass the SAME file as the table this validates, or the "
+    p.add_argument("--perecoil-fit-json", default=None, metavar="PATH",
+                   help="as make-spec's -- pass the SAME file as the fit this validates, or the "
                         "held-out points check against the wrong spectrum")
     p.add_argument("--out", required=True)
 
@@ -918,11 +950,11 @@ def main(argv=None):
         nodes = _parse_kv_ints(a.nodes) if a.nodes else RECOMMENDED_NODES[a.band]
         spec = make_grid_spec(a.band, nodes, ep_range=tuple(a.ep_range), eq_range=tuple(a.eq_range), epsrel=a.epsrel,
                               box=parse_box(a.box, a.band) if a.box else None,
-                              perecoil=_perecoil_from_path(a.perecoil_table))
+                              perecoil=_perecoil_from_fit_json(a.perecoil_fit_json))
         save_spec(spec, a.out)
         print(f"{a.out}: {n_points(spec)} points, shape {grid_shape(spec)}")
     elif a.cmd == "make-random-spec":
-        perecoil = _perecoil_from_path(a.perecoil_table)
+        perecoil = _perecoil_from_fit_json(a.perecoil_fit_json)
         if a.box:
             box = parse_box(a.box, a.band)
             p10, q10 = x10_ranges(box)

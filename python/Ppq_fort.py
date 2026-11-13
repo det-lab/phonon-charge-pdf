@@ -83,7 +83,7 @@ _CLI_DIR = os.path.join(_PYTHON_DIR, "cli")
 sys.path.insert(0, _INTERNAL_DIR)
 from _Ppq_fort_bindings import (make_Ppq_densities_ER, make_Ppq_densities_NR,
                                  Ppq_region_ER, Ppq_region_NR, version as _fort_version,
-                                 _load_erecoil_table)
+                                 _load_erecoil_fit)
 
 
 class Ppq_compiled:
@@ -112,27 +112,32 @@ class Ppq_compiled:
         python/cli/table_registry.json.  If given, Ppq_integral_NR/Ppq_integral_ER
         interpolate it instead of running the quadrature.  Each table records which
         PErecoil spectrum it was built with (normgrid's `perecoil`); construction
-        raises ValueError if that doesn't match this band's own PErecoil_table_NR/ER
-        (or its absence), rather than silently normalizing a tabulated-spectrum
+        raises ValueError if that doesn't match this band's own PErecoil_fit_NR/ER
+        (or its absence), rather than silently normalizing a fitted-spectrum
         density with a closed-form integral or vice versa
         (adr/0002-normalization-tables-record-perecoil.md).
-    PErecoil_table_NR, PErecoil_table_ER : HDF5 path, erecoil_table.PErecoilTable, or None
-        Tabulated true-recoil-energy spectrum for that band (see
-        erecoil_table.py; built with erecoil_table.save_erecoil_table -- an
-        explicit path only, no registered-name lookup like Ppq_table_NR/ER
-        has), replacing the closed-form biexponential PErecoil_NR/PErecoil_ER
+    PErecoil_fit_NR, PErecoil_fit_ER : erecoil_fit.PErecoilFit, or None
+        Fitted true-recoil-energy spectrum for that band (see
+        erecoil_fit.py -- a sum of exponentials plus a constant, fit to
+        real calibration data with erecoil_fit.fit_sum_of_exponentials),
+        replacing the closed-form biexponential PErecoil_NR/PErecoil_ER
         inside every Erecoil integral -- unlike Ppq_table_NR/ER, this changes
-        the density itself, not just its normalization. If the table's own
-        metadata says a band, it must match this keyword's band. Checked
-        once here (erecoil_range must reach 0 and cover
-        max(ep_range, eq_range) + 5 keV) and registered once, at
-        construction, into a handle this instance stores and passes
-        explicitly on every call after that (adr/0003-per-instance-
-        perecoil-tables.md) -- not ambient state, so a second Ppq_compiled
-        or _Ppq_fort_bindings.Ppq_densities, with or without its own
-        PErecoil_table_NR/ER, coexists fine in the same process, including
-        evaluated alternately (a joint Cf + Ba fit, say). Prototype stage
-        -- see erecoil_table.py's own module docstring.
+        the density itself, not just its normalization. Not a table
+        (erecoil_table.py, which stays the right tool for simulation and
+        for checking a fit against the real data it summarizes, just not
+        for this): adr/0011-perecoil-handles-register-a-fit-not-a-table.md
+        found that even a noise-free table makes the quadrature's region
+        integral untrustworthy in part of the parameter space, which this
+        family is immune to by construction (globally smooth, no local
+        structure at any scale, the same property the closed form has).
+        If the fit's own metadata says a band, it must match this
+        keyword's band. Registered once, at construction, into a handle
+        this instance stores and passes explicitly on every call after
+        that (adr/0003-per-instance-perecoil-tables.md) -- not ambient
+        state, so a second Ppq_compiled or _Ppq_fort_bindings.Ppq_densities,
+        with or without its own PErecoil_fit_NR/ER, coexists fine in the
+        same process, including evaluated alternately (a joint Cf + Ba
+        fit, say).
     prior_bounds : dict or None
         The MCMC prior's hard bounds, {param: (lo, hi)} for k (NR), V, p0,
         p10, q0, q10 (Z/eps may be given as their fixed values), flat --
@@ -152,7 +157,7 @@ class Ppq_compiled:
     def __init__(self, ep_range, eq_range, ep_data, eq_data, *,
                  norm_epsrel=None, norm_epsabs=None,
                  Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
-                 PErecoil_table_NR=None, PErecoil_table_ER=None,
+                 PErecoil_fit_NR=None, PErecoil_fit_ER=None,
                  n_workers=None):
         # A table only ever replaces the normalization integral, never the
         # per-event PDF evaluation (_Ppq_densities_NR/_Ppq_densities_ER always need
@@ -171,12 +176,10 @@ class Ppq_compiled:
         self.n_workers = n_workers
         self.Ppq_table_NR = self._load_table(Ppq_table_NR, "NR")
         self.Ppq_table_ER = self._load_table(Ppq_table_ER, "ER")
-        self.PErecoil_table_NR, self.nr_table_handle = _load_erecoil_table(
-            PErecoil_table_NR, "NR", ep_max=self.ep_max, eq_max=self.eq_max)
-        self.PErecoil_table_ER, self.er_table_handle = _load_erecoil_table(
-            PErecoil_table_ER, "ER", ep_max=self.ep_max, eq_max=self.eq_max)
-        self._check_perecoil("NR", self.Ppq_table_NR, self.PErecoil_table_NR)
-        self._check_perecoil("ER", self.Ppq_table_ER, self.PErecoil_table_ER)
+        self.PErecoil_fit_NR, self.nr_table_handle = _load_erecoil_fit(PErecoil_fit_NR, "NR")
+        self.PErecoil_fit_ER, self.er_table_handle = _load_erecoil_fit(PErecoil_fit_ER, "ER")
+        self._check_perecoil("NR", self.Ppq_table_NR, self.PErecoil_fit_NR)
+        self._check_perecoil("ER", self.Ppq_table_ER, self.PErecoil_fit_ER)
         if prior_bounds is not None:
             if not self._tables():
                 raise ValueError("prior_bounds is checked against the tables; no table was given")
@@ -187,31 +190,33 @@ class Ppq_compiled:
         return [t for t in (self.Ppq_table_NR, self.Ppq_table_ER) if t is not None]
 
     @staticmethod
-    def _check_perecoil(band, norm_table, perecoil_table):
+    def _check_perecoil(band, norm_table, perecoil_fit):
         """Raise ValueError unless norm_table's recorded `perecoil`
-        (adr/0002-normalization-tables-record-perecoil.md) matches the
-        PErecoil_table_NR/ER this instance was actually given -- otherwise
-        the normalization integral and the density it divides would use
-        different Erecoil spectra, with no error. Only `sha256` is compared
-        for a "table" kind (not detector/source), so a table that is
-        regenerated with identical content still matches, and one from
-        different cuts correctly doesn't. No-op if norm_table is None (no
-        table for this band -> the quadrature path, which always uses
-        whatever PErecoil_table_NR/ER this instance was given)."""
+        (adr/0002-normalization-tables-record-perecoil.md,
+        adr/0011-perecoil-handles-register-a-fit-not-a-table.md) matches
+        the PErecoil_fit_NR/ER this instance was actually given --
+        otherwise the normalization integral and the density it divides
+        would use different Erecoil spectra, with no error. Only `sha256`
+        is compared for a "fit" kind (not detector/source), so a fit
+        rebuilt with identical final coefficients still matches, and one
+        with genuinely different coefficients correctly doesn't. No-op if
+        norm_table is None (no table for this band -> the quadrature
+        path, which always uses whatever PErecoil_fit_NR/ER this instance
+        was given)."""
         if norm_table is None:
             return
-        given = ({"kind": "closed_form"} if perecoil_table is None
-                 else perecoil_table.perecoil_identity())
+        given = ({"kind": "closed_form"} if perecoil_fit is None
+                 else perecoil_fit.perecoil_identity())
         recorded = norm_table.perecoil
         matches = (given["kind"] == recorded["kind"]
-                   and (given["kind"] != "table" or given["sha256"] == recorded["sha256"]))
+                   and (given["kind"] != "fit" or given["sha256"] == recorded["sha256"]))
         if not matches:
             raise ValueError(
                 f"Ppq_table_{band}'s normalization was built with perecoil={recorded!r}, but this "
-                f"Ppq_compiled was given PErecoil_table_{band}'s perecoil={given!r} -- they must "
+                f"Ppq_compiled was given PErecoil_fit_{band}'s perecoil={given!r} -- they must "
                 "match, or the normalization integral and the density it divides would use "
                 "different Erecoil spectra, silently (adr/0002-normalization-tables-record-"
-                "perecoil.md). Pass the matching PErecoil_table_NR/ER, or a normalization table "
+                "perecoil.md). Pass the matching PErecoil_fit_NR/ER, or a normalization table "
                 "built for this one.")
 
     @staticmethod

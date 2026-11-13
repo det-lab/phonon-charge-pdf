@@ -61,14 +61,6 @@ _LIB_NAME = "libphonon_charge_pdf.dylib" if sys.platform == "darwin" else "libph
 
 _DOUBLE_ARR = np.ctypeslib.ndpointer(dtype=np.float64, flags="C_CONTIGUOUS")
 
-# Erecoil margin (keV) past max(ep_max, eq_max) a PErecoil table must still
-# cover: matches Ppq_py.py's Ppq_inspect_NR/ER ("maxx = max(Ep, Eq) + 5"),
-# the same conservative bound on how far past (Ep, Eq) the true Erecoil peak
-# can physically sit (EP_mean = Erecoil + (V/1000)*Nbar(Erecoil) >= Erecoil).
-# Shared by Ppq_compiled and Ppq_densities (both call _load_erecoil_table
-# below) -- moved here, not kept in Ppq_fort.py, now that both live.
-_ERECOIL_MARGIN_KEV = 5.0
-
 _api = None
 
 
@@ -119,7 +111,7 @@ def _load_library():
             f"e.g.: LD_LIBRARY_PATH=lib python your_script.py"
         )
 
-    # table_handle (see PErecoil_table_register below): 0 for the
+    # table_handle (see PErecoil_fit_register below): 0 for the
     # closed-form spectrum, or a handle from registering a tabulated one
     # -- an explicit argument of every real evaluation call, not ambient
     # state (adr/0003-per-instance-perecoil-tables.md).
@@ -195,12 +187,13 @@ def _load_library():
     ]
     _api.Ppq_region_ER_with_error.restype = None
 
-    # The only state-mutating entry point -- see PErecoil_table_register
-    # below and adr/0003-per-instance-perecoil-tables.md.
-    _api.PErecoil_table_register.argtypes = [
-        _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int,
+    # The only state-mutating entry point -- see PErecoil_fit_register
+    # below and adr/0003-per-instance-perecoil-tables.md,
+    # adr/0011-perecoil-handles-register-a-fit-not-a-table.md.
+    _api.PErecoil_fit_register.argtypes = [
+        _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int, ctypes.c_double,
     ]
-    _api.PErecoil_table_register.restype = ctypes.c_int
+    _api.PErecoil_fit_register.restype = ctypes.c_int
 
     return _api
 
@@ -234,7 +227,7 @@ def make_Ppq_densities_NR(*, k, Z, F0, eps, V, p0, p10, q0, q10, table_handle=0,
 
     table_handle : int
         0 (default) for the closed-form PErecoil_NR spectrum, or a handle
-        from PErecoil_table_register for a tabulated one -- an explicit
+        from PErecoil_fit_register for a fitted one -- an explicit
         argument of every call, not ambient state (see
         adr/0003-per-instance-perecoil-tables.md). Ppq_densities passes
         its own stored handle here automatically; nothing outside this
@@ -323,7 +316,7 @@ def Ppq_region_NR(ep_min, ep_max, eq_min, eq_max, *,
 
     table_handle : int
         0 (default) for the closed-form PErecoil_NR spectrum, or a handle
-        from PErecoil_table_register -- see make_Ppq_densities_NR's own
+        from PErecoil_fit_register -- see make_Ppq_densities_NR's own
         docstring.
     """
     api = _load_library()
@@ -364,7 +357,7 @@ def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
     numerical convergence diagnostic in the same units as the returned
     value, NOT a statistical uncertainty on the PErecoil model itself (a
     tabulated PErecoil's own calibration-statistics uncertainty is a
-    separate question this says nothing about -- see erecoil_table.py).
+    separate question this says nothing about -- see erecoil_fit.py).
     By design this should be far smaller than the epsrel/epsabs asked
     for; useful for confirming that numerical precision is negligible
     against some other uncertainty (e.g. a likelihood's statistical
@@ -372,7 +365,7 @@ def Ppq_region_NR_with_error(ep_min, ep_max, eq_min, eq_max, *,
 
     table_handle : int
         0 (default) for the closed-form PErecoil_NR spectrum, or a handle
-        from PErecoil_table_register -- see make_Ppq_densities_NR's own
+        from PErecoil_fit_register -- see make_Ppq_densities_NR's own
         docstring.
 
     Returns
@@ -421,69 +414,45 @@ def Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, *,
     return res.value, error_estimate.value
 
 
-def PErecoil_table_register(x, c0, c1, c2, c3):
-    """Register a tabulated true-recoil-energy spectrum and return its
-    handle: x (breakpoints, n points) and c0/c1/c2/c3 (per-interval
-    power-basis cubic coefficients, n-1 points each) -- see
-    erecoil_table.PErecoilTable.fortran_table for exactly this shape, and
-    its own docstring for the convention. Pass the returned handle to
-    make_Ppq_densities_NR/ER, Ppq_region_NR/ER(_with_error), etc. to
-    evaluate against this table. The only state-mutating call -- see
-    adr/0003-per-instance-perecoil-tables.md -- call once per table a
-    Ppq_compiled/Ppq_densities registers at construction; the handle it
-    returns then works correctly for the rest of the process's lifetime,
-    including interleaved with other instances' own handles."""
+def PErecoil_fit_register(a, b, C):
+    """Register a fitted true-recoil-energy spectrum and return its
+    handle: a, b (each term's amplitude and decay length, same length)
+    and C (the constant floor) -- see erecoil_fit.PErecoilFit.fortran_params
+    for exactly this shape, and that module's own docstring for the
+    convention (adr/0011-perecoil-handles-register-a-fit-not-a-table.md).
+    Pass the returned handle to make_Ppq_densities_NR/ER,
+    Ppq_region_NR/ER(_with_error), etc. to evaluate against this fit. The
+    only state-mutating call -- see adr/0003-per-instance-perecoil-
+    tables.md -- call once per fit a Ppq_compiled/Ppq_densities registers
+    at construction; the handle it returns then works correctly for the
+    rest of the process's lifetime, including interleaved with other
+    instances' own handles."""
     api = _load_library()
-    x = np.ascontiguousarray(np.asarray(x, dtype=np.float64))
-    c0 = np.ascontiguousarray(np.asarray(c0, dtype=np.float64))
-    c1 = np.ascontiguousarray(np.asarray(c1, dtype=np.float64))
-    c2 = np.ascontiguousarray(np.asarray(c2, dtype=np.float64))
-    c3 = np.ascontiguousarray(np.asarray(c3, dtype=np.float64))
-    return api.PErecoil_table_register(x, c0, c1, c2, c3, x.size)
+    a = np.ascontiguousarray(np.asarray(a, dtype=np.float64))
+    b = np.ascontiguousarray(np.asarray(b, dtype=np.float64))
+    return api.PErecoil_fit_register(a, b, a.size, float(C))
 
 
-def _load_erecoil_table(table, band, *, ep_max, eq_max):
-    """Validate table's erecoil_range against a region reaching up to
-    (ep_max, eq_max), then register it (PErecoil_table_register) and
-    return (table, handle) -- or (None, 0) if table is None, meaning the
-    closed form for this band.
+def _load_erecoil_fit(fit, band):
+    """Register fit (PErecoil_fit_register) and return (fit, handle) --
+    or (None, 0) if fit is None, meaning the closed form for this band.
 
-    Unlike Ppq_py.py's prototype (integrate_inspect's erecoil_bounds),
-    nothing dynamically checks Erecoil against the table at run time in
-    the compiled library -- bind(c) module procedures here are pure, so
-    there's no catchable-exception path across that boundary. This
-    check, done once here from the physically provable bound
-    EP_mean = Erecoil + (V/1000)*Nbar(Erecoil) >= Erecoil (so the true
-    Erecoil peak for any (Ep, Eq) up to (ep_max, eq_max) can't exceed
-    that plus _ERECOIL_MARGIN_KEV), is what makes that unreachable in
-    practice -- fails now, not hours into a run.
-    """
-    if table is None:
+    Unlike a table (erecoil_table.py's old role here), a fit has no
+    erecoil_range to validate against the region: it's a sum of
+    exponentials plus a constant, defined and smooth for every
+    Erecoil >= 0, with nothing for a Fortran search window to run off the
+    edge of (adr/0011-perecoil-handles-register-a-fit-not-a-table.md) --
+    so there is no analogous construction-time check to make here."""
+    if fit is None:
         return None, 0
-    sys.path.insert(0, _PYTHON_DIR)
-    from erecoil_table import PErecoilTable
-    if not isinstance(table, PErecoilTable):
-        table = PErecoilTable.from_hdf5(table)
-    if table.band and table.band != band:
-        raise ValueError(f"PErecoil_table_{band}: table's own metadata says band={table.band!r}")
-    lo, hi = table.erecoil_range
-    needed = max(ep_max, eq_max) + _ERECOIL_MARGIN_KEV
-    if lo > 0.0:
-        raise ValueError(
-            f"PErecoil_table_{band}: erecoil_range starts at {lo!r}, not <= 0 -- a table used "
-            "with the compiled Fortran path must cover Erecoil down to 0, since nothing "
-            "dynamically checks this at run time there, unlike Ppq_py.py's prototype path.")
-    if hi < needed:
-        raise ValueError(
-            f"PErecoil_table_{band}: erecoil_range only reaches {hi!r} keV, but this region "
-            f"(up to {max(ep_max, eq_max)!r} keV) needs it to reach at least {needed!r} keV -- "
-            "rebuild the table with a wider range, or narrow the region.")
-    handle = PErecoil_table_register(*table.fortran_table)
-    return table, handle
+    if getattr(fit, "band", "") and fit.band != band:
+        raise ValueError(f"PErecoil_fit_{band}: fit's own metadata says band={fit.band!r}")
+    handle = PErecoil_fit_register(*fit.fortran_params)
+    return fit, handle
 
 
 class Ppq_densities:
-    """Region- and (optionally) table-bound NR/ER density evaluator,
+    """Region- and (optionally) fit-bound NR/ER density evaluator,
     backed by the same fast multi-threaded Ppq_vector_NR/ER as
     make_Ppq_densities_NR/ER -- the lighter sibling of Ppq_compiled
     (python/Ppq_fort.py) for callers (goodness-of-fit/chi-square checks,
@@ -494,30 +463,26 @@ class Ppq_densities:
     ep_range, eq_range : (min, max) -- the analysis region. Required even
     though density_NR/density_ER evaluate at whatever points you hand
     them (not cropped to this box): every real caller already has a
-    definite box in mind (a fit region, a debug bin, etc.), and it's what
-    PErecoil_table_NR/ER's own coverage gets checked against, so making
-    it explicit here keeps that check possible rather than implicit.
+    definite box in mind (a fit region, a debug bin, etc.).
 
-    PErecoil_table_NR, PErecoil_table_ER : None (default -- closed-form
-    biexponential) or a PErecoilTable / HDF5 path. Registered once here,
-    at construction (PErecoil_table_register, via _load_erecoil_table),
-    and the resulting handle(s) stored (self.nr_table_handle/
-    er_table_handle) and passed explicitly into every density_NR/density_ER
-    call after that -- not ambient state, so two Ppq_densities (or
-    Ppq_compiled) instances with different tables coexist in one process
-    fine, under any concurrency pattern. See
-    adr/0003-per-instance-perecoil-tables.md.
+    PErecoil_fit_NR, PErecoil_fit_ER : None (default -- closed-form
+    biexponential) or an erecoil_fit.PErecoilFit. Registered once here,
+    at construction (PErecoil_fit_register, via _load_erecoil_fit), and
+    the resulting handle(s) stored (self.nr_table_handle/er_table_handle)
+    and passed explicitly into every density_NR/density_ER call after
+    that -- not ambient state, so two Ppq_densities (or Ppq_compiled)
+    instances with different fits coexist in one process fine, under any
+    concurrency pattern. See adr/0003-per-instance-perecoil-tables.md,
+    adr/0011-perecoil-handles-register-a-fit-not-a-table.md.
     """
 
     def __init__(self, ep_range, eq_range, *,
-                 PErecoil_table_NR=None, PErecoil_table_ER=None, n_workers=None):
+                 PErecoil_fit_NR=None, PErecoil_fit_ER=None, n_workers=None):
         self.ep_min, self.ep_max = ep_range
         self.eq_min, self.eq_max = eq_range
         self.n_workers = n_workers
-        self.PErecoil_table_NR, self.nr_table_handle = _load_erecoil_table(
-            PErecoil_table_NR, "NR", ep_max=self.ep_max, eq_max=self.eq_max)
-        self.PErecoil_table_ER, self.er_table_handle = _load_erecoil_table(
-            PErecoil_table_ER, "ER", ep_max=self.ep_max, eq_max=self.eq_max)
+        self.PErecoil_fit_NR, self.nr_table_handle = _load_erecoil_fit(PErecoil_fit_NR, "NR")
+        self.PErecoil_fit_ER, self.er_table_handle = _load_erecoil_fit(PErecoil_fit_ER, "ER")
 
     def density_NR(self, ep_flat, eq_flat, *, k, Z, F0, eps, V, p0, p10, q0, q10):
         return make_Ppq_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V, p0=p0, p10=p10,

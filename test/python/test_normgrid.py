@@ -166,27 +166,24 @@ with tempfile.TemporaryDirectory() as d:
               t.band == "ER" and t.ep_range == tuple(ng.DEFAULT_EP_RANGE) and t.eq_range == tuple(ng.DEFAULT_EQ_RANGE))
         check("a table merged with no perecoil= defaults to closed_form", t.perecoil == {"kind": "closed_form"})
 
-        # ---- adr/0002: normalization tables record (and check) their PErecoil ----
-        from erecoil_table import PErecoilTable
+        # ---- adr/0002/0011: normalization tables record (and check) their PErecoil fit ----
+        from erecoil_fit import PErecoilFit
 
-        erecoil_pts = np.linspace(0.0, 400.0, 30)
-        counts_a = np.exp(-erecoil_pts / 40.0) + 0.1
-        counts_a_dup = counts_a.copy()
-        counts_b = np.exp(-erecoil_pts / 25.0) + 0.1   # a different cut -> different content
-        pe_a = PErecoilTable(erecoil_pts, counts_a, detector="X17", band="NR", source="tableA.h5")
-        pe_a_dup = PErecoilTable(erecoil_pts, counts_a_dup, detector="X17", band="NR", source="tableA_copy.h5")
-        pe_b = PErecoilTable(erecoil_pts, counts_b, detector="X17", band="NR", source="tableB.h5")
+        pe_a = PErecoilFit([1.0], [40.0], 0.1, erecoil_max=400.0, detector="X17", band="NR", source="fitA.json")
+        pe_a_dup = PErecoilFit([1.0], [40.0], 0.1, erecoil_max=400.0, detector="X17", band="NR", source="fitA_copy.json")
+        pe_b = PErecoilFit([1.0], [25.0], 0.1, erecoil_max=400.0, detector="X17", band="NR", source="fitB.json")
         id_a, id_a_dup, id_b = pe_a.perecoil_identity(), pe_a_dup.perecoil_identity(), pe_b.perecoil_identity()
-        check("perecoil_identity: identical content hashes the same regardless of filename",
+        check("perecoil_identity: identical coefficients hash the same regardless of source",
               id_a["sha256"] == id_a_dup["sha256"])
-        check("perecoil_identity: different content (a different cut) hashes differently",
+        check("perecoil_identity: different decay length hashes differently",
               id_a["sha256"] != id_b["sha256"])
-        check("perecoil_identity embeds the raw arrays",
-              id_a["erecoil"] == erecoil_pts.tolist() and id_a["counts"] == counts_a.tolist())
+        check("perecoil_identity embeds the family/a/b/C",
+              id_a["family"] == "sum_of_exponentials_plus_const" and id_a["a"] == pe_a.a.tolist()
+              and id_a["b"] == pe_a.b.tolist() and id_a["C"] == pe_a.C)
 
         spec_pe = ng.make_grid_spec("NR", dict(k=2, F0=2, V=2, p0=2, dp=2, q0=2, dq=2), perecoil=id_a)
         check("spec carries the embedded perecoil entry",
-              spec_pe["perecoil"]["kind"] == "table" and spec_pe["perecoil"]["sha256"] == id_a["sha256"])
+              spec_pe["perecoil"]["kind"] == "fit" and spec_pe["perecoil"]["sha256"] == id_a["sha256"])
         sp_pe, out_pe = os.path.join(d, "spec_pe.json"), os.path.join(d, "r_pe.txt")
         ng.save_spec(spec_pe, sp_pe)
         ok_pe = ng.run_range(sp_pe, 0, ng.n_points(spec_pe), out_pe, quiet=True)
@@ -195,7 +192,7 @@ with tempfile.TemporaryDirectory() as d:
         ng.merge(sp_pe, [out_pe], h5_pe)
         t_pe = ng.NormInterpolator.from_hdf5(h5_pe)
         check("merged table records the perecoil entry",
-              t_pe.perecoil["kind"] == "table" and t_pe.perecoil["sha256"] == id_a["sha256"])
+              t_pe.perecoil["kind"] == "fit" and t_pe.perecoil["sha256"] == id_a["sha256"])
 
         spec_cf = ng.make_grid_spec("NR", dict(k=2, F0=2, V=2, p0=2, dp=2, q0=2, dq=2))
         sp_cf, out_cf = os.path.join(d, "spec_cf.json"), os.path.join(d, "r_cf.txt")
@@ -206,14 +203,14 @@ with tempfile.TemporaryDirectory() as d:
         t_cf = ng.NormInterpolator.from_hdf5(h5_cf)
 
         from Ppq_fort import Ppq_compiled as _Ppq_compiled_pe
-        check("Ppq_compiled (a) accepts a norm table with its matching PErecoil table",
-              _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe, PErecoil_table_NR=pe_a) is not None)
-        check("Ppq_compiled (b) raises when no PErecoil table is given for a norm table built with one",
+        check("Ppq_compiled (a) accepts a norm table with its matching PErecoil fit",
+              _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe, PErecoil_fit_NR=pe_a) is not None)
+        check("Ppq_compiled (b) raises when no PErecoil fit is given for a norm table built with one",
               raises(ValueError, lambda: _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe)))
-        check("Ppq_compiled (c) raises when given a DIFFERENT PErecoil table than the norm table was built with",
+        check("Ppq_compiled (c) raises when given a DIFFERENT PErecoil fit than the norm table was built with",
               raises(ValueError, lambda: _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe,
-                                                           PErecoil_table_NR=pe_b)))
-        check("Ppq_compiled (d) still accepts a closed-form norm table with no PErecoil table",
+                                                           PErecoil_fit_NR=pe_b)))
+        check("Ppq_compiled (d) still accepts a closed-form norm table with no PErecoil fit",
               _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_cf) is not None)
 
         # ---- a pre-adr/0002 table (no perecoil recorded) is a hard fail, no migration path ----
