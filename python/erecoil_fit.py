@@ -2,7 +2,7 @@
 energy spectrum (PErecoil) -- a sum of exponentials plus a constant floor,
 fit to real calibration data -- for the compiled Fortran quadrature path.
 
-Why a fit, not a table (adr/0011-perecoil-handles-register-a-fit-not-a-
+Why a fit, not a table (adr/0012-perecoil-handles-register-a-fit-not-a-
 table.md): a PCHIP-interpolated or smoothed table (erecoil_table.py) can
 describe real calibration data perfectly and *still* make the
 Gauss-Legendre region integral untrustworthy in part of the parameter
@@ -22,7 +22,7 @@ erecoil_table.PErecoilTable stays the right tool for simulation
 which is the only thing this module's PErecoilFit feeds.
 
 One family, deliberately curated rather than an arbitrary user-specified
-function (also adr/0011 -- an open-ended expression language has the same
+function (also adr/0012 -- an open-ended expression language has the same
 problem a table does: nothing about it guarantees the smoothness the
 quadrature actually needs, and it would undo ADR 0001's point in evaluating
 it from Fortran besides): a sum of exponentials plus a constant,
@@ -41,12 +41,13 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.stats import kstest
 
-__all__ = ["PErecoilFit", "fit_sum_of_exponentials", "check_fit_against_events", "FAMILY_FORMULAS"]
+__all__ = ["PErecoilFit", "fit_sum_of_exponentials", "check_fit_against_events", "FAMILY_FORMULAS",
+          "CF252_BIEXPONENTIAL_NR", "CF252_BIEXPONENTIAL_ER"]
 
 # One entry per supported family, written once and reused verbatim by
 # every fit of that family's own perecoil_identity() -- documentation
 # embedded in data, never evaluated back (see this module's own
-# docstring and adr/0011 for why not an eval-able expression).
+# docstring and adr/0012 for why not an eval-able expression).
 FAMILY_FORMULAS = {
     "sum_of_exponentials_plus_const":
         "density(Erecoil) = sum(a[i] * exp(-Erecoil / b[i]) for i in range(len(a))) + C",
@@ -78,7 +79,7 @@ class PErecoilFit:
     Unlike erecoil_table.PErecoilTable, this is defined -- and smooth --
     for every Erecoil >= 0: no erecoil_range, no OutOfBoxError, nothing
     to clip a Fortran search window to. That absence is the point
-    (adr/0011); the Erecoil < 0 convention below matches
+    (adr/0012); the Erecoil < 0 convention below matches
     PErecoilTable/PErecoil_NR/ER's own for consistency, not because
     anything would otherwise go wrong there.
 
@@ -93,7 +94,8 @@ class PErecoilFit:
     """
 
     def __init__(self, a, b, C, *, erecoil_max, family="sum_of_exponentials_plus_const",
-                 detector="", band="", calibration_source="", source="", chi2_dof=None):
+                 detector="", band="", calibration_source="", source="", chi2_dof=None,
+                 is_closed_form=False):
         a = np.asarray(a, dtype=np.float64)
         b = np.asarray(b, dtype=np.float64)
         if a.ndim != 1 or a.shape != b.shape:
@@ -115,6 +117,16 @@ class PErecoilFit:
         self.detector, self.band = detector, band
         self.calibration_source, self.source = calibration_source, source
         self.chi2_dof = chi2_dof
+        # True only for CF252_BIEXPONENTIAL_NR/ER below: registering either
+        # with Fortran gives a real handle (> 0, not 0) and costs nothing
+        # extra numerically (eval_fit on these two terms computes exactly
+        # the hardcoded closed form), but for normgrid's `perecoil`
+        # provenance check (adr/0002) this needs to read as the SAME thing
+        # a table built against the literal closed form recorded
+        # ({"kind": "closed_form"}, no handle at all) -- they are the same
+        # spectrum, just reached two different ways, and the check should
+        # not see a difference that isn't physically there.
+        self.is_closed_form = is_closed_form
 
     def __call__(self, Erecoil):
         Erecoil = np.asarray(Erecoil, dtype=float)
@@ -130,7 +142,7 @@ class PErecoilFit:
     def sha256(self):
         """sha256 of this fit's family and (already-normalized) a/b/C --
         used by normgrid's `perecoil` provenance check (adr/0002, extended
-        for the "fit" kind by adr/0011) to tell whether a normalization
+        for the "fit" kind by adr/0012) to tell whether a normalization
         table's assumed PErecoil fit matches a given PErecoilFit. Only
         kind/sha256 are compared for a match; two fits built from
         identical final coefficients hash identically regardless of
@@ -144,15 +156,44 @@ class PErecoilFit:
         return h.hexdigest()
 
     def perecoil_identity(self):
-        """{"kind": "fit", "family", "formula", "a", "b", "C", "sha256",
-        "detector", "calibration_source", "source"} -- this fit's identity
-        as normgrid's `perecoil` provenance tag records it. `formula` is
+        """{"kind": "closed_form"} for CF252_BIEXPONENTIAL_NR/ER (see
+        is_closed_form above); otherwise {"kind": "fit", "family",
+        "formula", "a", "b", "C", "sha256", "detector",
+        "calibration_source", "source"} -- this fit's identity as
+        normgrid's `perecoil` provenance tag records it. `formula` is
         FAMILY_FORMULAS[self.family] verbatim: documentation for a human
         reading the HDF5 file directly, never read back or evaluated."""
+        if self.is_closed_form:
+            return {"kind": "closed_form"}
         return {"kind": "fit", "family": self.family, "formula": FAMILY_FORMULAS[self.family],
                 "a": self.a.tolist(), "b": self.b.tolist(), "C": self.C, "sha256": self.sha256,
                 "detector": self.detector, "calibration_source": self.calibration_source,
                 "source": self.source}
+
+
+# The library's own closed-form biexponentials (src/Ppq_fort_s.f90's
+# PErecoil_NR_impl/ER_impl, Ppq_py.py's PErecoil_NR/ER), exported by name so
+# a caller can pass them explicitly instead of a band's PErecoil argument
+# silently defaulting to them (adr/0011-recoil-spectrum-always-explicit.md:
+# "nobody chooses the closed form; it's what you get by saying nothing").
+# Ordinary PErecoilFit instances -- registering one costs nothing extra
+# (eval_fit on these two terms computes exactly the hardcoded closed form,
+# to floating-point precision) and needs no sampling support. The one thing
+# that does need to know about them specifically: is_closed_form=True, so
+# perecoil_identity() reads as {"kind": "closed_form"} -- the same identity
+# a table built against the literal closed form already records -- rather
+# than {"kind": "fit", ...}, which would otherwise make normgrid's
+# provenance check (adr/0002) see a mismatch between two things that are
+# actually the same spectrum. erecoil_max=1e5 keV is many thousands of
+# decay lengths past PGd (ER's longest, 279.6 keV) -- the normalization
+# integral below it differs from the true [0, infinity) integral by a
+# wildly negligible amount.
+_PNa, _PNb, _PNd = 0.53693208, 6.41515782, 23.71789286
+_PGa, _PGb, _PGd = 0.573211975, 0.169520023, 279.552394
+CF252_BIEXPONENTIAL_NR = PErecoilFit([_PNa / _PNb, (1.0 - _PNa) / _PNd], [_PNb, _PNd], 0.0,
+                                     erecoil_max=1e5, calibration_source="Cf-252", is_closed_form=True)
+CF252_BIEXPONENTIAL_ER = PErecoilFit([_PGa / _PGb, (1.0 - _PGa) / _PGd], [_PGb, _PGd], 0.0,
+                                     erecoil_max=1e5, calibration_source="Cf-252", is_closed_form=True)
 
 
 def fit_sum_of_exponentials(erecoil, counts, raw_n_per_bin, *, n_terms=2, detector="", band="",
@@ -165,7 +206,7 @@ def fit_sum_of_exponentials(erecoil, counts, raw_n_per_bin, *, n_terms=2, detect
     density, not itself a Poisson count, so 1/sqrt(counts) is the wrong
     error model (it varies the wrong way with bin width/position) --
     getting this wrong made every functional family tried look inadequate
-    until it was fixed; see adr/0011's own investigation history.
+    until it was fixed; see adr/0012's own investigation history.
     raw_n_per_bin: the actual raw event count behind each bin (not
     density) -- pass the real per-bin value, not an assumed constant,
     even though an equal-count binning convention makes it approximately
@@ -176,7 +217,7 @@ def fit_sum_of_exponentials(erecoil, counts, raw_n_per_bin, *, n_terms=2, detect
     guess: a sum of exponentials is a classically ill-conditioned
     nonlinear fit (components trade off against each other, and a
     one-term-collapses-to-a-constant degeneracy is easy to land on from a
-    bad start) -- see adr/0011 for a worked example of exactly that
+    bad start) -- see adr/0012 for a worked example of exactly that
     failure mode.
 
     Returns a PErecoilFit (erecoil_max = erecoil.max(); chi2_dof recorded
@@ -234,7 +275,7 @@ def check_fit_against_events(fit, erecoil_events):
     conditional shape there; this is independent of fit's own
     normalization range). Returns (ks_statistic, p_value) -- a small
     p-value (e.g. < 0.05) means fit is NOT a statistically adequate
-    description of those events; see adr/0011 for why this check exists
+    description of those events; see adr/0012 for why this check exists
     and matters before trusting a fit for integration."""
     events = np.asarray(erecoil_events, dtype=np.float64)
     lo, hi = float(events.min()), float(events.max())

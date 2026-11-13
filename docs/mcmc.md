@@ -28,6 +28,7 @@ import numpy as np
 import emcee
 from scipy.stats import norm
 import phonon_charge_pdf as pdf
+from phonon_charge_pdf.erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
 
 # define the data region: must match the named table below exactly
 ep_range = (2.5, 350.0)
@@ -38,6 +39,7 @@ BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
           "k": (0.13, 0.22), "F0_NR": (1e-5, 1.0)}
 
 fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
+                      PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER,
                       Ppq_table_NR="NR_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # 1. fails now, not hours into the run
 
@@ -132,6 +134,7 @@ from multiprocessing import Pool
 import numpy as np
 import emcee
 import phonon_charge_pdf as pdf
+from phonon_charge_pdf.erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
 
 # Module level: cheap definitions only -- every worker imports this file.
 # ep_range, eq_range, BOUNDS, Z, EPS, P0_*/Q0_*, PARAM_NAMES, unpack() and
@@ -144,6 +147,7 @@ def init_worker(ep_data, eq_data):
     """Runs once in each worker process, when the pool starts it."""
     global _fit_pdf
     _fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
+                                PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER,
                                 Ppq_table_NR="NR_ep2.5-350_eq0.75-200",
                                 prior_bounds=BOUNDS,
                                 n_workers=1)       # threads: OpenMP only, see below

@@ -115,11 +115,14 @@ requested — nothing currently acts on it; see
 (`h5py` is in `environment.yaml`.) Then hand the tables to `Ppq_compiled`; nothing else in the fit changes:
 
 ```python
+from phonon_charge_pdf.erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
+
 # define the data region: must match what the tables were built for exactly
 ep_range = (2.5, 350.0)
 eq_range = (0.75, 200.0)
 
 fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
+                      PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER,
                       Ppq_table_NR="norm_NR.h5", Ppq_table_ER="norm_ER.h5")
 # fit_pdf.Ppq_integral_NR(...) / fit_pdf.Ppq_integral_ER(...) now interpolate instead of integrating
 ```
@@ -148,7 +151,7 @@ PErecoil spectrum, same as always. If a band instead uses a fitted real
 recoil spectrum (`erecoil_fit.py` -- a sum of exponentials plus a constant,
 fit to real calibration data; **not** a raw table, `erecoil_table.py`: a
 table was found to make the region integral untrustworthy in part of the
-parameter space, see `adr/0011-perecoil-handles-register-a-fit-not-a-
+parameter space, see `adr/0012-perecoil-handles-register-a-fit-not-a-
 table.md`), the normalization table built for it has to use the *same*
 spectrum, or `Ppq_compiled` divides a density computed from one spectrum by
 an integral computed from the other -- wrong, silently

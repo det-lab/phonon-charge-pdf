@@ -190,7 +190,7 @@ def make_grid_spec(band, n_nodes, *, ep_range=DEFAULT_EP_RANGE, eq_range=DEFAULT
     recoil spectrum instead of the closed form, and the table this spec
     builds must only ever be used with a Ppq_compiled given that same
     PErecoil fit (adr/0002-normalization-tables-record-perecoil.md,
-    adr/0011-perecoil-handles-register-a-fit-not-a-table.md)."""
+    adr/0012-perecoil-handles-register-a-fit-not-a-table.md)."""
     spec = _base_spec("grid", band, ep_range, eq_range, fixed, default_box(band) if box is None else box,
                       epsrel, epsabs, perecoil or {"kind": "closed_form"})
     axes = BAND_AXES[band]
@@ -317,7 +317,7 @@ def _erecoil_handle_for(spec):
     coefficients, rather than reloading some external file, is what lets
     a spec run unchanged on any worker node (Slurm/OSG) with nothing
     file-based to depend on -- a fit (unlike the table this used to be)
-    has no file format of its own at all (adr/0011-perecoil-handles-
+    has no file format of its own at all (adr/0012-perecoil-handles-
     register-a-fit-not-a-table.md). Raises ValueError if the embedded
     coefficients don't hash to the sha256 recorded alongside them (a
     corrupted/hand-edited spec, not a stale file -- there is no file to
@@ -567,7 +567,7 @@ class NormInterpolator:
         # "formula", "a", "b", "C", "sha256", "detector", "source"} --
         # checked against Ppq_compiled's own PErecoil_fit_NR/ER at
         # construction (adr/0002-normalization-tables-record-perecoil.md,
-        # adr/0011-perecoil-handles-register-a-fit-not-a-table.md). None
+        # adr/0012-perecoil-handles-register-a-fit-not-a-table.md). None
         # (e.g. a table built directly from arrays, not from_hdf5) means
         # closed_form.
         self.perecoil = perecoil or {"kind": "closed_form"}
@@ -847,7 +847,7 @@ def _perecoil_from_fit_json(path):
     detector/calibration_source/source optional) -- and return its own
     perecoil_identity(). A fit has no dedicated file format of its own
     (unlike the table this used to be: a fit is 2*n+1 numbers, not worth
-    one -- adr/0011-perecoil-handles-register-a-fit-not-a-table.md); this
+    one -- adr/0012-perecoil-handles-register-a-fit-not-a-table.md); this
     is deliberately the plainest thing that can hold them. `a`/`b`/`C`
     here are the RAW (pre-normalization) fit coefficients and the Erecoil
     range they were fit over -- exactly erecoil_fit.fit_sum_of_exponentials'
@@ -896,7 +896,7 @@ def main(argv=None):
                         "then evaluated with its fitted recoil spectrum instead of the closed "
                         "form, and the resulting table must only be used with a Ppq_compiled given "
                         "this same PErecoil fit (adr/0002-normalization-tables-record-perecoil.md, "
-                        "adr/0011-perecoil-handles-register-a-fit-not-a-table.md). "
+                        "adr/0012-perecoil-handles-register-a-fit-not-a-table.md). "
                         "Default: closed form, same as today.")
     p.add_argument("--out", required=True)
 

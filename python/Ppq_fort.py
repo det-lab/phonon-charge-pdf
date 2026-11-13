@@ -3,7 +3,9 @@ Ppq_compiled is the one intended entrypoint for using this library in a fit or
 MCMC -- if you want normalized PDF values or a likelihood, start here:
 
     from Ppq_fort import Ppq_compiled
+    from erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
     likelihood = Ppq_compiled(ep_range, eq_range, ep_data, eq_data,
+                 PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER,
                  norm_epsrel=1e-4, norm_epsabs=1e-10)
     normalized = likelihood.Ppq_normalized_densities_NR(k=k, Z=Z, F0=F0, eps=eps, V=V,
                                              p0=p0, p10=p10, q0=q0, q10=q10)
@@ -116,26 +118,31 @@ class Ppq_compiled:
         (or its absence), rather than silently normalizing a fitted-spectrum
         density with a closed-form integral or vice versa
         (adr/0002-normalization-tables-record-perecoil.md).
-    PErecoil_fit_NR, PErecoil_fit_ER : erecoil_fit.PErecoilFit, or None
-        Fitted true-recoil-energy spectrum for that band (see
-        erecoil_fit.py -- a sum of exponentials plus a constant, fit to
-        real calibration data with erecoil_fit.fit_sum_of_exponentials),
-        replacing the closed-form biexponential PErecoil_NR/PErecoil_ER
-        inside every Erecoil integral -- unlike Ppq_table_NR/ER, this changes
-        the density itself, not just its normalization. Not a table
-        (erecoil_table.py, which stays the right tool for simulation and
-        for checking a fit against the real data it summarizes, just not
-        for this): adr/0011-perecoil-handles-register-a-fit-not-a-table.md
-        found that even a noise-free table makes the quadrature's region
-        integral untrustworthy in part of the parameter space, which this
-        family is immune to by construction (globally smooth, no local
-        structure at any scale, the same property the closed form has).
+    PErecoil_fit_NR, PErecoil_fit_ER : erecoil_fit.PErecoilFit
+        Required, no default: the true-recoil-energy spectrum for that
+        band, same as every other physics parameter here (e.g. k/Z are
+        still required for an ER-only fit) -- pass
+        erecoil_fit.CF252_BIEXPONENTIAL_NR/_ER explicitly for the
+        library's own closed form, not by leaving this out
+        (adr/0011-recoil-spectrum-always-explicit.md: "nobody chooses the
+        closed form; it's what you get by saying nothing" was the bug this
+        closes). For real calibration data, a sum of exponentials plus a
+        constant fit to it with erecoil_fit.fit_sum_of_exponentials --
+        never a table (erecoil_table.py, which stays the right tool for
+        simulation and for checking a fit against the real data it
+        summarizes, just not for this): adr/0012-perecoil-handles-
+        register-a-fit-not-a-table.md found that even a noise-free table
+        makes the quadrature's region integral untrustworthy in part of
+        the parameter space, which this family is immune to by
+        construction (globally smooth, no local structure at any scale,
+        the same property the closed form has -- CF252_BIEXPONENTIAL_NR/ER
+        are ordinary instances of it, registering one costs nothing extra).
         If the fit's own metadata says a band, it must match this
         keyword's band. Registered once, at construction, into a handle
         this instance stores and passes explicitly on every call after
         that (adr/0003-per-instance-perecoil-tables.md) -- not ambient
         state, so a second Ppq_compiled or _Ppq_fort_bindings.Ppq_densities,
-        with or without its own PErecoil_fit_NR/ER, coexists fine in the
+        with or without the same PErecoil_fit_NR/ER, coexists fine in the
         same process, including evaluated alternately (a joint Cf + Ba
         fit, say).
     prior_bounds : dict or None
@@ -155,9 +162,9 @@ class Ppq_compiled:
     """
 
     def __init__(self, ep_range, eq_range, ep_data, eq_data, *,
+                 PErecoil_fit_NR, PErecoil_fit_ER,
                  norm_epsrel=None, norm_epsabs=None,
                  Ppq_table_NR=None, Ppq_table_ER=None, prior_bounds=None,
-                 PErecoil_fit_NR=None, PErecoil_fit_ER=None,
                  n_workers=None):
         # A table only ever replaces the normalization integral, never the
         # per-event PDF evaluation (_Ppq_densities_NR/_Ppq_densities_ER always need
@@ -193,7 +200,7 @@ class Ppq_compiled:
     def _check_perecoil(band, norm_table, perecoil_fit):
         """Raise ValueError unless norm_table's recorded `perecoil`
         (adr/0002-normalization-tables-record-perecoil.md,
-        adr/0011-perecoil-handles-register-a-fit-not-a-table.md) matches
+        adr/0012-perecoil-handles-register-a-fit-not-a-table.md) matches
         the PErecoil_fit_NR/ER this instance was actually given --
         otherwise the normalization integral and the density it divides
         would use different Erecoil spectra, with no error. Only `sha256`

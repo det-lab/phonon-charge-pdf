@@ -4,7 +4,7 @@ for simulation and for checking a fitted spectrum against the real data it
 summarizes. NOT used by the compiled Fortran quadrature path (Ppq_compiled,
 _Ppq_fort_bindings.Ppq_densities, normgrid.py) -- that takes a smooth,
 globally-analytic erecoil_fit.PErecoilFit instead (see that module's own
-docstring and adr/0011-perecoil-handles-register-a-fit-not-a-table.md for
+docstring and adr/0012-perecoil-handles-register-a-fit-not-a-table.md for
 why: a table, even noise-free, was found to introduce a parameter-dependent
 Gauss-Legendre precision floor the quadrature doesn't have for a smooth fit).
 

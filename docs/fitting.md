@@ -17,6 +17,7 @@ import numpy as np
 import scipy.optimize
 from scipy.stats import norm
 import phonon_charge_pdf as pdf
+from phonon_charge_pdf.erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
 
 # 1. Define your region: your analysis ROI in keV -- the same (Ep, Eq) window
 # your data is already cut to. 2.5-350 / 0.75-200 is this project's region;
@@ -35,6 +36,7 @@ BOUNDS = {"V": (2.7, 3.3), "p0": (0.0129, 0.1155), "p10": (0.3, 0.6),
           "k": (0.13, 0.22), "F0_NR": (1e-5, 1.0)}
 
 fit_pdf = pdf.Ppq_compiled(ep_range, eq_range, ep_data, eq_data,  # ep_data/eq_data: your measured events, keV
+                      PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER,
                       Ppq_table_NR="NR_ep2.5-350_eq0.75-200",
                       prior_bounds=BOUNDS)                  # fails now, not partway into the fit
 

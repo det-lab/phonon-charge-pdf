@@ -2,7 +2,7 @@
 Tests for the fitted PErecoil's Fortran port: PErecoil_fit_register
 (python/internal/_Ppq_fort_bindings.py -> src/Ppq_fort_s.f90's eval_fit,
 via the handle-based registry -- see adr/0003-per-instance-perecoil-
-tables.md, adr/0011-perecoil-handles-register-a-fit-not-a-table.md), and
+tables.md, adr/0012-perecoil-handles-register-a-fit-not-a-table.md), and
 Ppq_compiled's construction-time band-metadata check (python/internal/
 _Ppq_fort_bindings.py's _load_erecoil_fit, shared with that module's
 Ppq_densities).
@@ -36,7 +36,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "internal"))
 import Ppq_py as ppq
-from erecoil_fit import PErecoilFit
+from erecoil_fit import PErecoilFit, CF252_BIEXPONENTIAL_ER
 from Ppq_fort import Ppq_compiled
 from _Ppq_fort_bindings import PErecoil_fit_register, make_Ppq_densities_NR, make_Ppq_densities_ER
 
@@ -155,13 +155,15 @@ wrong_band_fit = PErecoilFit([1.0], [20.0], 0.0, erecoil_max=400.0, detector="TE
 check("Ppq_compiled rejects a PErecoil fit whose metadata says the wrong band",
       raises(ValueError, lambda: Ppq_compiled(
           EP_RANGE, EQ_RANGE, ep_data, eq_data,
-          norm_epsrel=1e-4, norm_epsabs=1e-10, PErecoil_fit_NR=wrong_band_fit)))
+          norm_epsrel=1e-4, norm_epsabs=1e-10,
+          PErecoil_fit_NR=wrong_band_fit, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER)))
 
 # A correctly-labeled fit is accepted, registers a real handle, and
 # Ppq_compiled's own density call reads from it correctly.
 good_fit = PErecoilFit([0.5, 0.5], [8.0, 25.0], 0.0, erecoil_max=400.0, detector="TEST", band="NR")
 fit_pdf = Ppq_compiled(EP_RANGE, EQ_RANGE, ep_data, eq_data,
-                       norm_epsrel=1e-4, norm_epsabs=1e-10, PErecoil_fit_NR=good_fit)
+                       norm_epsrel=1e-4, norm_epsabs=1e-10,
+                       PErecoil_fit_NR=good_fit, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER)
 check("Ppq_compiled accepts a PErecoil fit",
       fit_pdf.PErecoil_fit_NR is not None and fit_pdf.nr_table_handle > 0)
 want_compiled = ppq.Ppq_inspect_NR(float(ep_data[0]), float(eq_data[0]), erecoil_step=ERECOIL_STEP,

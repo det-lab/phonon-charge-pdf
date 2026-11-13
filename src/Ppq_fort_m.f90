@@ -19,7 +19,7 @@ module Ppq_fort_m
     !! with different fits (e.g. a joint Cf + Ba fit's two Ppq_compiled
     !! instances) can't interfere with each other, under any concurrency
     !! pattern. See adr/0003-per-instance-perecoil-tables.md and
-    !! adr/0011-perecoil-handles-register-a-fit-not-a-table.md.
+    !! adr/0012-perecoil-handles-register-a-fit-not-a-table.md.
     integer(c_int), value :: n
     real(c_double), intent(in) :: Ep_arr(n), Eq_arr(n)
     real(c_double), value :: k, Z, F0, eps, V, p0, p10, q0, q10
@@ -110,7 +110,7 @@ module Ppq_fort_m
     !! user-specified function: every term is globally smooth (no local
     !! structure at any scale), which is the actual property this
     !! library's quadrature needs (see
-    !! adr/0011-perecoil-handles-register-a-fit-not-a-table.md). A
+    !! adr/0012-perecoil-handles-register-a-fit-not-a-table.md). A
     !! PCHIP-interpolated or smoothed *table* built from real calibration
     !! data does not have that property, and was found to introduce a
     !! parameter-dependent Gauss-Legendre precision floor near the phonon

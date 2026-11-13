@@ -23,12 +23,17 @@ Current records:
 | `0008-no-per-call-data-shipping.md` | Proposed | workers build their own `Ppq_compiled`; it refuses to be pickled and warns on unguarded scripts |
 | `0009-convergence-errors-in-likelihoods.md` | Proposed | likelihoods let `GLConvergenceError` propagate, never `-inf` |
 | `0010-region-integral-precision-vs-dataset-size.md` | Proposed | a converged region integral's precision floor isn't checked against dataset size; the per-event term has no analog at all |
-| `0011-perecoil-handles-register-a-fit-not-a-table.md` | Accepted | a PErecoil handle registers a smooth, curated fit (sum of exponentials + constant), not an arbitrary table -- a table was found to reintroduce the precision floor 0010 measured |
+| `0011-recoil-spectrum-always-explicit.md` | Proposed | the recoil spectrum is a required argument, the same object for `generate_events` and `Ppq_compiled`; no silent Cf-252 default |
+| `0012-perecoil-handles-register-a-fit-not-a-table.md` | Accepted | a PErecoil handle registers a smooth, curated fit (sum of exponentials + constant), not an arbitrary table -- a table was found to reintroduce the precision floor 0010 measured |
 
 0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.
+Wherever a record mentions `MCMC_demo/`, it means
+[`nrFanoII_paper2022/MCMC_demo/`](https://github.com/villano-lab/nrFanoII_paper2022/tree/master/MCMC_demo),
+the analysis repository that uses this library; it isn't part of this repository.
 0010 came out of validating `Ppq_densities`/`generate_events` against a real tabulated
-`PErecoil` on `feature/erecoil-table-pdf`; 0011 came out of following up on 0010's own
-measurement.
+`PErecoil` on `feature/erecoil-table-pdf`; 0011 and 0012 came out of following up on
+0010's own measurement, independently -- 0011 on making every spectrum choice explicit,
+0012 on what representation is actually safe to register with the compiled quadrature.
 
 ## Writing one
 

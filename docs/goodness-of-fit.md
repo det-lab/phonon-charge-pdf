@@ -130,7 +130,7 @@ expected = pdf.goodness_of_fit.expected_counts_from_pdf(
 `pdf_func`/`inner_points_func` are ignored (and may be `None`) on this path. This matters
 most once `PErecoil` is a fitted spectrum rather than the closed form
 (`erecoil_fit.PErecoilFit`, registered via `Ppq_densities`/`Ppq_compiled`'s own
-`PErecoil_fit_NR`/`_ER` -- see `adr/0011-perecoil-handles-register-a-fit-not-a-table.md` for
+`PErecoil_fit_NR`/`_ER` -- see `adr/0012-perecoil-handles-register-a-fit-not-a-table.md` for
 why a fit, not a table, backs this): a dedicated Fortran region integral
 (`Ppq_region_NR`/`ER`, already ridge-aware) is faster than treating `pdf_func` as an opaque
 callable regardless of representation, with no per-bin ridge rediscovery needed.
@@ -147,7 +147,7 @@ are being compared against the fit -- a real mismatch, not a cosmetic one.
 
 A handful of bins can still fail the order-256 doubling check at a tight `epsrel`/`epsabs`
 (a genuinely hard parameter region, not expected from PErecoil representation any more --
-`erecoil_fit.PErecoilFit` is globally smooth, see `adr/0011`) — `Ppq_region_NR`/`ER`
+`erecoil_fit.PErecoilFit` is globally smooth, see `adr/0012`) — `Ppq_region_NR`/`ER`
 raise `GLConvergenceError` rather than return an unverified number in that case.
 `make_region_integral_NR`/`ER` retry automatically (`max_epsrel`/`max_epsabs`, both
 defaulted to 100x `epsrel`/`epsabs` — the worst tolerance you'll accept, not a retry count),

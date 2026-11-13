@@ -26,6 +26,7 @@ def check(name, condition, detail=""):
 
 
 import phonon_charge_pdf as bd  # noqa: E402 -- the import itself is part of what's tested
+import phonon_charge_pdf.erecoil_fit as erecoil_fit  # noqa: E402 -- pure Python, no Fortran needed to construct these
 
 check("import phonon_charge_pdf with no compiled library present", True)
 check("Ppq_compiled is exported", hasattr(bd, "Ppq_compiled"))
@@ -77,7 +78,9 @@ except Exception as e:
     check("Ppq_inspect_NR runs with no Fortran library", False, repr(e))
 
 try:
-    bd.Ppq_compiled((0, 1), (0, 1), [], [], norm_epsrel=0.1, norm_epsabs=0.1)
+    bd.Ppq_compiled((0, 1), (0, 1), [], [], norm_epsrel=0.1, norm_epsabs=0.1,
+                    PErecoil_fit_NR=erecoil_fit.CF252_BIEXPONENTIAL_NR,
+                    PErecoil_fit_ER=erecoil_fit.CF252_BIEXPONENTIAL_ER)
     check("Ppq_compiled() raises at construction without the Fortran library", False,
           "construction succeeded -- it should have failed fast instead")
 except RuntimeError as e:

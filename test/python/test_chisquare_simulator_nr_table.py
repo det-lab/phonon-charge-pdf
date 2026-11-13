@@ -6,7 +6,7 @@ the compiled PDF evaluates a smooth FIT (erecoil_fit.PErecoilFit) built to
 track that same table closely (see FIT_NR below) -- the table-aware sibling
 of test_chisquare_simulator_nr.py, which checks exactly the same thing for
 the closed form. A table and a fit that tracks it closely are deliberately
-different representations here (adr/0011-perecoil-handles-register-a-fit-
+different representations here (adr/0012-perecoil-handles-register-a-fit-
 not-a-table.md: the compiled quadrature path only takes a fit, not a
 table), so this is also, incidentally, a check that FIT_NR is close enough
 to TABLE_NR for the two sides to agree -- not just that each side
@@ -23,7 +23,7 @@ Observable range
 Much narrower than test_chisquare_simulator_nr.py's, and with a wide
 safety margin inside erecoil_tables/402_NR_Cf.h5's own range (0 to
 ~207.65 keV) -- FIT_NR, unlike TABLE_NR, has no range of its own to run
-off the edge of (adr/0011), but TABLE_NR still bounds what the
+off the edge of (adr/0012), but TABLE_NR still bounds what the
 simulator (sampler_NR_table, below) can actually draw, so the region
 stays well inside it regardless:
 
@@ -49,7 +49,7 @@ python/internal/_Ppq_fort_bindings.py); make_region_integral_NR's retry
 (max_epsrel/max_epsabs, both defaulted to 100x epsrel/epsabs) handles
 that per bin if it ever happens, rather than this test (or a real fit)
 uniformly giving up precision everywhere to survive one bad bin. FIT_NR,
-being globally smooth (adr/0011), is not expected to need this the way a
+being globally smooth (adr/0012), is not expected to need this the way a
 table's own small-scale statistical roughness could -- kept here as a
 safety net, not because this test is known to exercise it.
 
@@ -111,7 +111,7 @@ EQ_RANGE = (0.5,   30.0)    # keV -- charge channel
 TABLE_NR = PErecoilTable.from_hdf5(REPO_ROOT / "erecoil_tables" / "402_NR_Cf.h5")
 
 # The compiled quadrature path takes a globally-smooth FIT, not a table
-# (adr/0011-perecoil-handles-register-a-fit-not-a-table.md: even a
+# (adr/0012-perecoil-handles-register-a-fit-not-a-table.md: even a
 # noise-free table makes the region integral untrustworthy in part of
 # the parameter space). Fit one directly to TABLE_NR's own smooth curve,
 # sampled densely -- this test only needs FIT_NR to track TABLE_NR
@@ -134,7 +134,7 @@ FIT_NR = fit_sum_of_exponentials(_fit_erecoil, _fit_density, np.ones_like(_fit_d
 # ---------------------------------------------------------------------------
 # N_EVENTS deliberately smaller than this file's old (table vs table) 10,000:
 # FIT_NR is a globally-smooth approximation of TABLE_NR, not TABLE_NR itself
-# (adr/0011) -- it does not, and should not, chase TABLE_NR's own small-scale
+# (adr/0012) -- it does not, and should not, chase TABLE_NR's own small-scale
 # statistical noise (checked directly: the worst disagreement, ~40% locally
 # at Erecoil~15.6 keV, sits exactly on a real Poisson dip/bump in the real
 # calibration data no sum of positive exponentials can reproduce, structurally,
@@ -252,7 +252,7 @@ print(f"  KS p-value   : {ks_p:.4f}   (informational only -- see below)")
 print()
 # A loose mean-only bound, not ks_p > 0.05 / a tight mean bound (this file's
 # old, table-vs-itself thresholds): FIT_NR is a globally-smooth approximation
-# of TABLE_NR, not TABLE_NR itself (adr/0011), so it does NOT chase TABLE_NR's
+# of TABLE_NR, not TABLE_NR itself (adr/0012), so it does NOT chase TABLE_NR's
 # own small-scale statistical noise -- checked directly, the worst
 # disagreement (~40% locally at Erecoil~15.6 keV) sits exactly on a real
 # Poisson dip/bump in the real calibration data that no sum of positive

@@ -111,16 +111,20 @@ check("matching Z/eps accepted", np.isfinite(table(**mid, Z=32.0, eps=3.0e-3)))
 
 # ---- Ppq_compiled uses a table when given one ----
 from Ppq_fort import Ppq_compiled
+from erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
 ep_rng, eq_rng = ng.DEFAULT_EP_RANGE, ng.DEFAULT_EQ_RANGE
 ep_d, eq_d = np.array([50.0, 60.0]), np.array([20.0, 25.0])
-fit = Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=table)
+CF252_KW = dict(PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER)
+fit = Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=table, **CF252_KW)
 mid_full = dict(mid, Z=32.0, eps=3.0e-3)
 check("Ppq_compiled.Ppq_integral_NR interpolates the table", fit.Ppq_integral_NR(**mid_full) == table(**mid, Z=32.0, eps=3.0e-3))
 check("Ppq_compiled without table or tolerances refuses to guess",
-      raises(ValueError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d).Ppq_integral_NR(**mid_full)))
+      raises(ValueError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, **CF252_KW).Ppq_integral_NR(**mid_full)))
 check("Ppq_compiled rejects a table built for a different region",
-      raises(ValueError, lambda: Ppq_compiled((2.0, 100.0), (4.0, 100.0), ep_d, eq_d, Ppq_table_NR=table)))
-check("Ppq_compiled rejects a table for the wrong band", raises(ValueError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_ER=table)))
+      raises(ValueError, lambda: Ppq_compiled((2.0, 100.0), (4.0, 100.0), ep_d, eq_d, Ppq_table_NR=table, **CF252_KW)))
+check("Ppq_compiled rejects a table for the wrong band", raises(ValueError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_ER=table, **CF252_KW)))
+check("Ppq_compiled requires PErecoil_fit_NR/ER explicitly (TypeError, not a silent closed-form default)",
+      raises(TypeError, lambda: Ppq_compiled(ep_rng, eq_rng, ep_d, eq_d)))
 
 # ---- worker: crash tolerance, resume, retry (fake evaluator) ----
 os.environ["NORMGRID_FAKE"] = "1"
@@ -204,14 +208,20 @@ with tempfile.TemporaryDirectory() as d:
 
         from Ppq_fort import Ppq_compiled as _Ppq_compiled_pe
         check("Ppq_compiled (a) accepts a norm table with its matching PErecoil fit",
-              _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe, PErecoil_fit_NR=pe_a) is not None)
-        check("Ppq_compiled (b) raises when no PErecoil fit is given for a norm table built with one",
-              raises(ValueError, lambda: _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe)))
+              _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe, PErecoil_fit_NR=pe_a,
+                               PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER) is not None)
+        check("Ppq_compiled (b) raises when the closed form is given for a norm table built with a real fit",
+              raises(ValueError, lambda: _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe,
+                                                           PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR,
+                                                           PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER)))
         check("Ppq_compiled (c) raises when given a DIFFERENT PErecoil fit than the norm table was built with",
               raises(ValueError, lambda: _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_pe,
-                                                           PErecoil_fit_NR=pe_b)))
-        check("Ppq_compiled (d) still accepts a closed-form norm table with no PErecoil fit",
-              _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_cf) is not None)
+                                                           PErecoil_fit_NR=pe_b,
+                                                           PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER)))
+        check("Ppq_compiled (d) still accepts a closed-form norm table with the closed form explicitly",
+              _Ppq_compiled_pe(ep_rng, eq_rng, ep_d, eq_d, Ppq_table_NR=t_cf,
+                               PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR,
+                               PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER) is not None)
 
         # ---- a pre-adr/0002 table (no perecoil recorded) is a hard fail, no migration path ----
         old_h5 = os.path.join(d, "old_v2.h5")

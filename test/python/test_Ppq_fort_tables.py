@@ -19,6 +19,9 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "python"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "python", "cli"))
 import normgrid as ng
 from Ppq_fort import Ppq_compiled
+from erecoil_fit import CF252_BIEXPONENTIAL_NR, CF252_BIEXPONENTIAL_ER
+
+CF252_KW = dict(PErecoil_fit_NR=CF252_BIEXPONENTIAL_NR, PErecoil_fit_ER=CF252_BIEXPONENTIAL_ER)
 
 failures = []
 
@@ -48,11 +51,12 @@ def fake_table(band):
     nodes = {a: ng.chebyshev_lobatto(*box[a], 2) for a in axes}
     return ng.NormInterpolator(axes, nodes, np.ones([2] * len(axes)), band=band,
                                ep_range=EP_RANGE, eq_range=EQ_RANGE,
-                               fixed=ng._base_spec("grid", band, EP_RANGE, EQ_RANGE, ng.DEFAULT_FIXED, box, 1e-7, 1e-13)["fixed"])
+                               fixed=ng._base_spec("grid", band, EP_RANGE, EQ_RANGE, ng.DEFAULT_FIXED, box, 1e-7, 1e-13,
+                                                   {"kind": "closed_form"})["fixed"])
 
 
 nr, er = fake_table("NR"), fake_table("ER")
-make = lambda **kw: Ppq_compiled(EP_RANGE, EQ_RANGE, [10.0], [5.0], Ppq_table_NR=nr, Ppq_table_ER=er, **kw)
+make = lambda **kw: Ppq_compiled(EP_RANGE, EQ_RANGE, [10.0], [5.0], Ppq_table_NR=nr, Ppq_table_ER=er, **CF252_KW, **kw)
 
 shared = dict(V=(2.7, 3.3), p0=(0.2 * ng.P0_MEAN, 1.8 * ng.P0_MEAN), p10=(0.3, 0.6),
               q0=(0.2 * ng.Q0_MEAN, 1.8 * ng.Q0_MEAN), q10=(0.2, 0.4))
@@ -65,7 +69,7 @@ check("ER F0 below the ER box fails, naming the ER table", msg is not None and "
 msg = error_of(ng.PriorNotCoveredError, lambda: make(prior_bounds=dict(prior, V=(2.5, 4.0))))
 check("shared V too wide fails", msg is not None and "V: prior reaches" in msg)
 check("prior_bounds without a table is an error",
-      error_of(ValueError, lambda: Ppq_compiled(EP_RANGE, EQ_RANGE, [10.0], [5.0], prior_bounds=prior)) is not None)
+      error_of(ValueError, lambda: Ppq_compiled(EP_RANGE, EQ_RANGE, [10.0], [5.0], prior_bounds=prior, **CF252_KW)) is not None)
 
 pdf = make()
 tb = pdf.table_bounds()
@@ -94,7 +98,7 @@ walkers["F0_ER"][5] = 0.5
 msg = error_of(ng.PriorNotCoveredError, lambda: pdf.check_points(walkers))
 check("one walker outside the ER F0 range fails, naming it", msg is not None and "1 of 32" in msg and "point 5" in msg)
 
-msg = error_of(KeyError, lambda: Ppq_compiled(EP_RANGE, EQ_RANGE, [10.0], [5.0], Ppq_table_NR="no_such_table"))
+msg = error_of(KeyError, lambda: Ppq_compiled(EP_RANGE, EQ_RANGE, [10.0], [5.0], Ppq_table_NR="no_such_table", **CF252_KW))
 check("a table that is neither a file nor registered: KeyError", msg is not None and "registered" in msg)
 
 print()

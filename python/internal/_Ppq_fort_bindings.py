@@ -189,7 +189,7 @@ def _load_library():
 
     # The only state-mutating entry point -- see PErecoil_fit_register
     # below and adr/0003-per-instance-perecoil-tables.md,
-    # adr/0011-perecoil-handles-register-a-fit-not-a-table.md.
+    # adr/0012-perecoil-handles-register-a-fit-not-a-table.md.
     _api.PErecoil_fit_register.argtypes = [
         _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int, ctypes.c_double,
     ]
@@ -419,7 +419,7 @@ def PErecoil_fit_register(a, b, C):
     handle: a, b (each term's amplitude and decay length, same length)
     and C (the constant floor) -- see erecoil_fit.PErecoilFit.fortran_params
     for exactly this shape, and that module's own docstring for the
-    convention (adr/0011-perecoil-handles-register-a-fit-not-a-table.md).
+    convention (adr/0012-perecoil-handles-register-a-fit-not-a-table.md).
     Pass the returned handle to make_Ppq_densities_NR/ER,
     Ppq_region_NR/ER(_with_error), etc. to evaluate against this fit. The
     only state-mutating call -- see adr/0003-per-instance-perecoil-
@@ -441,7 +441,7 @@ def _load_erecoil_fit(fit, band):
     erecoil_range to validate against the region: it's a sum of
     exponentials plus a constant, defined and smooth for every
     Erecoil >= 0, with nothing for a Fortran search window to run off the
-    edge of (adr/0011-perecoil-handles-register-a-fit-not-a-table.md) --
+    edge of (adr/0012-perecoil-handles-register-a-fit-not-a-table.md) --
     so there is no analogous construction-time check to make here."""
     if fit is None:
         return None, 0
@@ -473,7 +473,7 @@ class Ppq_densities:
     that -- not ambient state, so two Ppq_densities (or Ppq_compiled)
     instances with different fits coexist in one process fine, under any
     concurrency pattern. See adr/0003-per-instance-perecoil-tables.md,
-    adr/0011-perecoil-handles-register-a-fit-not-a-table.md.
+    adr/0012-perecoil-handles-register-a-fit-not-a-table.md.
     """
 
     def __init__(self, ep_range, eq_range, *,

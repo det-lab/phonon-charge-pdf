@@ -38,7 +38,7 @@ submodule(Ppq_fort_m) Ppq_fort_s
   integer, parameter :: max_modes = 4
 
   ! Fitted PErecoil registry (adr/0003-per-instance-perecoil-tables.md,
-  ! adr/0011-perecoil-handles-register-a-fit-not-a-table.md): the fit is
+  ! adr/0012-perecoil-handles-register-a-fit-not-a-table.md): the fit is
   ! an explicit argument of evaluation (table_handle, carried inside
   ! detector_params_t below), not ambient global state -- a
   ! Ppq_compiled/Ppq_densities registers its own fit(s) once at
@@ -56,7 +56,7 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! user-specified function: every term is globally smooth (no local
   ! structure at any scale, unlike a table built from real calibration
   ! data), which is what this library's quadrature actually needs --
-  ! adr/0011 found that a table (even noise-free: smoothing the raw data
+  ! adr/0012 found that a table (even noise-free: smoothing the raw data
   ! only partly helped) introduces a parameter-dependent Gauss-Legendre
   ! precision floor near the phonon resolution model's degenerate edge
   ! (p10 -> p0) that this family is immune to, same as the closed form.
@@ -259,7 +259,7 @@ contains
   ! ER_impl's own convention (the integration/mode scan can transiently
   ! probe just below zero). No upper bound to enforce: unlike a table,
   ! this family is defined (and smooth) for every Erecoil >= 0, which is
-  ! exactly the property adr/0011 needed -- see table_hi_bound below.
+  ! exactly the property adr/0012 needed -- see table_hi_bound below.
   pure function eval_fit(Erecoil, a, b, C, n) result(res)
       real(c_double), intent(in) :: Erecoil
       integer, intent(in) :: n
@@ -319,7 +319,7 @@ contains
   ! nor a registered fit (a sum of exponentials plus a constant, defined
   ! for every Erecoil >= 0) has a finite range to clip to -- unlike a
   ! table, which used to need this to avoid eval_cubic_table running off
-  ! its own edge (see adr/0011-perecoil-handles-register-a-fit-not-a-
+  ! its own edge (see adr/0012-perecoil-handles-register-a-fit-not-a-
   ! table.md). Kept as a function, not inlined at every call site, so
   ! integrate_Ppq/locate_modes don't need to change if a future handle
   ! kind ever needs a real bound again.
@@ -1407,7 +1407,7 @@ contains
 
       ! NaN, not error stop: this is a legitimate, sometimes-expected
       ! outcome (a tight epsrel/epsabs against a region with genuinely
-      ! hard-to-resolve small-scale behavior -- adr/0011-perecoil-
+      ! hard-to-resolve small-scale behavior -- adr/0012-perecoil-
       ! handles-register-a-fit-not-a-table.md found exactly this near the
       ! phonon resolution model's degenerate edge, p10 -> p0, which is
       ! why a registered PErecoil must be a smooth fit, not a table),
