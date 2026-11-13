@@ -259,7 +259,9 @@ contains
   ! ER_impl's own convention (the integration/mode scan can transiently
   ! probe just below zero). No upper bound to enforce: unlike a table,
   ! this family is defined (and smooth) for every Erecoil >= 0, which is
-  ! exactly the property adr/0012 needed -- see table_hi_bound below.
+  ! exactly the property adr/0012 needed -- so integrate_Ppq/locate_modes
+  ! below have no finite Erecoil range to clip their search window to,
+  ! unlike when a registered handle could be a table with a real edge.
   pure function eval_fit(Erecoil, a, b, C, n) result(res)
       real(c_double), intent(in) :: Erecoil
       integer, intent(in) :: n
@@ -314,21 +316,6 @@ contains
       end if
       res = PGa_over_PGb * exp(-Erecoil / PGb) + one_minus_PGa_over_PGd * exp(-Erecoil / PGd)
   end function PErecoil_ER_impl
-
-  ! No bound (huge) regardless of table_handle: neither the closed form
-  ! nor a registered fit (a sum of exponentials plus a constant, defined
-  ! for every Erecoil >= 0) has a finite range to clip to -- unlike a
-  ! table, which used to need this to avoid eval_cubic_table running off
-  ! its own edge (see adr/0012-perecoil-handles-register-a-fit-not-a-
-  ! table.md). Kept as a function, not inlined at every call site, so
-  ! integrate_Ppq/locate_modes don't need to change if a future handle
-  ! kind ever needs a real bound again.
-  pure function table_hi_bound(table_handle) result(hi)
-      integer(c_int), intent(in) :: table_handle
-      real(c_double) :: hi
-
-      hi = huge(1.0d0)
-  end function table_hi_bound
 
   ! The only non-pure procedure in this file: copies a/b/C into a new,
   ! append-only registry slot and returns its index as a handle -- see
@@ -619,13 +606,12 @@ contains
   !
   ! n_modes = 0 signals failure; the caller falls back to the original
   ! full-range grid.
-  pure subroutine locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, table_hi, &
+  pure subroutine locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, &
                                erecoil_m, sig_m, H_m, bnd_m, n_modes)
       real(c_double), intent(in) :: Ep, Eq
       type(detector_params_t), intent(in) :: pars
       real(c_double), intent(in) :: sp2, sq2
       logical, intent(in) :: is_ER
-      real(c_double), intent(in) :: table_hi
       real(c_double), intent(out) :: erecoil_m(max_modes), sig_m(max_modes), H_m(max_modes)
       logical, intent(out) :: bnd_m(max_modes)
       integer, intent(out) :: n_modes
@@ -653,10 +639,7 @@ contains
       logical :: ok, duplicate
 
       n_modes = 0
-      ! Clipped to table_hi (always huge(1.0d0) -- see table_hi_bound,
-      ! kept as a no-op now that every registered handle, fit or closed
-      ! form, is defined for every Erecoil >= 0).
-      maxx_scan = min(max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0), table_hi)
+      maxx_scan = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
 
       dlx = (log(maxx_scan) - log(x_scan_min)) / (n_scan - 1)
       do ik = 1, n_scan
@@ -705,7 +688,7 @@ contains
               ! Boundary mode: integrand decays away from the low-Erecoil edge
               x = xs(1)
               d = 1.0d-5
-              H1 = (log_integrand_approx(min(x + d, table_hi), Ep, Eq, pars, sp2, sq2, is_ER) &
+              H1 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_ER) &
                   - Hs(1)) / d
               if (H1 >= 0.0d0) cycle
               n_modes = n_modes + 1
@@ -722,13 +705,13 @@ contains
               ! Accept the scan point with finite-difference curvature if usable
               x = xs(ik)
               d = max(1.0d-5, 1.0d-5 * x)
-              H2 = (log_integrand_approx(min(x + d, table_hi), Ep, Eq, pars, sp2, sq2, is_ER) &
+              H2 = (log_integrand_approx(x + d, Ep, Eq, pars, sp2, sq2, is_ER) &
                   - 2.0d0 * Hs(ik) &
                   + log_integrand_approx(max(x - d, 0.0d0), Ep, Eq, pars, sp2, sq2, is_ER)) / d**2
               if (H2 >= 0.0d0) cycle
           end if
           sig = 1.0d0 / sqrt(-H2)
-          Hv  = log_integrand_approx(min(x, table_hi), Ep, Eq, pars, sp2, sq2, is_ER)
+          Hv  = log_integrand_approx(x, Ep, Eq, pars, sp2, sq2, is_ER)
           if (sig /= sig .or. sig <= 1.0d-6 .or. sig > maxx_scan) cycle
 
           ! Drop refinements that landed on an already-recorded mode
@@ -776,15 +759,9 @@ contains
           H2_out = 0.0d0
           do it = 1, 60
               dd = max(1.0d-4, 1.0d-4 * xx)
-              ! Clamped to table_hi (always a no-op now, see table_hi_bound):
-              ! xx's own speculative Newton steps below are
-              ! only sanity-checked against 1.5*maxx_scan AFTER being
-              ! taken, so without this, a probe here could already be
-              ! well past a loaded table's edge before that check ever
-              ! fires.
               Hm = log_integrand_approx(max(xx - dd, 0.0d0), Ep, Eq, pars, sp2, sq2, is_ER)
-              H0 = log_integrand_approx(min(xx,      table_hi), Ep, Eq, pars, sp2, sq2, is_ER)
-              Hp = log_integrand_approx(min(xx + dd, table_hi), Ep, Eq, pars, sp2, sq2, is_ER)
+              H0 = log_integrand_approx(xx,      Ep, Eq, pars, sp2, sq2, is_ER)
+              Hp = log_integrand_approx(xx + dd, Ep, Eq, pars, sp2, sq2, is_ER)
               H1_out = (Hp - Hm) / (2.0d0 * dd)
               H2_out = (Hp - 2.0d0 * H0 + Hm) / dd**2
               if (H2_out >= 0.0d0) return
@@ -795,7 +772,6 @@ contains
               else
                   xx = xx + step
               end if
-              xx = min(xx, table_hi)
               if (xx > 1.5d0 * maxx_scan) return
               if (abs(step) < 1.0d-4) then
                   converged = .true.
@@ -874,7 +850,7 @@ contains
       type(detector_params_t), intent(in) :: pars
       logical, intent(in) :: is_ER
       real(c_double) :: res
-      real(c_double) :: sp2, sq2, maxx_scan, resolution, table_hi
+      real(c_double) :: sp2, sq2, maxx_scan, resolution
       real(c_double) :: erecoil_m(max_modes), sig_m(max_modes), H_m(max_modes)
       logical :: bnd_m(max_modes)
       real(c_double) :: w_lo(max_modes), w_hi(max_modes), w_ht(max_modes), w_sig(max_modes)
@@ -884,15 +860,14 @@ contains
 
       sp2 = sigp(Ep, pars%eps, pars%V, pars%p0, pars%p10)**2
       sq2 = sigq(Eq, pars%q0, pars%q10)**2
-      table_hi = table_hi_bound(pars%table_handle)
 
-      call locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, table_hi, &
+      call locate_modes(Ep, Eq, pars, sp2, sq2, is_ER, &
                         erecoil_m, sig_m, H_m, bnd_m, n_modes)
 
       if (n_modes == 0) then
           ! Last resort: the original fine grid over the full range.
           ! Guaranteed correct, rarely taken.
-          maxx_scan  = min(max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0), table_hi)
+          maxx_scan  = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
           resolution = merge(0.002d0, 0.01d0, maxx_scan < 15.0d0)
           npts = int((maxx_scan - erecoil_min) / resolution) + 1
           res  = integrate_window(erecoil_min, resolution, npts, Ep, Eq, pars, is_ER)
@@ -907,15 +882,14 @@ contains
 
       ! One window per mode: +/- 8 sigma around an interior peak; for a
       ! boundary decay, 35 decay lengths puts the truncated tail below
-      ! 1e-15 relative. Clipped to table_hi (always a no-op, see
-      ! table_hi_bound).
+      ! 1e-15 relative.
       do m = 1, n_modes
           if (bnd_m(m)) then
               w_lo(m) = erecoil_min
-              w_hi(m) = min(erecoil_m(m) + 35.0d0 * sig_m(m), table_hi)
+              w_hi(m) = erecoil_m(m) + 35.0d0 * sig_m(m)
           else
               w_lo(m) = max(erecoil_min, erecoil_m(m) - 8.0d0 * sig_m(m))
-              w_hi(m) = min(erecoil_m(m) + 8.0d0 * sig_m(m), table_hi)
+              w_hi(m) = erecoil_m(m) + 8.0d0 * sig_m(m)
           end if
           w_ht(m)  = sig_m(m) / 6.0d0
           w_sig(m) = sig_m(m)
@@ -962,7 +936,7 @@ contains
           ! the full trapezoid weight of the union.
           lo_limit = erecoil_min
           if (m > 1) lo_limit = w_hi(m - 1)
-          hi_limit = table_hi
+          hi_limit = huge(1.0d0)
           if (m < n_win) hi_limit = min(hi_limit, w_lo(m + 1))
           w_lo(m) = max(w_lo(m), lo_limit)
 

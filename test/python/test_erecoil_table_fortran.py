@@ -9,8 +9,7 @@ Ppq_densities).
 
 The fit is an explicit table_handle argument of every real evaluation
 call, not ambient global state: PErecoil_NR/ER themselves stay
-closed-form-only (see table_hi_bound's own comment in Ppq_fort_s.f90), so
-this cross-checks the real compute path (Ppq_NR/ER, via
+closed-form-only, so this cross-checks the real compute path (Ppq_NR/ER, via
 make_Ppq_densities_NR/ER) against Ppq_py.py's slow, independent
 Ppq_inspect_NR/ER(p_erecoil=...) reference instead of probing PErecoil_NR
 directly.
