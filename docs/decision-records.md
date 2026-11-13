@@ -25,6 +25,7 @@ Current records:
 | `0010-region-integral-precision-vs-dataset-size.md` | Proposed | a converged region integral's precision floor isn't checked against dataset size; the per-event term has no analog at all |
 | `0011-recoil-spectrum-always-explicit.md` | Proposed | the recoil spectrum is a required argument, the same object for `generate_events` and `Ppq_compiled`; no silent Cf-252 default |
 | `0012-perecoil-handles-register-a-fit-not-a-table.md` | Accepted | a PErecoil handle registers a smooth, curated fit (sum of exponentials + constant), not an arbitrary table -- a table was found to reintroduce the precision floor 0010 measured |
+| `0013-kde-table-with-bandwidth-margin-for-non-monotonic-spectra.md` | Proposed | a PErecoil handle may also register a KDE table, with an enforced minimum bandwidth margin over the resolution model's own floor -- for recoil spectra (Ba-133's ER contamination bump) the curated fit family structurally cannot represent; also proposes error-reporting for Ppq_NR/ER, not just the region integral |
 
 0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.
 Wherever a record mentions `MCMC_demo/`, it means
@@ -34,6 +35,9 @@ the analysis repository that uses this library; it isn't part of this repository
 `PErecoil` on `feature/erecoil-table-pdf`; 0011 and 0012 came out of following up on
 0010's own measurement, independently -- 0011 on making every spectrum choice explicit,
 0012 on what representation is actually safe to register with the compiled quadrature.
+0013 came out of finding a real recoil spectrum (Ba-133's ER band) that 0012's own
+curated fit family cannot represent at all, and revisiting 0012's own table-vs-fit
+measurement with that case in mind.
 
 ## Writing one
 
