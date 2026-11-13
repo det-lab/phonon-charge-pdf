@@ -812,6 +812,16 @@ def validate(table_path, heldout_spec_path, result_paths, n_worst=5, accept=None
     that worst-case relative error (the CLI turns FAIL into exit status 1)."""
     table = NormInterpolator.from_hdf5(table_path)
     spec = load_spec(heldout_spec_path)
+    # Held-out points computed with a different recoil spectrum than the
+    # table's would validate the wrong integral (adr/0002); compare the same
+    # way Ppq_compiled does -- kind, and sha256 for a fitted spectrum.
+    spec_pe = spec.get("perecoil", {"kind": "closed_form"})
+    if (spec_pe["kind"], spec_pe.get("sha256")) != (table.perecoil["kind"], table.perecoil.get("sha256")):
+        raise ValueError(
+            f"{heldout_spec_path} was computed with perecoil kind={spec_pe['kind']!r} "
+            f"sha256={spec_pe.get('sha256')!r}, but {table_path} was built with kind="
+            f"{table.perecoil['kind']!r} sha256={table.perecoil.get('sha256')!r}; rebuild the held-out "
+            "spec with the same --perecoil-fit-json as the table")
     vals, _, _ = gather_results(spec, result_paths)
     errs, rows = [], []
     for i in np.flatnonzero(~np.isnan(vals)):
@@ -860,7 +870,7 @@ def _perecoil_from_fit_json(path):
     from erecoil_fit import PErecoilFit
     with open(path) as f:
         spec = json.load(f)
-    kwargs = {k: spec[k] for k in ("detector", "calibration_source", "source", "family") if k in spec}
+    kwargs = {k: spec[k] for k in ("detector", "calibration_source", "source", "family", "band") if k in spec}
     fit = PErecoilFit(spec["a"], spec["b"], spec["C"], erecoil_max=spec["erecoil_max"], **kwargs)
     return fit.perecoil_identity()
 

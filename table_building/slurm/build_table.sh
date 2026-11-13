@@ -37,6 +37,14 @@
 #                 suggests when an MCMC prior reaches outside a table.  A custom
 #                 box gets its own build directory and table name (tag
 #                 suffix _box<hash>): study and held-out results depend on it.
+#   PERECOIL_FIT_JSON=   a PErecoil fit JSON (normgrid._perecoil_from_fit_json)
+#                 to integrate with instead of the closed-form recoil spectrum
+#                 (adr/0002-normalization-tables-record-perecoil.md,
+#                 adr/0012-perecoil-handles-register-a-fit-not-a-table.md).
+#                 Used by the study, the grid and the held-out points alike;
+#                 its own "band" field must match BAND.  The tag (build
+#                 directory, table name) gets the file's basename appended,
+#                 e.g. NR_ep3-85_eq2-40_402_NR_Cf.
 #   ACCOUNT= PARTITION= TIME=   passed to sbatch when set
 #   PDF_SIF=/scratch/$USER/containers/pdf.sif   the container (as in
 #                 normgrid.sbatch); checked here before anything is submitted
@@ -60,6 +68,14 @@ if [[ -n "${BOX:-}" ]]; then
     read -r -a BOX_ARGS <<< "$BOX"
     # the hash of the sorted entries names the box: same box, same directory
     TAG+=_box$(printf '%s\n' "${BOX_ARGS[@]}" | sort | sha1sum | cut -c1-8)
+fi
+PERECOIL_ARGS=()
+if [[ -n "${PERECOIL_FIT_JSON:-}" ]]; then
+    [[ -f "$PERECOIL_FIT_JSON" ]] || { echo "PERECOIL_FIT_JSON=$PERECOIL_FIT_JSON: no such file" >&2; exit 2; }
+    PE_BAND=$("${PYTHON:-python3}" -c "import json, sys; print(json.load(open(sys.argv[1])).get('band', ''))" "$PERECOIL_FIT_JSON")
+    [[ "$PE_BAND" == "$BAND" ]] || { echo "PERECOIL_FIT_JSON=$PERECOIL_FIT_JSON is a band '$PE_BAND' spectrum, not $BAND" >&2; exit 2; }
+    PERECOIL_ARGS=(--perecoil-fit-json "$PERECOIL_FIT_JSON")
+    TAG+=_$(basename "$PERECOIL_FIT_JSON" .json)
 fi
 WORK=${WORKDIR:-build/$TAG}
 PLAN=$WORK/tol$TOL
@@ -114,8 +130,9 @@ check_tasks() {   # check_tasks JOB N: fail unless all N tasks of array JOB are 
 
 echo "== 1. study: how many nodes does each axis need? ($TAG)"
 "${NP[@]}" points --band "$BAND" --ep-range "${EP_RANGE[@]}" --eq-range "${EQ_RANGE[@]}" --epsrel "$EPSREL" ${BOXOPT[@]+"${BOXOPT[@]}"} \
-    --out "$WORK/study.json"
+    ${PERECOIL_ARGS[@]+"${PERECOIL_ARGS[@]}"} --out "$WORK/study.json"
 [[ -n "${BOX:-}" ]] && echo "   box: $BOX"
+[[ -n "${PERECOIL_FIT_JSON:-}" ]] && echo "   PErecoil: $PERECOIL_FIT_JSON"
 array "$WORK/study.json" "$STUDY_CHUNK" "$WORK/study_results"
 
 echo "== 2. plan: node counts for tol $TOL"
@@ -124,7 +141,7 @@ echo "== 2. plan: node counts for tol $TOL"
 
 echo "== 3. grid and held-out points"
 "${NG[@]}" make-random-spec --band "$BAND" --n "$HELDOUT" --ep-range "${EP_RANGE[@]}" --eq-range "${EQ_RANGE[@]}" --epsrel "$EPSREL" \
-    ${BOXOPT[@]+"${BOXOPT[@]}"} \
+    ${BOXOPT[@]+"${BOXOPT[@]}"} ${PERECOIL_ARGS[@]+"${PERECOIL_ARGS[@]}"} \
     --out "$WORK/held.json"
 array "$WORK/held.json" "$HELD_CHUNK" "$WORK/held_results" &
 held_pid=$!
@@ -140,7 +157,7 @@ else
     NEW_TOL=$("$PYTHON" -c "print(f'{$TOL / 4:.0e}')")
     echo "== FAILED the held-out check (worst error above ACCEPT=$ACCEPT); table kept at $OUT_TABLE" >&2
     echo "   the per-axis study cannot see cross terms; retry with more nodes:" >&2
-    echo "   TOL=$NEW_TOL sbatch table_building/slurm/build_table.job $BAND $EP_MIN $EP_MAX $EQ_MIN $EQ_MAX" >&2
+    echo "   TOL=$NEW_TOL${BOX:+ BOX=\"$BOX\"}${PERECOIL_FIT_JSON:+ PERECOIL_FIT_JSON=$PERECOIL_FIT_JSON} sbatch table_building/slurm/build_table.job $BAND $EP_MIN $EP_MAX $EQ_MIN $EQ_MAX" >&2
     echo "   (the study and held-out points are reused)" >&2
     exit 1
 fi

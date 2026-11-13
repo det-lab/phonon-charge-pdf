@@ -1,0 +1,10 @@
+{
+  "a": [3.381382121450043, 0.0015266834917536068],
+  "b": [0.169520023, 279.552394],
+  "C": 0.0,
+  "erecoil_max": 1e5,
+  "band": "ER",
+  "detector": "test_build_table.sh fixture",
+  "calibration_source": "Cf-252",
+  "source": "erecoil_fit.CF252_BIEXPONENTIAL_ER's own raw (pre-normalization) coefficients"
+}
