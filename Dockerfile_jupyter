@@ -140,7 +140,8 @@ ENV LD_LIBRARY_PATH=/home/jovyan/lib:$LD_LIBRARY_PATH
 # hash-checked at build time -- HPC compute nodes often have no internet.
 # python/cli/normtables.py (and so Ppq(Ppq_table_NR=NAME)) finds them here.
 ENV PDF_TABLES_DIR=/home/jovyan/tables
-RUN mkdir -p "${PDF_TABLES_DIR}" && python python/cli/normtables.py fetch --all
+RUN mkdir -p "${PDF_TABLES_DIR}" && python python/cli/normtables.py fetch --all \
+    && chmod -R a+rX "${PDF_TABLES_DIR}"
 
 EXPOSE 8888
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]
