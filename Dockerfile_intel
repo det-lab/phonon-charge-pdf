@@ -126,7 +126,8 @@ ENV LD_LIBRARY_PATH=/app/lib:/opt/anaconda/envs/pdf/lib:${LD_LIBRARY_PATH}
 # hash-checked at build time -- HPC compute nodes often have no internet.
 # python/cli/normtables.py (and so Ppq(Ppq_table_NR=NAME)) finds them here.
 ENV PDF_TABLES_DIR=/app/tables
-RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all
+RUN mkdir -p /app/tables && python /app/python/cli/normtables.py fetch --all \
+    && chmod -R a+rX /app/tables
 
 CMD fpm test --compiler ifx --flag "-fpp -O3 -qopenmp -DHAVE_MULTI_IMAGE_SUPPORT=0" --profile release \
     && echo "--- profile_driver output ---" \
