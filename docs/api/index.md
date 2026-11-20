@@ -14,11 +14,15 @@ their own since nothing outside goodness-of-fit testing needs them). For
 
 `Ppq_compiled`'s `PErecoil_fit_NR`/`PErecoil_fit_ER` arguments are required and take a
 `phonon_charge_pdf.erecoil_fit.PErecoilFit` — either one you fit yourself
-(`fit_sum_of_exponentials`, checked against real events with `check_fit_against_events`), or
-the two ready-made closed-form constants, `CF252_BIEXPONENTIAL_NR`/`CF252_BIEXPONENTIAL_ER`,
-used throughout the examples on this site. See
+(`fit_sum_of_exponentials` for a monotonically-declining spectrum, or
+`fit_turnon_times_sum_of_exponentials` for one with a real near-threshold turn-on, both
+checked against real events with `check_fit_against_events`), or the two ready-made
+closed-form constants, `CF252_BIEXPONENTIAL_NR`/`CF252_BIEXPONENTIAL_ER`, used throughout
+the examples on this site. See
 `adr/0012-perecoil-handles-register-a-fit-not-a-table.md` for why a handle registers a fit
-and not an arbitrary table.
+and not an arbitrary table, and `adr/0014-perecoil-valid-region-and-turnon-family.md` for
+the turn-on family and each fit's own `valid_min`/`valid_max` (evaluating outside it raises
+rather than silently extrapolating).
 
 ::: phonon_charge_pdf
     options:
@@ -53,6 +57,7 @@ and not an arbitrary table.
       members:
         - PErecoilFit
         - fit_sum_of_exponentials
+        - fit_turnon_times_sum_of_exponentials
         - check_fit_against_events
         - CF252_BIEXPONENTIAL_NR
         - CF252_BIEXPONENTIAL_ER

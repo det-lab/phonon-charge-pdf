@@ -191,9 +191,17 @@ def _load_library():
     # below and adr/0003-per-instance-perecoil-tables.md,
     # adr/0012-perecoil-handles-register-a-fit-not-a-table.md.
     _api.PErecoil_fit_register.argtypes = [
-        _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int, ctypes.c_double,
+        _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
     ]
     _api.PErecoil_fit_register.restype = ctypes.c_int
+
+    # Same registration pattern, for the turnon_times_sum_of_exponentials_
+    # plus_const family (adr/0014) -- see PErecoil_turnon_fit_register below.
+    _api.PErecoil_turnon_fit_register.argtypes = [
+        _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
+        ctypes.c_double, ctypes.c_double,
+    ]
+    _api.PErecoil_turnon_fit_register.restype = ctypes.c_int
 
     return _api
 
@@ -414,12 +422,20 @@ def Ppq_region_ER_with_error(ep_min, ep_max, eq_min, eq_max, *,
     return res.value, error_estimate.value
 
 
-def PErecoil_fit_register(a, b, C):
+def PErecoil_fit_register(a, b, C, valid_min, valid_max):
     """Register a fitted true-recoil-energy spectrum and return its
     handle: a, b (each term's amplitude and decay length, same length)
     and C (the constant floor) -- see erecoil_fit.PErecoilFit.fortran_params
     for exactly this shape, and that module's own docstring for the
     convention (adr/0012-perecoil-handles-register-a-fit-not-a-table.md).
+    valid_min/valid_max (adr/0014) are the Erecoil range this fit is
+    trustworthy over -- pass (0.0, math.inf) for "valid everywhere this
+    family stays smooth"; evaluating outside them (via Ppq_NR/ER,
+    Ppq_vector_NR/ER, Ppq_region_NR/ER) returns a quiet NaN, protecting a
+    direct Fortran caller the same way PErecoilFit.__call__ already
+    protects a Python one. No silent default here either -- required,
+    same "nobody chooses by saying nothing" reasoning as everything else
+    in this module.
     Pass the returned handle to make_Ppq_densities_NR/ER,
     Ppq_region_NR/ER(_with_error), etc. to evaluate against this fit. The
     only state-mutating call -- see adr/0003-per-instance-perecoil-
@@ -430,24 +446,55 @@ def PErecoil_fit_register(a, b, C):
     api = _load_library()
     a = np.ascontiguousarray(np.asarray(a, dtype=np.float64))
     b = np.ascontiguousarray(np.asarray(b, dtype=np.float64))
-    return api.PErecoil_fit_register(a, b, a.size, float(C))
+    return api.PErecoil_fit_register(a, b, a.size, float(C), float(valid_min), float(valid_max))
+
+
+def PErecoil_turnon_fit_register(a, b, C, x_on, w_on, valid_min, valid_max):
+    """Same as PErecoil_fit_register, for the
+    turnon_times_sum_of_exponentials_plus_const family (adr/0014) -- a, b,
+    C as before, plus x_on/w_on (the fitted turn-on location/width) and
+    valid_min/valid_max (see PErecoil_fit_register's own docstring). See
+    erecoil_fit.fit_turnon_times_sum_of_exponentials for where x_on/w_on
+    come from; nobody hand-types them."""
+    api = _load_library()
+    a = np.ascontiguousarray(np.asarray(a, dtype=np.float64))
+    b = np.ascontiguousarray(np.asarray(b, dtype=np.float64))
+    return api.PErecoil_turnon_fit_register(a, b, a.size, float(C), float(x_on), float(w_on),
+                                            float(valid_min), float(valid_max))
 
 
 def _load_erecoil_fit(fit, band):
-    """Register fit (PErecoil_fit_register) and return (fit, handle) --
-    or (None, 0) if fit is None, meaning the closed form for this band.
+    """Register fit (PErecoil_fit_register, or PErecoil_turnon_fit_register
+    for the turnon family) and return (fit, handle) -- or (None, 0) if fit
+    is None, meaning the closed form for this band.
 
-    Unlike a table (erecoil_table.py's old role here), a fit has no
-    erecoil_range to validate against the region: it's a sum of
-    exponentials plus a constant, defined and smooth for every
-    Erecoil >= 0, with nothing for a Fortran search window to run off the
-    edge of (adr/0012-perecoil-handles-register-a-fit-not-a-table.md) --
-    so there is no analogous construction-time check to make here."""
+    The registered function (plain or turnon) is unconditionally smooth
+    for every Erecoil >= 0, with nothing for a Fortran search window to
+    run off the edge of (adr/0012-perecoil-handles-register-a-fit-not-a-
+    table.md) -- so there is still no construction-time *smoothness*
+    check to make here, regardless of family. That is a separate thing
+    from whether fit is *trustworthy* everywhere it's smooth: fit's own
+    valid_min/valid_max (adr/0014) cross into Fortran right here, as two
+    more registration arguments -- PErecoil_NR_impl/ER_impl return a
+    quiet NaN for any Erecoil >= 0 outside them, directly inside
+    Ppq_NR/ER's own compute path, not just in PErecoilFit.__call__'s
+    Python-side check. This does NOT guard against the quadrature's own
+    adaptive integration window pushing an analysis past a narrower
+    valid_max while chasing a slowly-decaying tail (integrate_Ppq's
+    window expansion is governed by the registered fit's own decay
+    shape, not by any externally-knowable "requested Erecoil range") --
+    that would surface as NaN propagating into a region integral/density
+    result instead, which Ppq_region_NR/ER's own NaN-convergence-failure
+    path (GLConvergenceError) is already set up to catch."""
     if fit is None:
         return None, 0
     if getattr(fit, "band", "") and fit.band != band:
         raise ValueError(f"PErecoil_fit_{band}: fit's own metadata says band={fit.band!r}")
-    handle = PErecoil_fit_register(*fit.fortran_params)
+    if getattr(fit, "family", None) == "turnon_times_sum_of_exponentials_plus_const":
+        handle = PErecoil_turnon_fit_register(fit.a, fit.b, fit.C, fit.x_on, fit.w_on,
+                                              fit.valid_min, fit.valid_max)
+    else:
+        handle = PErecoil_fit_register(*fit.fortran_params)
     return fit, handle
 
 

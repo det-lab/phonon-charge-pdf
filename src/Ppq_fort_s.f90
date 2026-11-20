@@ -71,9 +71,34 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! to happen at construction, before any concurrent evaluation begins,
   ! same requirement PErecoil_set_table_NR/ER used to document.
   integer(c_int), parameter :: max_perecoil_fits = 256
+  ! is_turnon/x_on/w_on: the turnon_times_sum_of_exponentials_plus_const
+  ! family (adr/0014) -- a smooth rising step (modeling a detector's own
+  ! near-threshold trigger/ionization efficiency ramping up) times the
+  ! same sum-of-exponentials-plus-floor shape every other registered fit
+  ! already uses. is_turnon=.false. (the default) is the plain family;
+  ! x_on/w_on are unused then, so a plain fit's registration never has to
+  ! think about this extension.
+  !
+  ! valid_min/valid_max: the Erecoil range this fit is actually
+  ! trustworthy over (adr/0014) -- separate from whether the underlying
+  ! family stays merely smooth, which is unconditional for every family
+  ! here. PErecoil_NR_impl/ER_impl return a quiet NaN for any Erecoil >= 0
+  ! outside this range, the same "invalid input surfaces as NaN, not a
+  ! crash" convention region_integral_gl already uses for a GL doubling
+  ! failure -- the point being this guard protects a *direct* Fortran
+  ! caller the same way PErecoilFit.__call__ already protects a Python
+  ! one; it is not about deriving a safe bound from the Ep/Eq analysis
+  ! box (no such bound exists in general -- integrate_Ppq's own window
+  ! expansion is governed by the registered fit's own decay shape, not by
+  ! Ep/Eq, so capping it externally isn't the right fix for that
+  ! separate question). Defaults (0, huge) are "valid everywhere",
+  ! matching every fit registered before this record existed.
   type :: perecoil_fit_t
       real(c_double), allocatable :: a(:), b(:)
       real(c_double) :: C
+      logical :: is_turnon = .false.
+      real(c_double) :: x_on = 0.0d0, w_on = 1.0d0
+      real(c_double) :: valid_min = 0.0d0, valid_max = huge(1.0d0)
   end type perecoil_fit_t
   type(perecoil_fit_t) :: fit_registry(max_perecoil_fits)
   integer(c_int) :: fit_registry_count = 0
@@ -262,11 +287,62 @@ contains
   ! exactly the property adr/0012 needed -- so integrate_Ppq/locate_modes
   ! below have no finite Erecoil range to clip their search window to,
   ! unlike when a registered handle could be a table with a real edge.
-  pure function eval_fit(Erecoil, a, b, C, n) result(res)
+  ! The same holds with x_on/w_on present (adr/0014): erf is smooth and
+  ! bounded everywhere, so multiplying by it doesn't reopen that question.
+  !
+  ! x_on/w_on are optional, not a second family-specific function, so the
+  ! plain family's call sites (PErecoil_NR_impl/ER_impl below, when
+  ! f%is_turnon is .false.) are unchanged -- present(x_on) is the only
+  ! branch this adds.
+  ! A quiet NaN, same convention region_integral_gl already uses ("invalid
+  ! input surfaces as NaN, not a crash") -- factored out here since
+  ! PErecoil_NR_impl/ER_impl's own valid-region guard (adr/0014) needs the
+  ! identical one-liner in two places. Still used for a *transient* probe
+  ! past a fit's valid region (Newton's own search, or any other internal
+  ! evaluation that never becomes an accepted mode) -- see
+  ! check_valid_region below for the loud, process-ending counterpart used
+  ! once a mode is actually accepted.
+  elemental function quiet_nan() result(res)
+      use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+      real(c_double) :: res
+      res = ieee_value(res, ieee_quiet_nan)
+  end function quiet_nan
+
+  ! A genuinely accepted Erecoil value (a located mode, or the upper bound
+  ! of the last-resort full-range grid) landing outside a registered fit's
+  ! valid region (adr/0014) is not a transient numerical overshoot the way
+  ! Newton's own search can be -- it means the real physics this analysis
+  ! needs lies where this fit was never checked against data, a structural
+  ! mismatch between the fit and the analysis using it. Nothing about
+  ! retrying with a looser tolerance fixes that (unlike a failed
+  ! Gauss-Legendre doubling, which genuinely can be retried), so this is
+  ! error stop, not a NaN a caller might catch-and-continue past: whoever
+  ! is fitting needs new data or different parameters before any MCMC or
+  ! table-building result that used this fit can be trusted. table_handle
+  ! = 0 (closed form) is always valid everywhere, so this is a no-op then.
+  pure subroutine check_valid_region(x, pars)
+      real(c_double), intent(in) :: x
+      type(detector_params_t), intent(in) :: pars
+
+      if (pars%table_handle > 0) then
+          associate (f => fit_registry(pars%table_handle))
+              if (x < f%valid_min .or. x > f%valid_max) &
+                  error stop "integrate_Ppq: a PErecoil evaluation this analysis actually needs " // &
+                      "(a located mode, or the full-range fallback's own upper bound) landed " // &
+                      "outside this fit's registered valid region -- this fit does not cover the " // &
+                      "Erecoil range this analysis needs. Rebuild the analysis region, or refit " // &
+                      "this detector over a wider/different range, before trusting any result " // &
+                      "(MCMC, table-building, or otherwise) that used it."
+          end associate
+      end if
+  end subroutine check_valid_region
+
+  pure function eval_fit(Erecoil, a, b, C, n, x_on, w_on) result(res)
       real(c_double), intent(in) :: Erecoil
       integer, intent(in) :: n
       real(c_double), intent(in) :: a(n), b(n)
       real(c_double), intent(in) :: C
+      real(c_double), intent(in), optional :: x_on, w_on
       real(c_double) :: res
 
       if (Erecoil < 0.0d0) then
@@ -274,6 +350,9 @@ contains
           return
       end if
       res = sum(a * exp(-Erecoil / b)) + C
+      if (present(x_on)) then
+          res = 0.5d0 * (1.0d0 + erf((Erecoil - x_on) / w_on)) * res
+      end if
   end function eval_fit
 
   ! table_handle = 0 always means closed-form, for both bands -- see
@@ -291,7 +370,15 @@ contains
 
       if (table_handle > 0) then
           associate (f => fit_registry(table_handle))
-              res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a))
+              if (Erecoil >= 0.0d0 .and. (Erecoil < f%valid_min .or. Erecoil > f%valid_max)) then
+                  res = quiet_nan()
+                  return
+              end if
+              if (f%is_turnon) then
+                  res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a), f%x_on, f%w_on)
+              else
+                  res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a))
+              end if
           end associate
           return
       end if
@@ -310,7 +397,15 @@ contains
 
       if (table_handle > 0) then
           associate (f => fit_registry(table_handle))
-              res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a))
+              if (Erecoil >= 0.0d0 .and. (Erecoil < f%valid_min .or. Erecoil > f%valid_max)) then
+                  res = quiet_nan()
+                  return
+              end if
+              if (f%is_turnon) then
+                  res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a), f%x_on, f%w_on)
+              else
+                  res = eval_fit(Erecoil, f%a, f%b, f%C, size(f%a))
+              end if
           end associate
           return
       end if
@@ -336,9 +431,35 @@ contains
           f%a = a
           f%b = b
           f%C = C
+          f%valid_min = valid_min
+          f%valid_max = valid_max
       end associate
       handle = fit_registry_count
   end procedure PErecoil_fit_register
+
+  ! Same registration pattern as PErecoil_fit_register, for the
+  ! turnon_times_sum_of_exponentials_plus_const family (adr/0014) -- a
+  ! separate entry point rather than extra optional arguments on
+  ! PErecoil_fit_register itself, so that function's existing bind(c)
+  ! signature never changes for the plain family's own callers.
+  module procedure PErecoil_turnon_fit_register
+      fit_registry_count = fit_registry_count + 1
+      if (fit_registry_count > max_perecoil_fits) &
+          error stop "PErecoil_turnon_fit_register: exceeded max_perecoil_fits PErecoil fits " // &
+              "registered in this process"
+      associate (f => fit_registry(fit_registry_count))
+          allocate (f%a(n), f%b(n))
+          f%a = a
+          f%b = b
+          f%C = C
+          f%is_turnon = .true.
+          f%x_on = x_on
+          f%w_on = w_on
+          f%valid_min = valid_min
+          f%valid_max = valid_max
+      end associate
+      handle = fit_registry_count
+  end procedure PErecoil_turnon_fit_register
 
   ! Lindhard yield, hot-path form: takes Zfac = Z**(-7/3) precomputed once
   ! per Ppq_NR/Ppq_ER call (by integrate_Ppq) instead of recomputing the Z
@@ -866,13 +987,27 @@ contains
 
       if (n_modes == 0) then
           ! Last resort: the original fine grid over the full range.
-          ! Guaranteed correct, rarely taken.
+          ! Guaranteed correct, rarely taken -- but still reaches this
+          ! fit's own registered range the same as any other path, so it
+          ! gets the same valid-region guard (adr/0014), not a silent
+          ! exemption just because it's the rare case.
           maxx_scan  = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
+          call check_valid_region(maxx_scan, pars)
           resolution = merge(0.002d0, 0.01d0, maxx_scan < 15.0d0)
           npts = int((maxx_scan - erecoil_min) / resolution) + 1
           res  = integrate_window(erecoil_min, resolution, npts, Ep, Eq, pars, is_ER)
           return
       end if
+
+      ! Every accepted mode (however locate_modes arrived at it -- Newton-
+      ! refined, finite-difference fallback, or its own "nothing refined
+      ! cleanly" last resort) must itself be inside the registered fit's
+      ! valid region. A transient Newton search step landing outside it is
+      ! not checked here, and isn't worrying (see check_valid_region's own
+      ! comment) -- only what locate_modes actually accepted as real.
+      do m = 1, n_modes
+          call check_valid_region(erecoil_m(m), pars)
+      end do
 
       ! Predicted peak log-value so small the integral underflows to zero
       if (maxval(H_m(1:n_modes)) < -600.0d0) then

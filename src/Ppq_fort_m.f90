@@ -93,11 +93,11 @@ module Ppq_fort_m
     real(c_double) :: res
   end function PErecoil_ER
 
-  module function PErecoil_fit_register(a, b, n, C) result(handle) &
+  module function PErecoil_fit_register(a, b, n, C, valid_min, valid_max) result(handle) &
       bind(c, name="PErecoil_fit_register")
     !! Register a fitted true-recoil-energy spectrum and get back a
     !! **handle** -- that's `handle`, this function's *return value*
-    !! (`result(handle)` above), not any of the four listed arguments.
+    !! (`result(handle)` above), not any of the listed arguments.
     !! Pass the returned handle, in place of `0` (which always means the
     !! closed-form spectrum instead), to Ppq_NR/ER, Ppq_vector_NR/ER, or
     !! Ppq_region_NR/ER(_with_error) to evaluate against this fit.
@@ -123,6 +123,23 @@ module Ppq_fort_m
     !! - `n`: number of exponential terms, i.e. `size(a) == size(b)`.
     !! - `a(n)`, `b(n)`: each term's amplitude and decay length (keV).
     !! - `C`: the constant floor.
+    !! - `valid_min`, `valid_max`: the Erecoil range (keV) this fit is
+    !!   actually trustworthy over (adr/0014-perecoil-valid-region-and-
+    !!   turnon-family.md) -- pass `0.0d0`, `huge(1.0d0)` for "valid
+    !!   everywhere this family stays smooth" (every fit registered
+    !!   before this record existed behaved this way). Evaluating this
+    !!   fit (via Ppq_NR/ER, Ppq_vector_NR/ER, or Ppq_region_NR/ER) at any
+    !!   Erecoil >= 0 outside `[valid_min, valid_max]` returns a quiet
+    !!   NaN -- the same "invalid input surfaces as NaN, not a crash"
+    !!   convention `Ppq_region_NR/ER_with_error` already uses for a
+    !!   failed Gauss-Legendre doubling. This protects a caller using
+    !!   this library directly from Fortran the same way
+    !!   `erecoil_fit.PErecoilFit.__call__`'s own `valid_min`/`valid_max`
+    !!   check already protects a Python one -- nobody hand-types these
+    !!   either in practice; they come from the same fit the rest of this
+    !!   call's arguments do (`erecoil_fit.PErecoilFit.valid_min`/
+    !!   `.valid_max`, already resolved to concrete numbers by the
+    !!   Python-side fit module's own defaults).
     !!
     !! Nobody hand-types `a`/`b`/`C` in practice -- they come from a
     !! weighted least-squares fit to real calibration data, checked
@@ -137,7 +154,7 @@ module Ppq_fort_m
     !! integer(c_int) :: handle
     !! real(c_double) :: a(n), b(n), C, density
     !! ! ... a, b, C come from a weighted fit to real calibration data ...
-    !! handle = PErecoil_fit_register(a, b, n, C)   ! the RESULT
+    !! handle = PErecoil_fit_register(a, b, n, C, 0.0d0, huge(1.0d0))   ! the RESULT
     !! density = Ppq_NR(Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10, handle)
     !! ```
     !!
@@ -148,9 +165,35 @@ module Ppq_fort_m
     !! per fit a Ppq_compiled/Ppq_densities registers at construction.
     integer(c_int), value :: n
     real(c_double), intent(in) :: a(n), b(n)
-    real(c_double), value :: C
+    real(c_double), value :: C, valid_min, valid_max
     integer(c_int) :: handle
   end function PErecoil_fit_register
+
+  module function PErecoil_turnon_fit_register(a, b, n, C, x_on, w_on, valid_min, valid_max) &
+      result(handle) bind(c, name="PErecoil_turnon_fit_register")
+    !! Same as PErecoil_fit_register, for the
+    !! turnon_times_sum_of_exponentials_plus_const family
+    !! (adr/0014-perecoil-valid-region-and-turnon-family.md): a smooth
+    !! rising step times the same sum-of-exponentials-plus-floor shape,
+    !!
+    !! `density(Erecoil) = (0.5*(1 + erf((Erecoil-x_on)/w_on))) *`
+    !! `                   (sum(a(i) * exp(-Erecoil / b(i)), i=1..n) + C)`
+    !!
+    !! -- modeling a detector's own near-threshold trigger/ionization
+    !! efficiency ramping up, rather than discarding that near-threshold
+    !! data and replacing it with a backward extrapolation of the
+    !! above-threshold decline. x_on/w_on come from a fit to real
+    !! calibration data the same way a/b/C do (the Python-side fit
+    !! module's `fit_turnon_times_sum_of_exponentials`); nobody hand-types
+    !! them either. A separate entry point from PErecoil_fit_register, not
+    !! extra optional arguments there, so that function's existing
+    !! bind(c) signature never changes for the plain family. valid_min/
+    !! valid_max work exactly as described on PErecoil_fit_register above.
+    integer(c_int), value :: n
+    real(c_double), intent(in) :: a(n), b(n)
+    real(c_double), value :: C, x_on, w_on, valid_min, valid_max
+    integer(c_int) :: handle
+  end function PErecoil_turnon_fit_register
 
   pure module function pq_given_Erecoil_NR(Erecoil, Ep, Eq, k, Z, F0, eps, V, p0, p10, q0, q10) result(res) bind(c, name="pq_given_Erecoil_NR")
     !! An internal bind(c) handle on the per-Erecoil N-integral piece of

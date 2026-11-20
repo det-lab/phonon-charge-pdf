@@ -326,28 +326,45 @@ def _erecoil_handle_for(spec):
     PErecoilFit here: perecoil["a"]/["C"] are already normalized (see
     PErecoilFit.perecoil_identity()'s own docstring), and PErecoilFit's
     constructor always re-normalizes against a fresh erecoil_max, which
-    would silently double-normalize them."""
+    would silently double-normalize them.
+
+    perecoil["valid_min"]/["valid_max"] (adr/0014) cross into Fortran
+    registration here too, so a worker evaluating this spec gets the same
+    out-of-range-query guard (a quiet NaN, not a silently-wrong number)
+    the fit's own PErecoilFit.__call__ already gives a Python caller
+    poking at it directly. For the turnon_times_sum_of_exponentials_
+    plus_const family, perecoil["x_on"]/["w_on"] are also required and
+    folded into the sha256 recomputation below, matching
+    PErecoilFit.sha256's own (family, a, b, C, [x_on, w_on]) hash exactly."""
     perecoil = spec.get("perecoil", {"kind": "closed_form"})
     if perecoil["kind"] == "closed_form":
         return 0
     key = id(spec)
     if key not in _erecoil_handle_cache:
         sys.path.insert(0, _INTERNAL_DIR)
-        from _Ppq_fort_bindings import PErecoil_fit_register
+        from _Ppq_fort_bindings import PErecoil_fit_register, PErecoil_turnon_fit_register
         a = np.asarray(perecoil["a"], dtype=np.float64)
         b = np.asarray(perecoil["b"], dtype=np.float64)
         C = float(perecoil["C"])
+        is_turnon = perecoil["family"] == "turnon_times_sum_of_exponentials_plus_const"
         h = hashlib.sha256()
         h.update(perecoil["family"].encode())
         h.update(a.tobytes())
         h.update(b.tobytes())
         h.update(np.asarray(C, dtype=np.float64).tobytes())
+        if is_turnon:
+            h.update(np.asarray([perecoil["x_on"], perecoil["w_on"]], dtype=np.float64).tobytes())
         if h.hexdigest() != perecoil["sha256"]:
             raise ValueError(
                 f"this spec's embedded PErecoil fit hashes to sha256={h.hexdigest()}, but the "
                 f"spec itself records sha256={perecoil['sha256']!r} -- the spec file was corrupted "
                 "or hand-edited; regenerate it (make-spec/make-random-spec)")
-        _erecoil_handle_cache[key] = PErecoil_fit_register(a, b, C)
+        valid_min, valid_max = float(perecoil["valid_min"]), float(perecoil["valid_max"])
+        if is_turnon:
+            _erecoil_handle_cache[key] = PErecoil_turnon_fit_register(
+                a, b, C, float(perecoil["x_on"]), float(perecoil["w_on"]), valid_min, valid_max)
+        else:
+            _erecoil_handle_cache[key] = PErecoil_fit_register(a, b, C, valid_min, valid_max)
     return _erecoil_handle_cache[key]
 
 
@@ -853,9 +870,12 @@ def _perecoil_from_fit_json(path):
     """None -> closed form; else build an erecoil_fit.PErecoilFit from the
     small JSON file at `path` -- {"a": [...], "b": [...], "C": ...,
     "erecoil_max": ..., "family": "sum_of_exponentials_plus_const",
-    "detector": "", "calibration_source": "", "source": ""} (family/
-    detector/calibration_source/source optional) -- and return its own
-    perecoil_identity(). A fit has no dedicated file format of its own
+    "detector": "", "calibration_source": "", "source": "", "valid_min":
+    ..., "valid_max": ...} (family/detector/calibration_source/source/
+    valid_min/valid_max optional; "x_on"/"w_on" also optional, required
+    only if "family" is "turnon_times_sum_of_exponentials_plus_const" --
+    see adr/0014-perecoil-valid-region-and-turnon-family.md) -- and return
+    its own perecoil_identity(). A fit has no dedicated file format of its own
     (unlike the table this used to be: a fit is 2*n+1 numbers, not worth
     one -- adr/0012-perecoil-handles-register-a-fit-not-a-table.md); this
     is deliberately the plainest thing that can hold them. `a`/`b`/`C`
@@ -870,7 +890,8 @@ def _perecoil_from_fit_json(path):
     from erecoil_fit import PErecoilFit
     with open(path) as f:
         spec = json.load(f)
-    kwargs = {k: spec[k] for k in ("detector", "calibration_source", "source", "family", "band") if k in spec}
+    kwargs = {k: spec[k] for k in ("detector", "calibration_source", "source", "family", "band",
+                                  "valid_min", "valid_max", "x_on", "w_on") if k in spec}
     fit = PErecoilFit(spec["a"], spec["b"], spec["C"], erecoil_max=spec["erecoil_max"], **kwargs)
     return fit.perecoil_identity()
 
