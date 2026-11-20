@@ -123,13 +123,24 @@ worsens on its own.
    - `os._exit()` is genuinely uncatchable -- no Python-level exception
      machinery runs at all, so nothing downstream can intercept it. The real
      cost: it skips `finally`/context-manager `__exit__`/`atexit` entirely,
-     so nothing gets a chance to flush or clean up. For an MCMC backend that
-     writes incrementally (the emcee HDF5 backend `adr/0009` already relies
-     on), this needs checking directly, not assumed safe: does the backend's
-     own on-disk state stay consistent if the process dies mid-write via
-     `os._exit()`, the same as it would under a segfault or `error stop`?
-     This record requires that question answered (see Consequences) before
-     the conversion ships, not as a follow-up discovered the hard way.
+     so nothing gets a chance to flush or clean up. **Checked directly, not
+     assumed** (forking a child process through `emcee.backends.hdf.HDFBackend`'s
+     real `save_step`, killing it at four points spanning a step's own
+     open-write-close sequence, both via `os._exit()` and a normal uncaught
+     exception -- see Consequences): the file was fully openable in every
+     case tested, because `save_step` opens, writes, and closes the HDF5
+     file fresh on every single step rather than holding it open across the
+     run, so nothing is durably committed until that per-step `close()`
+     actually happens. The only real difference `os._exit()` makes is losing
+     a step whose data was fully written but not yet flushed when the kill
+     landed (a normal exception still saves it, since stack-unwinding runs
+     `close()` on the way out) -- and that window never applies to any of
+     this record's failures: `compute_log_prob` (where they fire) always
+     finishes, success or exception, strictly before emcee's own sampler
+     calls `save_step` for that iteration (confirmed directly in
+     `emcee.ensemble.EnsembleSampler.sample`'s source, not assumed from the
+     docs) -- so the write window and the failure window structurally never
+     overlap.
 
 3. **Not a free pass to add process-killing failures casually.** Both
    reclassified errors, and `check_valid_region`, share the same test: would
@@ -152,12 +163,23 @@ worsens on its own.
   this conversion -- `goodness_of_fit`'s own retry logic depends on it staying
   catchable (`adr/0009`), and the whole point of this record is narrowing
   which category a given failure belongs to, not collapsing the distinction.
-- The `os._exit()` vs. on-disk-consistency question above is a precondition,
-  not a nice-to-have: verify directly (e.g. force an `OutOfBoxError` mid-write
-  against a real emcee HDF5 backend, confirm the file is still readable and
-  resumable afterward) before converting either error type, since getting this
-  wrong would quietly reintroduce exactly the "lost progress" cost `adr/0009`
-  moved away from, for a reason that record never signed up to re-accept.
+- The `os._exit()` vs. on-disk-consistency question is answered, not left
+  open: `adr/0015_hdf5_crash_experiment.py` forks a child process through
+  `emcee.backends.hdf.HDFBackend.save_step` (emcee 3.1.6), killing it at four
+  points spanning a step's own open/write/close sequence via both
+  `os._exit()` and a normal uncaught exception, and found the file fully
+  openable in all eight cases --
+  `save_step` opens, writes, and closes the file fresh every step, so
+  nothing is durably committed until that close actually happens, and a kill
+  before it cleanly reverts to the last fully-completed step rather than
+  corrupting anything. The one real difference `os._exit()` makes (losing a
+  step that was fully written but not yet flushed when killed) cannot
+  coincide with any of this record's failures: `emcee.ensemble.
+  EnsembleSampler.sample`'s own source confirms `compute_log_prob` (where
+  they fire) always completes, success or exception, strictly before
+  `save_step` is called for that iteration -- the write window and the
+  failure window never overlap. This closes the precondition this record
+  originally required before the conversion could ship.
 - `adr/0009`'s own open item -- verifying schwimmbad's `MPIPool` behavior when
   a worker dies (by any mechanism) -- remains open, inherited here rather than
   resolved. Both records now depend on it; it should be settled once, not
