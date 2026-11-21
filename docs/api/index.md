@@ -20,7 +20,7 @@ checked against real events with `check_fit_against_events`), or the two ready-m
 closed-form constants, `CF252_BIEXPONENTIAL_NR`/`CF252_BIEXPONENTIAL_ER`, used throughout
 the examples on this site. See
 `adr/0012-perecoil-handles-register-a-fit-not-a-table.md` for why a handle registers a fit
-and not an arbitrary table, and `adr/0014-perecoil-valid-region-and-turnon-family.md` for
+and not an arbitrary table, and `adr/0016-perecoil-valid-region-and-turnon-family.md` for
 the turn-on family and each fit's own `valid_min`/`valid_max` (evaluating outside it raises
 rather than silently extrapolating).
 

@@ -30,7 +30,7 @@ undo ADR 0001's point in evaluating it from Fortran besides):
     sum_of_exponentials_plus_const:
         density(Erecoil) = sum(a[i] * exp(-Erecoil / b[i]) for i in range(len(a))) + C
 
-    turnon_times_sum_of_exponentials_plus_const (adr/0014):
+    turnon_times_sum_of_exponentials_plus_const (adr/0016):
         density(Erecoil) = (0.5*(1 + erf((Erecoil-x_on)/w_on))) *
                            (sum(a[i] * exp(-Erecoil / b[i]) for i in range(len(a))) + C)
 
@@ -40,12 +40,12 @@ matching Fortran registration path) if a detector's real spectrum
 genuinely needs one -- e.g. a term with a real interior mode -- never by
 letting a caller supply an arbitrary expression.
 
-Each PErecoilFit also carries its own valid_min/valid_max (adr/0014): the
+Each PErecoilFit also carries its own valid_min/valid_max (adr/0016): the
 range it's actually trustworthy over, separate from erecoil_max (the
 normalization bound) and separate from where the underlying family stays
 merely smooth (everywhere, for every family here). Evaluating outside
 that range raises normgrid.OutOfBoxError rather than silently returning
-a number -- see PErecoilFit.__call__ and adr/0014 for why. The same two
+a number -- see PErecoilFit.__call__ and adr/0016 for why. The same two
 numbers also protect a direct Fortran caller once registered
 (PErecoil_fit_register/PErecoil_turnon_fit_register): Ppq_NR/ER return a
 quiet NaN instead, the same convention this library already uses for a
@@ -146,7 +146,7 @@ class PErecoilFit:
     for every Erecoil >= 0: no erecoil_range, nothing to clip a Fortran
     search window to (adr/0012). That smoothness is unconditional and has
     nothing to do with where this is *trustworthy* to evaluate -- see
-    valid_min/valid_max below (adr/0014). The Erecoil < 0 convention below
+    valid_min/valid_max below (adr/0016). The Erecoil < 0 convention below
     matches PErecoilTable/PErecoil_NR/ER's own for consistency, not
     because anything would otherwise go wrong there.
 
@@ -163,7 +163,7 @@ class PErecoilFit:
     is actually trustworthy over -- not a statement about smoothness, but
     about whether it was ever checked against real data there. Calling
     this fit outside [valid_min, valid_max] raises normgrid.OutOfBoxError
-    rather than silently returning a number (adr/0014): the same
+    rather than silently returning a number (adr/0016): the same
     mechanism erecoil_table.PErecoilTable.__call__ already uses for a
     table's own range. The same two numbers also cross into Fortran once
     this fit is registered (fortran_params below, or directly via
@@ -232,7 +232,7 @@ class PErecoilFit:
         """Evaluate the fit -- but first, for any Erecoil >= 0 outside
         [valid_min, valid_max], raise normgrid.OutOfBoxError rather than
         silently returning a number this fit was never checked against
-        real data for (adr/0014). Mirrors erecoil_table.PErecoilTable's
+        real data for (adr/0016). Mirrors erecoil_table.PErecoilTable's
         own call-time check (same tiny relative tolerance for float
         noise, same exception type); Erecoil < 0 keeps returning 0.0,
         matching that same convention."""
@@ -261,7 +261,7 @@ class PErecoilFit:
         (the plain family -- the turnon family's own extra x_on/w_on
         aren't part of this tuple, see _load_erecoil_fit) -- a/b/C already
         normalized, so no extra normalization constant needs to cross into
-        Fortran. valid_min/valid_max (adr/0014) let a direct Fortran
+        Fortran. valid_min/valid_max (adr/0016) let a direct Fortran
         caller get the same out-of-range-evaluation guard
         PErecoilFit.__call__ already gives a Python one."""
         return self.a, self.b, self.C, self.valid_min, self.valid_max

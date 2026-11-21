@@ -72,7 +72,7 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! same requirement PErecoil_set_table_NR/ER used to document.
   integer(c_int), parameter :: max_perecoil_fits = 256
   ! is_turnon/x_on/w_on: the turnon_times_sum_of_exponentials_plus_const
-  ! family (adr/0014) -- a smooth rising step (modeling a detector's own
+  ! family (adr/0016) -- a smooth rising step (modeling a detector's own
   ! near-threshold trigger/ionization efficiency ramping up) times the
   ! same sum-of-exponentials-plus-floor shape every other registered fit
   ! already uses. is_turnon=.false. (the default) is the plain family;
@@ -80,7 +80,7 @@ submodule(Ppq_fort_m) Ppq_fort_s
   ! think about this extension.
   !
   ! valid_min/valid_max: the Erecoil range this fit is actually
-  ! trustworthy over (adr/0014) -- separate from whether the underlying
+  ! trustworthy over (adr/0016) -- separate from whether the underlying
   ! family stays merely smooth, which is unconditional for every family
   ! here. PErecoil_NR_impl/ER_impl return a quiet NaN for any Erecoil >= 0
   ! outside this range, the same "invalid input surfaces as NaN, not a
@@ -287,7 +287,7 @@ contains
   ! exactly the property adr/0012 needed -- so integrate_Ppq/locate_modes
   ! below have no finite Erecoil range to clip their search window to,
   ! unlike when a registered handle could be a table with a real edge.
-  ! The same holds with x_on/w_on present (adr/0014): erf is smooth and
+  ! The same holds with x_on/w_on present (adr/0016): erf is smooth and
   ! bounded everywhere, so multiplying by it doesn't reopen that question.
   !
   ! x_on/w_on are optional, not a second family-specific function, so the
@@ -296,7 +296,7 @@ contains
   ! branch this adds.
   ! A quiet NaN, same convention region_integral_gl already uses ("invalid
   ! input surfaces as NaN, not a crash") -- factored out here since
-  ! PErecoil_NR_impl/ER_impl's own valid-region guard (adr/0014) needs the
+  ! PErecoil_NR_impl/ER_impl's own valid-region guard (adr/0016) needs the
   ! identical one-liner in two places. Still used for a *transient* probe
   ! past a fit's valid region (Newton's own search, or any other internal
   ! evaluation that never becomes an accepted mode) -- see
@@ -310,7 +310,7 @@ contains
 
   ! A genuinely accepted Erecoil value (a located mode, or the upper bound
   ! of the last-resort full-range grid) landing outside a registered fit's
-  ! valid region (adr/0014) is not a transient numerical overshoot the way
+  ! valid region (adr/0016) is not a transient numerical overshoot the way
   ! Newton's own search can be -- it means the real physics this analysis
   ! needs lies where this fit was never checked against data, a structural
   ! mismatch between the fit and the analysis using it. Nothing about
@@ -438,7 +438,7 @@ contains
   end procedure PErecoil_fit_register
 
   ! Same registration pattern as PErecoil_fit_register, for the
-  ! turnon_times_sum_of_exponentials_plus_const family (adr/0014) -- a
+  ! turnon_times_sum_of_exponentials_plus_const family (adr/0016) -- a
   ! separate entry point rather than extra optional arguments on
   ! PErecoil_fit_register itself, so that function's existing bind(c)
   ! signature never changes for the plain family's own callers.
@@ -989,7 +989,7 @@ contains
           ! Last resort: the original fine grid over the full range.
           ! Guaranteed correct, rarely taken -- but still reaches this
           ! fit's own registered range the same as any other path, so it
-          ! gets the same valid-region guard (adr/0014), not a silent
+          ! gets the same valid-region guard (adr/0016), not a silent
           ! exemption just because it's the rare case.
           maxx_scan  = max(1.1d0 * max(Ep, Eq), max(Ep, Eq) + 10.0d0)
           call check_valid_region(maxx_scan, pars)

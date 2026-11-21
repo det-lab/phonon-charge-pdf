@@ -124,7 +124,7 @@ module Ppq_fort_m
     !! - `a(n)`, `b(n)`: each term's amplitude and decay length (keV).
     !! - `C`: the constant floor.
     !! - `valid_min`, `valid_max`: the Erecoil range (keV) this fit is
-    !!   actually trustworthy over (adr/0014-perecoil-valid-region-and-
+    !!   actually trustworthy over (adr/0016-perecoil-valid-region-and-
     !!   turnon-family.md) -- pass `0.0d0`, `huge(1.0d0)` for "valid
     !!   everywhere this family stays smooth" (every fit registered
     !!   before this record existed behaved this way). Evaluating this
@@ -173,7 +173,7 @@ module Ppq_fort_m
       result(handle) bind(c, name="PErecoil_turnon_fit_register")
     !! Same as PErecoil_fit_register, for the
     !! turnon_times_sum_of_exponentials_plus_const family
-    !! (adr/0014-perecoil-valid-region-and-turnon-family.md): a smooth
+    !! (adr/0016-perecoil-valid-region-and-turnon-family.md): a smooth
     !! rising step times the same sum-of-exponentials-plus-floor shape,
     !!
     !! `density(Erecoil) = (0.5*(1 + erf((Erecoil-x_on)/w_on))) *`

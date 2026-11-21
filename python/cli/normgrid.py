@@ -328,7 +328,7 @@ def _erecoil_handle_for(spec):
     constructor always re-normalizes against a fresh erecoil_max, which
     would silently double-normalize them.
 
-    perecoil["valid_min"]/["valid_max"] (adr/0014) cross into Fortran
+    perecoil["valid_min"]/["valid_max"] (adr/0016) cross into Fortran
     registration here too, so a worker evaluating this spec gets the same
     out-of-range-query guard (a quiet NaN, not a silently-wrong number)
     the fit's own PErecoilFit.__call__ already gives a Python caller
@@ -874,7 +874,7 @@ def _perecoil_from_fit_json(path):
     ..., "valid_max": ...} (family/detector/calibration_source/source/
     valid_min/valid_max optional; "x_on"/"w_on" also optional, required
     only if "family" is "turnon_times_sum_of_exponentials_plus_const" --
-    see adr/0014-perecoil-valid-region-and-turnon-family.md) -- and return
+    see adr/0016-perecoil-valid-region-and-turnon-family.md) -- and return
     its own perecoil_identity(). A fit has no dedicated file format of its own
     (unlike the table this used to be: a fit is 2*n+1 numbers, not worth
     one -- adr/0012-perecoil-handles-register-a-fit-not-a-table.md); this

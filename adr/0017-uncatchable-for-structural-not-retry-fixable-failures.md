@@ -1,11 +1,11 @@
-# 0015. Structural, not-retry-fixable failures should be uncatchable, not a Python exception
+# 0017. Structural, not-retry-fixable failures should be uncatchable, not a Python exception
 
 Status: Proposed
 Date: 2026-11-20
 
 ## Context
 
-`adr/0014-perecoil-valid-region-and-turnon-family.md` added a hard failure for a
+`adr/0016-perecoil-valid-region-and-turnon-family.md` added a hard failure for a
 PErecoil fit evaluated outside its own valid region -- `normgrid.OutOfBoxError`
 (a catchable `ValueError` subclass) on the Python side, Fortran `error stop` on
 the compiled side once a mode is *accepted* there (not merely probed; see that
@@ -108,7 +108,7 @@ worsens on its own.
      exists. The project wants one invariant stronger than case-by-case
      resumability: the same configuration runs for the entire MCMC process,
      never part under one setup and the rest stitched on after a mid-run
-     fix. This is `check_valid_region`'s category (`adr/0014`), and --
+     fix. This is `check_valid_region`'s category (`adr/0016`), and --
      reclassified by this record -- `OutOfBoxError`'s and
      `PriorNotCoveredError`'s own, even though the latter two could, in a
      narrower sense, be argued resumable (see Context).
@@ -164,7 +164,7 @@ worsens on its own.
   catchable (`adr/0009`), and the whole point of this record is narrowing
   which category a given failure belongs to, not collapsing the distinction.
 - The `os._exit()` vs. on-disk-consistency question is answered, not left
-  open: `adr/0015_hdf5_crash_experiment.py` forks a child process through
+  open: `adr/0017_hdf5_crash_experiment.py` forks a child process through
   `emcee.backends.hdf.HDFBackend.save_step` (emcee 3.1.6), killing it at four
   points spanning a step's own open/write/close sequence via both
   `os._exit()` and a normal uncaught exception, and found the file fully

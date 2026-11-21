@@ -80,7 +80,7 @@ check("chi2_dof is a reasonable value for noisy synthetic data", 0.2 < fit.chi2_
 # check below) -- it's a statement about the underlying closed form's
 # unconditional smoothness (what the compiled Fortran quadrature needs,
 # adr/0012), independent of where PErecoilFit.__call__ considers this fit
-# *trustworthy* to evaluate (adr/0014).
+# *trustworthy* to evaluate (adr/0016).
 xs_dense = np.linspace(0, 10 * xs.max(), 20000)
 vals = _density(xs_dense, fit.a, fit.b, fit.C)
 check("density is positive everywhere on a dense grid, including past erecoil_max",
@@ -116,7 +116,7 @@ ks = check_fit_against_events(fit, events)
 check("check_fit_against_events: self-consistent sample passes (p > 0.01)", ks.pvalue > 0.01,
      detail=f"p={ks.pvalue}")
 
-# --- valid-region hard failure (adr/0014) ---
+# --- valid-region hard failure (adr/0016) ---
 
 # Default valid region is [0, erecoil_max] -- unchanged historical behavior:
 # evaluating within it works exactly as before.
@@ -161,7 +161,7 @@ except OutOfBoxError:
 check("valid_max must be > valid_min at construction",
      _raises(lambda: PErecoilFit([1.0], [10.0], 0.0, erecoil_max=100.0, valid_min=50.0, valid_max=50.0)))
 
-# --- the turnon_times_sum_of_exponentials_plus_const family (adr/0014) ---
+# --- the turnon_times_sum_of_exponentials_plus_const family (adr/0016) ---
 
 rng4 = np.random.default_rng(13)
 x_on_true, w_on_true = 6.0, 3.0

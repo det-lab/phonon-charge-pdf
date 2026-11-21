@@ -196,7 +196,7 @@ def _load_library():
     _api.PErecoil_fit_register.restype = ctypes.c_int
 
     # Same registration pattern, for the turnon_times_sum_of_exponentials_
-    # plus_const family (adr/0014) -- see PErecoil_turnon_fit_register below.
+    # plus_const family (adr/0016) -- see PErecoil_turnon_fit_register below.
     _api.PErecoil_turnon_fit_register.argtypes = [
         _DOUBLE_ARR, _DOUBLE_ARR, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
         ctypes.c_double, ctypes.c_double,
@@ -428,7 +428,7 @@ def PErecoil_fit_register(a, b, C, valid_min, valid_max):
     and C (the constant floor) -- see erecoil_fit.PErecoilFit.fortran_params
     for exactly this shape, and that module's own docstring for the
     convention (adr/0012-perecoil-handles-register-a-fit-not-a-table.md).
-    valid_min/valid_max (adr/0014) are the Erecoil range this fit is
+    valid_min/valid_max (adr/0016) are the Erecoil range this fit is
     trustworthy over -- pass (0.0, math.inf) for "valid everywhere this
     family stays smooth"; evaluating outside them (via Ppq_NR/ER,
     Ppq_vector_NR/ER, Ppq_region_NR/ER) returns a quiet NaN, protecting a
@@ -451,7 +451,7 @@ def PErecoil_fit_register(a, b, C, valid_min, valid_max):
 
 def PErecoil_turnon_fit_register(a, b, C, x_on, w_on, valid_min, valid_max):
     """Same as PErecoil_fit_register, for the
-    turnon_times_sum_of_exponentials_plus_const family (adr/0014) -- a, b,
+    turnon_times_sum_of_exponentials_plus_const family (adr/0016) -- a, b,
     C as before, plus x_on/w_on (the fitted turn-on location/width) and
     valid_min/valid_max (see PErecoil_fit_register's own docstring). See
     erecoil_fit.fit_turnon_times_sum_of_exponentials for where x_on/w_on
@@ -474,7 +474,7 @@ def _load_erecoil_fit(fit, band):
     table.md) -- so there is still no construction-time *smoothness*
     check to make here, regardless of family. That is a separate thing
     from whether fit is *trustworthy* everywhere it's smooth: fit's own
-    valid_min/valid_max (adr/0014) cross into Fortran right here, as two
+    valid_min/valid_max (adr/0016) cross into Fortran right here, as two
     more registration arguments -- PErecoil_NR_impl/ER_impl return a
     quiet NaN for any Erecoil >= 0 outside them, directly inside
     Ppq_NR/ER's own compute path, not just in PErecoilFit.__call__'s

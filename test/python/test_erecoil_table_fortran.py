@@ -19,7 +19,7 @@ every family here is smooth and defined for every Erecoil >= 0, nothing
 for a Fortran search window to run off the edge of) -- so there is no
 "too narrow"/"doesn't start at 0" construction-time check to test here
 the way there used to be for a table. PErecoilFit's own valid_min/
-valid_max (adr/0014) DOES cross into this registration path (two more
+valid_max (adr/0016) DOES cross into this registration path (two more
 PErecoil_fit_register/PErecoil_turnon_fit_register arguments), with two
 different behaviors depending on how a bad Erecoil was reached:
 - A transient probe outside the valid region (Newton's own internal
@@ -160,7 +160,7 @@ check("fit A's two interleaved evaluations are identical to each other",
 check("fit B's two interleaved evaluations are identical to each other",
       results[1] == results[3])
 
-# ---- the turnon_times_sum_of_exponentials_plus_const family (adr/0014):
+# ---- the turnon_times_sum_of_exponentials_plus_const family (adr/0016):
 # PErecoil_turnon_fit_register, and eval_fit's erf-windowed branch, cross-
 # checked the same way as the plain family above against Ppq_py's own
 # reference (which needs no changes -- it already takes any callable
@@ -208,7 +208,7 @@ check("interleaved turnon handles each match their own reference, not each other
       results_turnon[0] == results_turnon[2])
 
 # ---- a direct Fortran caller gets the same out-of-range guard a Python
-# caller already gets from PErecoilFit.__call__ (adr/0014): a fit
+# caller already gets from PErecoilFit.__call__ (adr/0016): a fit
 # registered with a narrow valid_max returns NaN when queried at an
 # (Ep, Eq) whose own true Erecoil clearly falls outside it, and still
 # matches its reference normally well inside it ----
@@ -231,7 +231,7 @@ check("narrow valid_max: a query whose true Erecoil is well inside it matches th
 # to confirm the closed form matches Ppq_py -- its own resolution-driven true
 # Erecoil peaks near 100, nowhere close to valid_max=50, so the mode-finder
 # ACCEPTS a peak well outside this fit's valid region, not just a transient
-# Newton overshoot. That's integrate_Ppq's check_valid_region (adr/0014): an
+# Newton overshoot. That's integrate_Ppq's check_valid_region (adr/0016): an
 # error stop, not a NaN -- it can't be caught in-process the way a Python
 # exception can, so testing it means running it in a subprocess and checking
 # that the child actually died, not catching anything here.

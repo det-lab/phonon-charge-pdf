@@ -1,4 +1,4 @@
-"""Reproduces adr/0015's os._exit()-vs-HDF5-consistency measurement.
+"""Reproduces adr/0017's os._exit()-vs-HDF5-consistency measurement.
 
 Empirical check: does an abrupt process death mid-write corrupt an emcee
 HDFBackend file (unreadable afterward), or just lose the in-progress step
@@ -14,7 +14,7 @@ file afterward.
 Needs emcee (not a project dependency -- pip install emcee):
 
     pip install emcee
-    python adr/0015_hdf5_crash_experiment.py
+    python adr/0017_hdf5_crash_experiment.py
 """
 import os
 import sys
