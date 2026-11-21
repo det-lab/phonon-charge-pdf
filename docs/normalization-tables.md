@@ -157,9 +157,12 @@ spectrum, or `Ppq_compiled` divides a density computed from one spectrum by
 an integral computed from the other -- wrong, silently
 (`adr/0002-normalization-tables-record-perecoil.md`). Pass
 `--perecoil-fit-json` (a small JSON file: `a`, `b`, `C`, `erecoil_max`,
-optional `family`/`detector`/`calibration_source`/`source` -- see
-`normgrid._perecoil_from_fit_json`'s own docstring) to both `make-spec` and
-`make-random-spec`:
+optional `family`/`detector`/`calibration_source`/`source`/`valid_min`/
+`valid_max`; `x_on`/`w_on` are also required when `family` is
+`turnon_times_sum_of_exponentials_plus_const` -- see
+`normgrid._perecoil_from_fit_json`'s own docstring and
+`adr/0016-perecoil-valid-region-and-turnon-family.md` for `valid_min`/
+`valid_max`/the turn-on family) to both `make-spec` and `make-random-spec`:
 
 ```bash
 python python/cli/normgrid.py make-spec --band NR --ep-range 2.5 350 --eq-range 0.75 200 --epsrel 1e-7 \

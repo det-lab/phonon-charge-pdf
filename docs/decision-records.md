@@ -26,8 +26,15 @@ Current records:
 | `0011-recoil-spectrum-always-explicit.md` | Proposed | the recoil spectrum is a required argument, the same object for `generate_events` and `Ppq_compiled`; no silent Cf-252 default |
 | `0012-perecoil-handles-register-a-fit-not-a-table.md` | Accepted | a PErecoil handle registers a smooth, curated fit (sum of exponentials + constant), not an arbitrary table -- a table was found to reintroduce the precision floor 0010 measured |
 | `0013-kde-table-with-bandwidth-margin-for-non-monotonic-spectra.md` | Proposed | a PErecoil handle may also register a KDE table, with an enforced minimum bandwidth margin over the resolution model's own floor -- for recoil spectra (Ba-133's ER contamination bump) the curated fit family structurally cannot represent; also proposes error-reporting for Ppq_NR/ER, not just the region integral |
+| `0016-perecoil-valid-region-and-turnon-family.md` | Accepted | `PErecoilFit` gains `valid_min`/`valid_max`, enforced on evaluation (Python `OutOfBoxError`, a quiet NaN for a transient Fortran probe, `error stop` for a genuinely accepted bad mode); a new curated turn-on family for Cf NR's near-threshold rise |
+| `0017-uncatchable-for-structural-not-retry-fixable-failures.md` | Proposed | a failure meaning the analysis's own configuration doesn't cover what's needed should be uncatchable, not a Python exception -- reclassifies `OutOfBoxError`/`PriorNotCoveredError` under the same principle as `0016`'s `check_valid_region` (conversion tracked in [issue #60](https://github.com/det-lab/phonon-charge-pdf/issues/60), not yet done) |
 
 0002–0009 came out of building `MCMC_demo/` (a Cf fit + MCMC on Expanse) on 2026-11-09.
+`0014`/`0015` are deliberately absent: both numbers were claimed independently by a
+different branch (`adr/0014-rebuild-commands-keep-perecoil-fit`) that forked from the
+same base commit; this project's own two were renumbered to `0016`/`0017` to clear the
+collision rather than contest it, since the other branch already had an open issue
+referencing its `0014`.
 Wherever a record mentions `MCMC_demo/`, it means
 [`nrFanoII_paper2022/MCMC_demo/`](https://github.com/villano-lab/nrFanoII_paper2022/tree/master/MCMC_demo),
 the analysis repository that uses this library; it isn't part of this repository.
