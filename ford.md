@@ -6,8 +6,6 @@ preprocess: true
 macro: FORD
 preprocessor: gfortran -E
 display: public
-         protected
-         private
 source: false
 graph: true
 md_extensions: markdown.extensions.toc
